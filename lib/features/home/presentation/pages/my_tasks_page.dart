@@ -43,7 +43,7 @@ class MyTasksPage extends ConsumerWidget {
                   itemBuilder: (context, index) {
                     final task = tasks[index];
                     return InkWell(
-                      onTap: () => context.push('${AppRoutes.taskDetail}/${task.id}'),
+                      onTap: () => context.push(AppRoutes.taskDetailPath(task.id)),
                       borderRadius: BorderRadius.circular(14),
                       child: Container(
                         padding: const EdgeInsets.all(14),

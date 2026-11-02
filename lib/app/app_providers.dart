@@ -23,10 +23,13 @@ final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
   ThemeModeNotifier.new,
 );
 
-/// Selected locale — `null` follows the system locale.
+/// Selected locale — defaults to Arabic (the product's primary language).
 class LocaleNotifier extends Notifier<Locale?> {
   @override
-  Locale? build() => ref.watch(localStorageServiceProvider).locale;
+  Locale? build() => ref.watch(localStorageServiceProvider).locale ?? defaultLocale;
+
+  /// Arabic is the primary language of the 6DX product.
+  static const Locale defaultLocale = Locale('ar');
 
   Future<void> setLocale(Locale? locale) async {
     state = locale;
@@ -36,6 +39,12 @@ class LocaleNotifier extends Notifier<Locale?> {
     } else {
       await storage.setLocale(locale.languageCode);
     }
+  }
+
+  /// Toggles between the two supported languages.
+  Future<void> toggleLocale() async {
+    final current = state?.languageCode ?? defaultLocale.languageCode;
+    await setLocale(Locale(current == 'ar' ? 'en' : 'ar'));
   }
 }
 

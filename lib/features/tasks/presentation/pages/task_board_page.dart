@@ -187,7 +187,7 @@ class _TaskCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return InkWell(
-      onTap: () => context.push('${AppRoutes.taskDetail}/${task.id}'),
+      onTap: () => context.push(AppRoutes.taskDetailPath(task.id)),
       borderRadius: BorderRadius.circular(14),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),

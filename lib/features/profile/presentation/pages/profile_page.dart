@@ -7,6 +7,7 @@ import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_logo.dart';
+import '../../../../app/app_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 
 @RoutePage()
@@ -94,6 +95,20 @@ class ProfilePage extends ConsumerWidget {
           const Divider(height: 32),
           const AppLogo(),
           const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.translate_rounded, color: AppColors.textMuted),
+            title: const Text('اللغة'),
+            subtitle: Text(
+              (ref.watch(localeProvider)?.languageCode ?? 'ar') == 'ar'
+                  ? 'العربية'
+                  : 'English',
+            ),
+            trailing: const Icon(Icons.chevron_left_rounded,
+                color: AppColors.textDim),
+            onTap: () => ref.read(localeProvider.notifier).toggleLocale(),
+          ),
+          const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () async {
               await ref.read(authNotifierProvider.notifier).signOut();

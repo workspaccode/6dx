@@ -75,7 +75,7 @@ class ReviewsPage extends ConsumerWidget {
                           const Spacer(),
                           FilledButton(
                             onPressed: () => context.push(
-                              '${AppRoutes.taskDetail}/${task.id}',
+                              AppRoutes.taskDetailPath(task.id),
                             ),
                             style: FilledButton.styleFrom(
                               minimumSize: const Size(0, 38),

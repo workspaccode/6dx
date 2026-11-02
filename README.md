@@ -127,6 +127,13 @@ background modes are set in `ios/Runner/Info.plist`.
 Arabic; the Arabic locale renders RTL automatically. Use
 `context.l10n.someKey` inside widgets.
 
+## Generated code
+
+The `build_runner` output (`*.freezed.dart`, `*.g.dart`, `*.gr.dart`) and the
+`flutter gen-l10n` output (`lib/l10n/generated/`) are **committed** so a fresh
+clone builds without running the generators. Re-run them after changing a
+model, a route or an ARB file.
+
 ## Tests
 
 ```bash

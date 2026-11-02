@@ -41,6 +41,9 @@ class AppRoutes {
   static const String connectRepository = '/projects/connect-repository';
   static const String taskBoard = '/tasks/board';
   static const String taskDetail = '/tasks/:id';
+
+  /// Concrete location of a task detail screen.
+  static String taskDetailPath(String id) => '/tasks/$id';
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -67,6 +70,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           (location == AppRoutes.login || location == AppRoutes.signUp)) {
         return AppRoutes.home;
       }
+      // The bottom-navigation shell only exposes its branches, so `/home`
+      // resolves to the first branch (projects).
+      if (location == AppRoutes.home) return AppRoutes.projects;
       return null;
     },
     routes: [
