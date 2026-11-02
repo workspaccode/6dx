@@ -10,6 +10,7 @@ import '../../data/datasources/auth_remote_data_source.dart';
 import '../../data/datasources/github_auth_data_source.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../domain/entities/auth_user.dart';
+import '../../domain/entities/github_device_code.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 
@@ -57,8 +58,12 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 // Use cases
-final signInWithGithubProvider = Provider<SignInWithGithub>(
-  (ref) => SignInWithGithub(ref.watch(authRepositoryProvider)),
+final startGithubDeviceFlowProvider = Provider<StartGithubDeviceFlow>(
+  (ref) => StartGithubDeviceFlow(ref.watch(authRepositoryProvider)),
+);
+
+final completeGithubDeviceFlowProvider = Provider<CompleteGithubDeviceFlow>(
+  (ref) => CompleteGithubDeviceFlow(ref.watch(authRepositoryProvider)),
 );
 
 final signInWithEmailProvider = Provider<SignInWithEmail>(
@@ -89,9 +94,22 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
     return result.dataOrNull;
   }
 
-  Future<bool> signInWithGithub({required String code}) async {
+  /// Step 1: ask GitHub for a device code the user confirms on the web.
+  Future<Result<GithubDeviceCode>> startGithubDeviceFlow() async {
     state = const AsyncLoading();
-    final result = await ref.read(signInWithGithubProvider).call(code: code);
+    return ref.read(startGithubDeviceFlowProvider).call();
+  }
+
+  /// Step 2: poll GitHub until the user approved, then create the session.
+  Future<bool> completeGithubDeviceFlow(
+    GithubDeviceCode deviceCode, {
+    void Function(bool pending)? onPending,
+  }) async {
+    state = const AsyncLoading();
+    final result = await ref.read(completeGithubDeviceFlowProvider).call(
+          deviceCode,
+          onPending: onPending,
+        );
     return _apply(result);
   }
 

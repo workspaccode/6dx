@@ -4,8 +4,9 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_endpoints.dart';
 import '../../../../core/errors/exceptions.dart';
 
-class GithubDeviceCode {
-  const GithubDeviceCode({
+/// Wire format of the device-flow response.
+class GithubDeviceCodeResponse {
+  const GithubDeviceCodeResponse({
     required this.deviceCode,
     required this.userCode,
     required this.verificationUri,
@@ -28,7 +29,7 @@ class GithubAuthDataSource {
   /// Step 1 of the GitHub OAuth *device flow*: ask GitHub for a user code the
   /// user can confirm in the browser. Works on mobile, desktop and web
   /// without needing a redirect URI.
-  Future<GithubDeviceCode> requestDeviceCode() async {
+  Future<GithubDeviceCodeResponse> requestDeviceCode() async {
     final response = await _dio.post<Map<String, dynamic>>(
       'https://github.com/login/device/code',
       queryParameters: {
@@ -37,7 +38,7 @@ class GithubAuthDataSource {
       },
     );
     final data = response.data ?? const <String, dynamic>{};
-    return GithubDeviceCode(
+    return GithubDeviceCodeResponse(
       deviceCode: data['device_code'] as String,
       userCode: data['user_code'] as String,
       verificationUri: data['verification_uri'] as String,

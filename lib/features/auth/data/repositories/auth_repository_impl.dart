@@ -5,6 +5,7 @@ import '../../../../core/errors/exceptions.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/result.dart';
 import '../../domain/entities/auth_user.dart';
+import '../../domain/entities/github_device_code.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
@@ -25,14 +26,54 @@ class AuthRepositoryImpl implements AuthRepository {
   final GithubAuthDataSource _github;
 
   @override
-  Future<Result<AuthUser>> signInWithGithub({required String code}) =>
+  Future<Result<GithubDeviceCode>> startGithubDeviceFlow() => _guard(() async {
+        if (AppConfig.useMockData) {
+          return const GithubDeviceCode(
+            deviceCode: 'mock',
+            userCode: 'MOCK-0000',
+            verificationUri: 'https://github.com/login/device',
+          );
+        }
+        final code = await _github.requestDeviceCode();
+        return GithubDeviceCode(
+          deviceCode: code.deviceCode,
+          userCode: code.userCode,
+          verificationUri: code.verificationUri,
+          interval: code.interval,
+          expiresIn: code.expiresIn,
+        );
+      });
+
+  @override
+  Future<Result<AuthUser>> completeGithubDeviceFlow(
+    GithubDeviceCode deviceCode, {
+    void Function(bool pending)? onPending,
+  }) =>
       _guard(() async {
         if (AppConfig.useMockData) {
           final user = _mockGithubUser();
           await _local.cacheSession(user: user);
           return user.toEntity();
         }
-        final token = await _github.exchangeCode(code);
+
+        final deadline =
+            DateTime.now().add(Duration(seconds: deviceCode.expiresIn));
+        var token = await _github.pollAccessToken(
+          deviceCode: deviceCode.deviceCode,
+          interval: deviceCode.interval,
+        );
+        while (token == null) {
+          if (DateTime.now().isAfter(deadline)) {
+            throw const ServerException('انتهت صلاحية رمز الدخول');
+          }
+          onPending?.call(true);
+          await Future<void>.delayed(Duration(seconds: deviceCode.interval));
+          token = await _github.pollAccessToken(
+            deviceCode: deviceCode.deviceCode,
+            interval: deviceCode.interval,
+          );
+        }
+
         final user = await _github.fetchUser(token);
         final email = await _github.fetchPrimaryEmail(token);
         final model = UserModel(

@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_logo.dart';
+import '../../../../core/errors/failures.dart';
+import '../../domain/entities/github_device_code.dart';
 import '../providers/auth_providers.dart';
 
 @RoutePage()
@@ -48,15 +53,80 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  /// GitHub OAuth device flow:
+  /// 1. the app asks GitHub for a short user code,
+  /// 2. the user confirms it on github.com (opened in the browser),
+  /// 3. the app polls GitHub until the grant is approved and signs in.
   Future<void> _continueWithGithub() async {
-    final ok = await ref
-        .read(authNotifierProvider.notifier)
-        .signInWithGithub(code: 'device-flow');
+    final notifier = ref.read(authNotifierProvider.notifier);
+    final started = await notifier.startGithubDeviceFlow();
+    final deviceCode = started.dataOrNull;
+    if (!mounted) return;
+
+    if (deviceCode == null) {
+      _showSnack(started.failureOrNull?.message ?? 'تعذّر الاتصال بـ GitHub');
+      return;
+    }
+
+    final approved = await _showDeviceCodeSheet(deviceCode);
+    if (!mounted) return;
+    if (!approved) return;
+
+    final ok = await notifier.completeGithubDeviceFlow(deviceCode);
     if (!mounted) return;
     if (ok) {
       context.go(AppRoutes.home);
     } else {
-      _showSnack('تعذّر الاتصال بـ GitHub');
+      _showSnack('تعذّر تسجيل الدخول بـ GitHub');
+    }
+  }
+
+  /// Shows the user code and polls GitHub in the background.
+  Future<bool> _showDeviceCodeSheet(GithubDeviceCode deviceCode) async {
+    var pending = false;
+
+    final completer = Completer<bool>();
+    unawaited(_pollForApproval(deviceCode, completer, () => pending));
+
+    final opened = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: true,
+      builder: (sheetContext) => _DeviceCodeSheet(
+        userCode: deviceCode.userCode,
+        verificationUri: deviceCode.verificationUri,
+        isPending: () => pending,
+        onOpenBrowser: () => _openBrowser(deviceCode.verificationUri),
+      ),
+    );
+
+    if (opened != true) {
+      if (!completer.isCompleted) completer.complete(false);
+      return false;
+    }
+    return completer.future;
+  }
+
+  /// Polls GitHub in the background while the user confirms the code.
+  Future<void> _pollForApproval(
+    GithubDeviceCode deviceCode,
+    Completer<bool> completer,
+    bool Function() isPending,
+  ) async {
+    final result = await ref
+        .read(authNotifierProvider.notifier)
+        .completeGithubDeviceFlow(
+          deviceCode,
+          onPending: (_) => setState(() {}),
+        );
+    if (!completer.isCompleted) completer.complete(result);
+  }
+
+  Future<void> _openBrowser(String uri) async {
+    final url = Uri.tryParse(uri);
+    if (url == null) return;
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (!mounted) return;
+      _showSnack('تعذّر فتح المتصفح — افتح $uri يدويًا');
     }
   }
 
@@ -261,6 +331,96 @@ class _MonoTag extends StatelessWidget {
           fontSize: 11,
           color: AppColors.textMuted,
         ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet shown during the GitHub device flow.
+class _DeviceCodeSheet extends StatefulWidget {
+  const _DeviceCodeSheet({
+    required this.userCode,
+    required this.verificationUri,
+    required this.isPending,
+    required this.onOpenBrowser,
+  });
+
+  final String userCode;
+  final String verificationUri;
+  final bool Function() isPending;
+  final VoidCallback onOpenBrowser;
+
+  @override
+  State<_DeviceCodeSheet> createState() => _DeviceCodeSheetState();
+}
+
+class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
+  @override
+  Widget build(BuildContext context) {
+    final pending = widget.isPending();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'ادخل الكود في GitHub',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'افتح صفحة GitHub واكتب الكود التالي لتأكيد الدخول.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 18),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
+            ),
+            child: Text(
+              widget.userCode,
+              style: const TextStyle(
+                fontFamily: 'JetBrainsMono',
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 3,
+                color: AppColors.accent,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: widget.onOpenBrowser,
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('فتح GitHub'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (pending)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                const Icon(Icons.hourglass_empty_rounded,
+                    size: 16, color: AppColors.textDim),
+              const SizedBox(width: 8),
+              Text(
+                pending ? 'في انتظار موافقتك على GitHub…' : 'لم تبدأ بعد',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

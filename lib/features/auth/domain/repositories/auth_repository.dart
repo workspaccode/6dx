@@ -1,8 +1,16 @@
 import '../../../../core/utils/result.dart';
 import '../entities/auth_user.dart';
+import '../entities/github_device_code.dart';
 
 abstract interface class AuthRepository {
-  Future<Result<AuthUser>> signInWithGithub({required String code});
+  /// Step 1 of the GitHub OAuth device flow: asks GitHub for a user code.
+  Future<Result<GithubDeviceCode>> startGithubDeviceFlow();
+
+  /// Step 2: polls GitHub until the user approved the device, then signs in.
+  Future<Result<AuthUser>> completeGithubDeviceFlow(
+    GithubDeviceCode deviceCode, {
+    void Function(bool pending)? onPending,
+  });
 
   Future<Result<AuthUser>> signInWithEmail({
     required String email,
