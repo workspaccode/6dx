@@ -135,3 +135,68 @@ final subtasksForTaskProvider = Provider.family<List<TaskSubtask>, String>(
 final pullRequestProvider = Provider.family<PullRequest?, int>((ref, number) {
   return ref.watch(workspaceSnapshotProvider).value?.pullRequestByNumber(number);
 });
+
+
+// --- selectors for the remaining screens -----------------------------------
+
+final workspaceAgentsProvider = Provider<List<WorkspaceAgent>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.agents ?? const [];
+});
+
+final agentRulesProvider = Provider<List<AgentRule>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.agentRules ?? const [];
+});
+
+final knowledgeAreasProvider = Provider<List<KnowledgeArea>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.knowledgeAreas ?? const [];
+});
+
+final workspaceCommitsProvider = Provider<List<CommitEntry>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.commits ?? const [];
+});
+
+final workspaceReleasesProvider = Provider<List<ReleaseNote>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.releases ?? const [];
+});
+
+final workspaceDependenciesProvider = Provider<List<TaskDependency>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.dependencies ?? const [];
+});
+
+final workspaceJoinRequestsProvider = Provider<List<InviteRequest>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.joinRequests ?? const [];
+});
+
+final unlinkedContributorsProvider = Provider<List<UnlinkedContributor>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.unlinkedContributors ??
+      const [];
+});
+
+final codePlatformsProvider = Provider<List<CodePlatform>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.codePlatforms ?? const [];
+});
+
+final estimateRecordsProvider = Provider<List<EstimateRecord>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.estimateRecords ?? const [];
+});
+
+final sprintRetrosProvider = Provider<List<SprintRetro>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.sprintRetros ?? const [];
+});
+
+final weeklyClientSummariesProvider = Provider<List<WeeklyClientSummary>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.weeklyClientSummaries ??
+      const [];
+});
+
+final projectReportsProvider = Provider<List<ProjectReport>>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.projectReports ?? const [];
+});
+
+final regionalCalendarProvider = Provider<RegionalCalendar?>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.regionalCalendar;
+});
+
+final billingProvider = Provider<BillingSummary?>((ref) {
+  return ref.watch(workspaceSnapshotProvider).value?.billing;
+});

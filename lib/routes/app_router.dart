@@ -31,6 +31,13 @@ import '../features/members/presentation/pages/member_pages.dart';
 import '../features/reviews/presentation/pages/review_pages.dart';
 import '../features/team/presentation/pages/team_pages.dart';
 import '../features/account/presentation/pages/account_pages.dart';
+import '../features/workspace/presentation/pages/github_flow_pages.dart';
+import '../features/workspace/presentation/pages/insight_pages.dart';
+import '../features/workspace/presentation/pages/state_pages.dart';
+import '../features/workspace/presentation/pages/workspace_flow_pages.dart';
+import '../features/tasks/presentation/pages/task_flow_pages.dart';
+import '../features/web/presentation/pages/web_routes.dart';
+import '../features/web/presentation/pages/web_shell_page.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -81,6 +88,54 @@ class AppRoutes {
   static const String clientPortal = '/clients/portal';
   static const String invoice = '/clients/invoice';
   static const String timeTracking = '/clients/time';
+
+  // --- remaining mobile screens ---
+  static const String workspaceSwitch = '/workspace/switch';
+  static const String workspaceCreateExisting = '/workspace/create';
+  static const String acceptInvite = '/invite/accept';
+  static const String linkGitHub = '/invite/link-github';
+  static const String inviteExpired = '/invite/expired';
+  static const String joinRequests = '/workspace/join-requests';
+  static const String bulkInvite = '/workspace/bulk-invite';
+  static const String regionalCalendar = '/settings/calendar';
+  static const String billing = '/settings/billing';
+  static const String exportData = '/settings/export';
+  static const String ghAppInstall = '/github/app-install';
+  static const String ghInstalling = '/github/installing';
+  static const String importIssues = '/github/import-issues';
+  static const String mapContributors = '/github/contributors';
+  static const String multiProvider = '/github/providers';
+  static const String agentsTeam = '/team/agents';
+  static const String assignAgent = '/team/assign-agent';
+  static const String knowledgeMap = '/team/knowledge';
+  static const String askProject = '/team/ask';
+  static const String projectReport = '/team/report';
+  static const String estimateLearning = '/team/estimates';
+  static const String sprintHistory = '/sprints/history';
+  static const String reviewerPick = '/reviews/reviewer';
+  static const String bigPrWarning = '/reviews/big-pr';
+  static const String mergeFromApp = '/reviews/merge';
+  static const String commits = '/reviews/commits';
+  static const String releaseTracker = '/reviews/releases';
+  static const String weeklySummary = '/clients/weekly';
+  static const String editTask = '/tasks/:id/edit';
+  static const String taskStatus = '/tasks/:id/status';
+  static const String taskDependencies = '/tasks/:id/dependencies';
+  static const String taskContext = '/tasks/:id/context';
+  static const String bugReport = '/bugs/report';
+  static const String bulkActions = '/tasks/bulk';
+  static const String offline = '/states/offline';
+  static const String syncFailed = '/states/sync-failed';
+  static const String accessRevoked = '/states/access-revoked';
+  static const String noPermission = '/states/no-permission';
+  static const String notFound = '/states/not-found';
+  static const String emptyProjects = '/states/empty-projects';
+  static const String skeleton = '/states/skeleton';
+  static const String pushPermission = '/states/push-permission';
+  static const String richNotification = '/states/rich-notification';
+
+  /// Root of the public website + web app.
+  static const String web = '/web';
 
   /// Concrete location of a task detail screen.
   static String taskDetailPath(String id) => '/tasks/$id';
@@ -348,6 +403,193 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.timeTracking,
         builder: (_, __) => const TimeTrackingPage(),
+      ),
+
+      GoRoute(
+        path: AppRoutes.workspaceSwitch,
+        builder: (_, __) => const WorkspaceSwitchPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.acceptInvite,
+        builder: (_, __) => const AcceptInvitePage(),
+      ),
+      GoRoute(
+        path: AppRoutes.linkGitHub,
+        builder: (_, __) => const LinkGitHubPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.inviteExpired,
+        builder: (_, __) => const InviteExpiredPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.joinRequests,
+        builder: (_, __) => const JoinRequestsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.bulkInvite,
+        builder: (_, __) => const BulkInvitePage(),
+      ),
+      GoRoute(
+        path: AppRoutes.regionalCalendar,
+        builder: (_, __) => const RegionalCalendarPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.billing,
+        builder: (_, __) => const BillingPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.exportData,
+        builder: (_, __) => const ExportDataPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.ghAppInstall,
+        builder: (_, __) => const GhAppInstallPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.ghInstalling,
+        builder: (_, __) => const GhInstallingPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.importIssues,
+        builder: (_, __) => const ImportIssuesPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.mapContributors,
+        builder: (_, __) => const MapContributorsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.multiProvider,
+        builder: (_, __) => const MultiProviderPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.agentsTeam,
+        builder: (_, __) => const AgentsTeamPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.assignAgent,
+        builder: (_, __) => const AssignAgentPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.knowledgeMap,
+        builder: (_, __) => const KnowledgeMapPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.askProject,
+        builder: (_, __) => const AskProjectPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.projectReport,
+        builder: (_, __) => const ProjectReportPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.estimateLearning,
+        builder: (_, __) => const EstimateLearningPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.sprintHistory,
+        builder: (_, __) => const SprintHistoryPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.reviewerPick,
+        builder: (_, __) => const ReviewerPickPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.bigPrWarning,
+        builder: (_, __) => const BigPrWarningPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.mergeFromApp,
+        builder: (_, __) => const MergeFromAppPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.commits,
+        builder: (_, __) => const CommitsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.releaseTracker,
+        builder: (_, __) => const ReleaseTrackerPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.weeklySummary,
+        builder: (_, __) => const WeeklyClientSummaryPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.editTask,
+        builder: (_, __) => const EditTaskPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.taskStatus,
+        builder: (_, __) => const StatusSheetPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.taskDependencies,
+        builder: (_, __) => const DependenciesPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.taskContext,
+        builder: (_, __) => const TaskContextPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.bugReport,
+        builder: (_, __) => const BugReportPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.bulkActions,
+        builder: (_, __) => const BulkActionsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.offline,
+        builder: (_, __) => const OfflinePage(),
+      ),
+      GoRoute(
+        path: AppRoutes.syncFailed,
+        builder: (_, __) => const SyncFailedPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.accessRevoked,
+        builder: (_, __) => const AccessRevokedPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.noPermission,
+        builder: (_, __) => const NoPermissionPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.notFound,
+        builder: (_, __) => const NotFoundPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.emptyProjects,
+        builder: (_, __) => const EmptyProjectsPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.skeleton,
+        builder: (_, __) => const SkeletonPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.pushPermission,
+        builder: (_, __) => const PushPermissionPage(),
+      ),
+      GoRoute(
+        path: AppRoutes.richNotification,
+        builder: (_, __) => const RichNotificationPage(),
+      ),
+      // The whole website + web app: one route per design screen.
+      GoRoute(
+        path: AppRoutes.web,
+        builder: (context, state) {
+          final path = state.uri.path
+              .replaceFirst(AppRoutes.web, '')
+              .replaceFirst(RegExp(r'^/'), '');
+          final route = webRouteFor(path);
+          return WebShellPage(
+            route: route ??
+                const WebRoute(
+                  path: '',
+                  title: 'الصفحة غير موجودة',
+                  section: 'الحالات والنسخ',
+                ),
+          );
+        },
       ),
     ],
   );

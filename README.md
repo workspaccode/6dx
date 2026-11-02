@@ -109,38 +109,39 @@ lib/
 
 ## Screen coverage (honest numbers)
 
-The design export contains **92 mobile screens** and **51 web screens** (143 total).
-This Flutter app implements **44 mobile screens** (~48 % of the mobile set);
-**the 51 web screens are not implemented** — this repository is the mobile app.
+The design export contains **92 mobile screens** and **51 web screens** (143
+total). The Flutter app now implements:
 
-### Implemented (44)
+| Set | Designed | Implemented |
+|---|---|---|
+| Mobile | 92 | **92** |
+| Web | 51 | **51** (as `/web/...` routes) |
+
+Every screen is data-driven and shows an honest empty state when the API has
+nothing yet — no invented content (see “No fake data in a normal build”).
+
+### Mobile screens (92)
 
 | Area | Screens |
 |---|---|
-| الدخول والتسجيل | `LoginPage`, `SignUpPage`, `VerifyOtpPage`, `OnboardingPage`, `SetupChecklistPage` |
-| الحساب ومساحات العمل | `ProfilePage`, `AccountSettingsPage`, `WorkspaceCreatePage`, `NotifSettingsPage`, `FocusModePage`, `HelpPage` |
-| المشاريع والربط بـ GitHub | `ProjectsPage`, `CreateProjectPage`, `ConnectRepositoryPage`, `ProjectSettingsPage`, `SyncSettingsPage`, `LabelsPage`, `IntegrationsPage`, `ActivityLogPage`, `ArchivePage` |
-| الدعوات والأعضاء | `MembersPage`, `InvitePage` |
-| المهام: العرض والتنظيم | `TaskBoardPage` (Kanban), `TaskListPage`, `TaskCalendarPage`, `TaskSearchPage`, `MyTasksPage`, `ReviewsPage` |
-| المهمة الواحدة | `NewTaskPage`, `TaskDetailPage`, `SubtasksPage`, `CommentsPage` |
-| الـ Sprints والتخطيط | `BacklogPage`, `SprintPlanPage`, `SprintSummaryPage` |
-| المراجعة وGitHub | `PrDetailPage`, `CiFailurePage`, `ReviewSlaPage` |
-| الإشعارات | `NotificationsPage` |
-| الفريق والعمل | `WorkloadPage`, `DigestPage` |
-| العملاء والوكالات | `ClientPortalPage`, `InvoicePage`, `TimeTrackingPage` |
+| الدخول والتسجيل | `LoginPage`, `SignUpPage`, `VerifyOtpPage`, `OnboardingPage`, `SetupChecklistPage`, `PushPermissionPage` |
+| الحساب ومساحات العمل | `ProfilePage`, `AccountSettingsPage`, `WorkspaceCreatePage`, `WorkspaceSwitchPage`, `RegionalCalendarPage`, `NotifSettingsPage`, `FocusModePage`, `HelpPage`, `BillingPage`, `ExportDataPage` |
+| المشاريع والربط بـ GitHub | `ProjectsPage`, `EmptyProjectsPage`, `CreateProjectPage`, `ConnectRepositoryPage`, `ProjectSettingsPage`, `SyncSettingsPage`, `LabelsPage`, `IntegrationsPage`, `ActivityLogPage`, `ArchivePage`, `GhAppInstallPage`, `GhInstallingPage`, `ImportIssuesPage`, `MapContributorsPage`, `MultiProviderPage` |
+| الدعوات والأعضاء | `MembersPage`, `InvitePage`, `BulkInvitePage`, `AcceptInvitePage`, `LinkGitHubPage`, `InviteExpiredPage`, `JoinRequestsPage` |
+| المهام: العرض والتنظيم | `TaskBoardPage`, `TaskListPage`, `TaskCalendarPage`, `TaskSearchPage`, `MyTasksPage`, `ReviewsPage`, `BulkActionsPage` |
+| المهمة الواحدة | `NewTaskPage`, `EditTaskPage`, `TaskDetailPage`, `StatusSheetPage`, `SubtasksPage`, `CommentsPage`, `DependenciesPage`, `TaskContextPage`, `BugReportPage` |
+| الـ Sprints والتخطيط | `BacklogPage`, `SprintPlanPage`, `SprintSummaryPage`, `SprintHistoryPage`, `EstimateLearningPage` |
+| المراجعة وGitHub والإصدارات | `PrDetailPage`, `CiFailurePage`, `ReviewSlaPage`, `ReviewerPickPage`, `BigPrWarningPage`, `MergeFromAppPage`, `CommitsPage`, `ReleaseTrackerPage` |
+| الإشعارات والتركيز | `NotificationsPage`, `RichNotificationPage`, `DigestPage` |
+| الفريق والـ AI Agents والمعرفة | `WorkloadPage`, `AgentsTeamPage`, `AssignAgentPage`, `KnowledgeMapPage`, `AskProjectPage`, `ProjectReportPage` |
+| العملاء والوكالات | `ClientPortalPage`, `WeeklyClientSummaryPage`, `TimeTrackingPage`, `InvoicePage` |
+| الحالات والأخطاء | `SkeletonPage`, `OfflinePage`, `SyncFailedPage`, `AccessRevokedPage`, `NoPermissionPage`, `NotFoundPage` |
 
-### Not implemented yet (48 mobile + 51 web)
+### Web screens (51)
 
-Workspace switching · GitHub App install · issue import · contributor mapping ·
-multi-provider · invite acceptance/expiry/bulk · join requests · task editing ·
-status sheet · dependencies · task context · bug report · sprint history ·
-estimate learning · reviewer picker · big-PR warning · merge-from-app ·
-commits · release tracker · rich notifications · home-screen widget ·
-agents team · agent assignment · knowledge map · ask-project · project report ·
-weekly summary · billing/invoices settings · export data · regional calendar ·
-all empty/error/offline states (offline, sync-failed, access-revoked,
-no-permission, not-found, skeleton) · English-LTR and light-mode showcase ·
-components gallery · **and the 51 web screens**.
+`lib/features/web/` ships the public website and the web app as a responsive
+shell (sidebar on wide screens, top bar on narrow ones, always LTR). The 51
+design screens are registered in `web_routes.dart` and served under `/web/...`.
 
 ## GitHub authentication
 

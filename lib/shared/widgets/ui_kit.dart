@@ -387,3 +387,53 @@ class ViewSegmented extends StatelessWidget {
     );
   }
 }
+
+class StatusBadgeChip extends StatelessWidget {
+  const StatusBadgeChip({super.key, required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+      ),
+    );
+  }
+}
+
+class RadioListTileSimple extends StatelessWidget {
+  const RadioListTileSimple({
+    super.key,
+    required this.label,
+    required this.selected,
+    this.subtitle,
+  });
+
+  final String label;
+  final bool selected;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        color: selected ? AppColors.accent : AppColors.textDim,
+      ),
+      title: Text(label),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      onTap: () {},
+    );
+  }
+}
+

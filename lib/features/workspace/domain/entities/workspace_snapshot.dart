@@ -438,6 +438,21 @@ class WorkspaceSnapshot {
     this.workloadSuggestions = const [],
     this.clientReport,
     this.apiRateLimit,
+    this.agents = const [],
+    this.agentRules = const [],
+    this.knowledgeAreas = const [],
+    this.commits = const [],
+    this.releases = const [],
+    this.dependencies = const [],
+    this.joinRequests = const [],
+    this.unlinkedContributors = const [],
+    this.codePlatforms = const [],
+    this.estimateRecords = const [],
+    this.sprintRetros = const [],
+    this.weeklyClientSummaries = const [],
+    this.projectReports = const [],
+    this.regionalCalendar,
+    this.billing,
   });
 
   final String? workspaceId;
@@ -458,6 +473,21 @@ class WorkspaceSnapshot {
   final List<WorkloadSuggestion> workloadSuggestions;
   final ClientReport? clientReport;
   final ({int used, int limit})? apiRateLimit;
+  final List<WorkspaceAgent> agents;
+  final List<AgentRule> agentRules;
+  final List<KnowledgeArea> knowledgeAreas;
+  final List<CommitEntry> commits;
+  final List<ReleaseNote> releases;
+  final List<TaskDependency> dependencies;
+  final List<InviteRequest> joinRequests;
+  final List<UnlinkedContributor> unlinkedContributors;
+  final List<CodePlatform> codePlatforms;
+  final List<EstimateRecord> estimateRecords;
+  final List<SprintRetro> sprintRetros;
+  final List<WeeklyClientSummary> weeklyClientSummaries;
+  final List<ProjectReport> projectReports;
+  final RegionalCalendar? regionalCalendar;
+  final BillingSummary? billing;
 
   bool get isEmpty =>
       members.isEmpty &&
@@ -473,7 +503,13 @@ class WorkspaceSnapshot {
       notifications.isEmpty &&
       digest.isEmpty &&
       workload.isEmpty &&
-      clientReport == null;
+      clientReport == null &&
+      agents.isEmpty &&
+      commits.isEmpty &&
+      releases.isEmpty &&
+      dependencies.isEmpty &&
+      codePlatforms.isEmpty &&
+      projectReports.isEmpty;
 
   List<TaskComment> commentsFor(String taskId) =>
       comments.where((c) => c.taskId == taskId).toList(growable: false);
@@ -487,4 +523,271 @@ class WorkspaceSnapshot {
     }
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Entities for the remaining workspace screens. They follow the same rule as
+// the rest of the model: read-only projections coming from the API.
+// ---------------------------------------------------------------------------
+
+class WorkspaceAgent {
+  const WorkspaceAgent({
+    required this.id,
+    required this.name,
+    required this.kind,
+    this.description,
+    this.avatarUrl,
+    this.pullRequests = const [],
+    this.isOnline = false,
+  });
+
+  final String id;
+  final String name;
+  final String kind;
+  final String? description;
+  final String? avatarUrl;
+  final List<String> pullRequests;
+  final bool isOnline;
+}
+
+class AgentRule {
+  const AgentRule({
+    required this.id,
+    required this.title,
+    required this.description,
+    this.enabled = true,
+    this.alwaysOn = false,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final bool enabled;
+  final bool alwaysOn;
+}
+
+class KnowledgeArea {
+  const KnowledgeArea({
+    required this.id,
+    required this.path,
+    required this.contributors,
+    this.singleOwnerPercent,
+    this.note,
+  });
+
+  final String id;
+  final String path;
+
+  /// `name` → share of the commits (0..1).
+  final Map<String, double> contributors;
+  final double? singleOwnerPercent;
+  final String? note;
+}
+
+class CommitEntry {
+  const CommitEntry({
+    required this.sha,
+    required this.message,
+    required this.author,
+    required this.branch,
+    this.date,
+  });
+
+  final String sha;
+  final String message;
+  final String author;
+  final String branch;
+  final DateTime? date;
+}
+
+class ReleaseNote {
+  const ReleaseNote({
+    required this.id,
+    required this.version,
+    required this.projectName,
+    this.releaseDate,
+    this.items = const [],
+    this.blockedReason,
+    this.blockedTaskKey,
+  });
+
+  final String id;
+  final String version;
+  final String projectName;
+  final DateTime? releaseDate;
+  final List<String> items;
+  final String? blockedReason;
+  final String? blockedTaskKey;
+}
+
+class TaskDependency {
+  const TaskDependency({
+    required this.id,
+    required this.taskKey,
+    required this.title,
+    required this.state,
+    this.reason,
+    this.assigneeName,
+  });
+
+  final String id;
+  final String taskKey;
+  final String title;
+
+  /// `blocked` | `blocking` | `review`
+  final String state;
+  final String? reason;
+  final String? assigneeName;
+}
+
+class InviteRequest {
+  const InviteRequest({
+    required this.id,
+    required this.email,
+    required this.role,
+    this.requestedAt,
+    this.source = 'invite_link',
+  });
+
+  final String id;
+  final String email;
+  final String role;
+  final DateTime? requestedAt;
+  final String source;
+}
+
+class UnlinkedContributor {
+  const UnlinkedContributor({
+    required this.id,
+    required this.handle,
+    required this.commitsCount,
+    this.isBot = false,
+  });
+
+  final String id;
+  final String handle;
+  final int commitsCount;
+  final bool isBot;
+}
+
+class CodePlatform {
+  const CodePlatform({
+    required this.id,
+    required this.name,
+    required this.connected,
+    this.workspace,
+    this.memberCount = 0,
+  });
+
+  final String id;
+  final String name;
+  final bool connected;
+  final String? workspace;
+  final int memberCount;
+}
+
+class BillingSummary {
+  const BillingSummary({
+    required this.planName,
+    required this.seatsUsed,
+    required this.seatsTotal,
+    this.billingCycle,
+    this.paymentMethod,
+    this.invoices = const [],
+  });
+
+  final String planName;
+  final int seatsUsed;
+  final int seatsTotal;
+  final String? billingCycle;
+  final String? paymentMethod;
+  final List<({String id, String date, double amount})> invoices;
+}
+
+class RegionalCalendar {
+  const RegionalCalendar({
+    required this.id,
+    required this.country,
+    this.workWeek = const [],
+    this.holidays = const [],
+  });
+
+  final String id;
+  final String country;
+
+  /// ISO weekday numbers (1 = Monday).
+  final List<int> workWeek;
+  final List<({String name, DateTime? date})> holidays;
+}
+
+class EstimateRecord {
+  const EstimateRecord({
+    required this.id,
+    required this.taskKey,
+    required this.title,
+    required this.estimate,
+    required this.actual,
+    this.category,
+  });
+
+  final String id;
+  final String taskKey;
+  final String title;
+  final int estimate;
+  final int actual;
+  final String? category;
+}
+
+class SprintRetro {
+  const SprintRetro({
+    required this.id,
+    required this.sprintName,
+    this.notes = const [],
+    this.completedPoints = 0,
+    this.committedPoints = 0,
+  });
+
+  final String id;
+  final String sprintName;
+  final List<String> notes;
+  final int completedPoints;
+  final int committedPoints;
+}
+
+class WeeklyClientSummary {
+  const WeeklyClientSummary({
+    required this.id,
+    required this.clientName,
+    required this.items,
+    this.pullRequestCount = 0,
+    this.generatedAt,
+  });
+
+  final String id;
+  final String clientName;
+  final List<String> items;
+  final int pullRequestCount;
+  final DateTime? generatedAt;
+}
+
+class ProjectReport {
+  const ProjectReport({
+    required this.id,
+    required this.projectName,
+    this.averagePointsPerSprint,
+    this.averageCycleDays,
+    this.reworkRatio,
+    this.workDistribution = const <String, double>{},
+    this.averageFirstReviewHours,
+  });
+
+  final String id;
+  final String projectName;
+  final double? averagePointsPerSprint;
+  final double? averageCycleDays;
+  final double? reworkRatio;
+
+  /// `state` → share of the work (0..1).
+  final Map<String, double> workDistribution;
+  final double? averageFirstReviewHours;
 }
