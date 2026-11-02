@@ -223,7 +223,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
           onChanged: (_) => setState(() {}),
           decoration: const InputDecoration(
             labelText: 'البريد الإلكتروني',
-            hintText: 'name@company.com',
+            hintText: 'name@example.com',
           ),
         ),
         const SizedBox(height: 8),

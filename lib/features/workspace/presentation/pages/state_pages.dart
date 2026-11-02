@@ -406,7 +406,7 @@ class RichNotificationPage extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
-              const Text('أحمد طلب مراجعتك على PR #58'),
+              const Text('طلب مراجعة جديد على PR #58'),
               const SizedBox(height: 12),
               Row(
                 children: [

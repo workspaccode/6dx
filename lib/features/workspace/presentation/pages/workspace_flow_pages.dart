@@ -332,7 +332,7 @@ class BulkInvitePage extends StatelessWidget {
         const TextField(
           maxLines: 6,
           decoration: InputDecoration(
-            hintText: 'name@company.com\\nname@company.com',
+            hintText: 'name@example.com\\nname@example.com',
           ),
         ),
         const SizedBox(height: 16),
