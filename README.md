@@ -187,6 +187,28 @@ flutter run \
 The publishable key is safe to ship in the app; never put the service-role key
 in the client.
 
+### Database
+
+`supabase/migrations/0001_init.sql` contains the whole 6DX schema:
+
+* `workspaces`, `workspace_members`, `workspace_invites`
+* `projects`, `repositories`, `project_labels`, `integrations`
+* `sprints`, `sprint_items`, `tasks`, `task_comments`, `task_subtasks`,
+  `task_dependencies`, `pull_requests`
+* `notifications`, `activity_events`, `digest_entries`, `client_reports`,
+  `time_entries`
+* row level security on every table, scoped by `is_workspace_member()`
+* `get_workspace_snapshot(workspace_id)` — a `jsonb` function that returns the
+  exact payload the Flutter app expects (the same shape as
+  `WorkspaceSnapshot` in `features/workspace/domain/entities`)
+
+Apply it with the Supabase MCP (`execute_sql`) or the CLI:
+
+```bash
+supabase link --project-ref ifrpswaclrrsshspdmzd
+supabase db push
+```
+
 ### Limits of the free plan
 
 The free plan is comfortable for an early release: 50,000 monthly active
