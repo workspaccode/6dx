@@ -47,9 +47,19 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
         title: Text(context.l10n.projects),
         actions: [
           IconButton(
+            tooltip: 'البحث',
+            onPressed: () => context.push(AppRoutes.taskSearch),
+            icon: const Icon(Icons.search_rounded),
+          ),
+          IconButton(
             tooltip: 'الإشعارات',
             onPressed: () => context.push(AppRoutes.notifications),
             icon: const Icon(Icons.notifications_none_rounded),
+          ),
+          IconButton(
+            tooltip: 'إعدادات المشروع',
+            onPressed: () => context.push(AppRoutes.projectSettings),
+            icon: const Icon(Icons.settings_outlined),
           ),
         ],
       ),

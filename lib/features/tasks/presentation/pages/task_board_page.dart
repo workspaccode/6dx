@@ -9,6 +9,7 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/task.dart';
 import '../providers/task_providers.dart';
+import '../widgets/task_view_switcher.dart';
 
 @RoutePage()
 class TaskBoardPage extends ConsumerWidget {
@@ -24,6 +25,11 @@ class TaskBoardPage extends ConsumerWidget {
         title: const Text('لوحة المهام'),
         actions: [
           IconButton(
+            tooltip: 'البحث',
+            onPressed: () => context.push(AppRoutes.taskSearch),
+            icon: const Icon(Icons.search_rounded),
+          ),
+          IconButton(
             onPressed: () => ref.read(tasksNotifierProvider.notifier).refresh(),
             icon: const Icon(Icons.sync_rounded),
           ),
@@ -34,6 +40,25 @@ class TaskBoardPage extends ConsumerWidget {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
               children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: const TaskViewSwitcher(current: 'لوحة'),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'الـ Backlog',
+                      onPressed: () => context.push(AppRoutes.backlog),
+                      icon: const Icon(Icons.layers_outlined),
+                    ),
+                    IconButton(
+                      tooltip: 'تخطيط الـ Sprint',
+                      onPressed: () => context.push(AppRoutes.sprintPlan),
+                      icon: const Icon(Icons.flag_outlined),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
                 const _BoardHeader(),
                 const SizedBox(height: 16),
                 for (final status in TaskStatus.values) ...[
@@ -46,7 +71,7 @@ class TaskBoardPage extends ConsumerWidget {
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateSheet(context, ref),
+        onPressed: () => context.push(AppRoutes.newTask),
         backgroundColor: AppColors.accent,
         foregroundColor: AppColors.background,
         icon: const Icon(Icons.add),
@@ -55,44 +80,6 @@ class TaskBoardPage extends ConsumerWidget {
     );
   }
 
-  void _showCreateSheet(BuildContext context, WidgetRef ref) {
-    final titleController = TextEditingController();
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('إنشاء مهمة', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
-            TextField(
-              controller: titleController,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'عنوان المهمة'),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () async {
-                final title = titleController.text.trim();
-                Navigator.of(sheetContext).pop();
-                if (title.isEmpty) return;
-                await ref.read(tasksNotifierProvider.notifier).create(title: title);
-              },
-              child: const Text('إضافة'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _BoardHeader extends StatelessWidget {

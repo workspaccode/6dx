@@ -75,17 +75,47 @@ class ProfilePage extends ConsumerWidget {
           _MenuTile(
             icon: Icons.group_work_outlined,
             title: 'حجم شغل الفريق',
-            onTap: () {},
+            onTap: () => context.push(AppRoutes.workload),
+          ),
+          _MenuTile(
+            icon: Icons.wb_sunny_outlined,
+            title: 'الملخص اليومي',
+            onTap: () => context.push(AppRoutes.digest),
           ),
           _MenuTile(
             icon: Icons.notifications_none_rounded,
             title: 'الإشعارات',
-            onTap: () => context.push(AppRoutes.notifications),
+            onTap: () => context.push(AppRoutes.notifSettings),
+          ),
+          _MenuTile(
+            icon: Icons.center_focus_strong_outlined,
+            title: 'وضع التركيز',
+            onTap: () => context.push(AppRoutes.focusMode),
+          ),
+          _MenuTile(
+            icon: Icons.business_outlined,
+            title: 'بوابة العميل',
+            onTap: () => context.push(AppRoutes.clientPortal),
+          ),
+          _MenuTile(
+            icon: Icons.receipt_long_outlined,
+            title: 'الفواتير',
+            onTap: () => context.push(AppRoutes.invoice),
+          ),
+          _MenuTile(
+            icon: Icons.schedule_outlined,
+            title: 'الوقت المحسوب',
+            onTap: () => context.push(AppRoutes.timeTracking),
           ),
           _MenuTile(
             icon: Icons.lock_outline_rounded,
-            title: 'الحسابات المربوطة والأمان',
-            onTap: () {},
+            title: 'إعدادات الحساب',
+            onTap: () => context.push(AppRoutes.accountSettings),
+          ),
+          _MenuTile(
+            icon: Icons.help_outline_rounded,
+            title: 'المساعدة وما الجديد',
+            onTap: () => context.push(AppRoutes.help),
           ),
           _MenuTile(
             icon: Icons.folder_outlined,

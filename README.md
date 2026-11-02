@@ -82,17 +82,40 @@ lib/
 * **Either/or pattern with Freezed unions** — `TaskStatus`, `TaskPriority`,
   `Failure` and `Result` are sealed and exhaustively matched with `switch`.
 
-## Feature map (from the design)
+## Screen coverage (honest numbers)
 
-| Design screen group              | Flutter implementation                          |
-|----------------------------------|--------------------------------------------------|
-| الدخول والتسجيل                  | `LoginPage`, `SignUpPage`, `VerifyOtpPage`, `OnboardingPage`, `SetupChecklistPage` |
-| الحساب ومساحات العمل             | `ProfilePage`, `Settings` theme + locale providers |
-| المشاريع والربط بـ GitHub       | `ProjectsPage`, `CreateProjectPage`, `ConnectRepositoryPage` (Retrofit GitHub API) |
-| المهام: العرض والتنظيم          | `TaskBoardPage` (Kanban), `MyTasksPage`, `ReviewsPage` |
-| المهمة الواحدة                   | `TaskDetailPage` (assignee, PR, checks, activity, comments) |
-| الإشعارات والتركيز               | `NotificationsPage`, `NotificationService` (awesome_notifications) |
-| أخطاء الحالات                    | `AppEmptyState`, `AppErrorView`, `AppLoadingView`, `SkeletonBox` |
+The design export contains **92 mobile screens** and **51 web screens** (143 total).
+This Flutter app implements **44 mobile screens** (~48 % of the mobile set);
+**the 51 web screens are not implemented** — this repository is the mobile app.
+
+### Implemented (44)
+
+| Area | Screens |
+|---|---|
+| الدخول والتسجيل | `LoginPage`, `SignUpPage`, `VerifyOtpPage`, `OnboardingPage`, `SetupChecklistPage` |
+| الحساب ومساحات العمل | `ProfilePage`, `AccountSettingsPage`, `WorkspaceCreatePage`, `NotifSettingsPage`, `FocusModePage`, `HelpPage` |
+| المشاريع والربط بـ GitHub | `ProjectsPage`, `CreateProjectPage`, `ConnectRepositoryPage`, `ProjectSettingsPage`, `SyncSettingsPage`, `LabelsPage`, `IntegrationsPage`, `ActivityLogPage`, `ArchivePage` |
+| الدعوات والأعضاء | `MembersPage`, `InvitePage` |
+| المهام: العرض والتنظيم | `TaskBoardPage` (Kanban), `TaskListPage`, `TaskCalendarPage`, `TaskSearchPage`, `MyTasksPage`, `ReviewsPage` |
+| المهمة الواحدة | `NewTaskPage`, `TaskDetailPage`, `SubtasksPage`, `CommentsPage` |
+| الـ Sprints والتخطيط | `BacklogPage`, `SprintPlanPage`, `SprintSummaryPage` |
+| المراجعة وGitHub | `PrDetailPage`, `CiFailurePage`, `ReviewSlaPage` |
+| الإشعارات | `NotificationsPage` |
+| الفريق والعمل | `WorkloadPage`, `DigestPage` |
+| العملاء والوكالات | `ClientPortalPage`, `InvoicePage`, `TimeTrackingPage` |
+
+### Not implemented yet (48 mobile + 51 web)
+
+Workspace switching · GitHub App install · issue import · contributor mapping ·
+multi-provider · invite acceptance/expiry/bulk · join requests · task editing ·
+status sheet · dependencies · task context · bug report · sprint history ·
+estimate learning · reviewer picker · big-PR warning · merge-from-app ·
+commits · release tracker · rich notifications · home-screen widget ·
+agents team · agent assignment · knowledge map · ask-project · project report ·
+weekly summary · billing/invoices settings · export data · regional calendar ·
+all empty/error/offline states (offline, sync-failed, access-revoked,
+no-permission, not-found, skeleton) · English-LTR and light-mode showcase ·
+components gallery · **and the 51 web screens**.
 
 ## GitHub authentication
 

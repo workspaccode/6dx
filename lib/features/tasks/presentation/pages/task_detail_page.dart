@@ -1,8 +1,11 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../routes/app_router.dart';
+import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/task.dart';
 import '../providers/task_providers.dart';
@@ -16,7 +19,16 @@ class TaskDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasks = ref.watch(tasksNotifierProvider).value ?? const [];
+    final tasksState = ref.watch(tasksNotifierProvider);
+    final tasks = tasksState.value ?? const <Task>[];
+
+    if (tasksState.isLoading && tasks.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('تفاصيل المهمة')),
+        body: const AppLoadingView(),
+      );
+    }
+
     final task = tasks.where((t) => t.id == taskId).firstOrNull;
 
     if (task == null) {
@@ -81,11 +93,16 @@ class TaskDetailPage extends ConsumerWidget {
           const SizedBox(height: 24),
           Text('على GitHub', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          _GithubCard(
-            repository: task.projectName ?? 'acme/store-mobile',
-            issueNumber: '57',
-            branch: task.branchName ?? 'feat/MOB-24-otp',
-            prNumber: task.prNumber,
+          InkWell(
+            onTap: () => context.push(
+              AppRoutes.prDetailPath(task.prNumber ?? '58'),
+            ),
+            child: _GithubCard(
+              repository: task.projectName ?? 'acme/store-mobile',
+              issueNumber: '57',
+              branch: task.branchName ?? 'feat/MOB-24-otp',
+              prNumber: task.prNumber,
+            ),
           ),
           const SizedBox(height: 24),
           Text('النشاط', style: Theme.of(context).textTheme.titleMedium),
@@ -124,6 +141,30 @@ class TaskDetailPage extends ConsumerWidget {
                       .read(tasksNotifierProvider.notifier)
                       .updateStatus(task.id, status),
                 ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push(
+                    AppRoutes.subtasksPath(task.id),
+                  ),
+                  icon: const Icon(Icons.checklist_rounded),
+                  label: const Text('المهام الفرعية'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push(
+                    AppRoutes.commentsPath(task.id),
+                  ),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: const Text('التعليقات'),
+                ),
+              ),
             ],
           ),
         ],
