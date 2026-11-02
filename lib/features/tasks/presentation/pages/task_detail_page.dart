@@ -8,6 +8,7 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/task.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 import 'task_board_page.dart';
 
@@ -80,10 +81,10 @@ class TaskDetailPage extends ConsumerWidget {
             label: 'المسؤول',
             value: task.assigneeName ?? '—',
           ),
-          const _InfoRow(
+          _InfoRow(
             icon: Icons.person_search_outlined,
             label: 'المراجِع',
-            value: 'سارة',
+            value: task.assigneeName ?? '—',
           ),
           const _InfoRow(
             icon: Icons.event_outlined,
@@ -98,27 +99,22 @@ class TaskDetailPage extends ConsumerWidget {
               AppRoutes.prDetailPath(task.prNumber ?? '58'),
             ),
             child: _GithubCard(
-              repository: task.projectName ?? 'acme/store-mobile',
-              issueNumber: '57',
-              branch: task.branchName ?? 'feat/MOB-24-otp',
+              repository: task.projectName ?? '—',
+              issueNumber: task.key,
+              branch: task.branchName ?? '—',
               prNumber: task.prNumber,
             ),
           ),
           const SizedBox(height: 24),
           Text('النشاط', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          const _ActivityItem(
-            icon: Icons.auto_awesome,
-            title: 'نُقلت المهمة تلقائيًا إلى «مراجعة»',
-            subtitle: 'منذ 40 دقيقة · آليًا',
-            color: AppColors.info,
-          ),
-          const _ActivityItem(
-            icon: Icons.chat_bubble_outline_rounded,
-            title: 'علّقت: هل عدد المحاولات محدود قبل قفل الكود مؤقتًا؟',
-            subtitle: 'منذ 15 دقيقة · سارة',
-            color: AppColors.textMuted,
-          ),
+          for (final event in ref.watch(workspaceActivityProvider))
+            _ActivityItem(
+              icon: Icons.auto_awesome,
+              title: event.text,
+              subtitle: event.actor ?? 'آليًا',
+              color: AppColors.info,
+            ),
           const SizedBox(height: 16),
           const TextField(
             decoration: InputDecoration(

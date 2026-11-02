@@ -198,7 +198,7 @@ class _HeroCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'MOB-24',
+                'معاينة',
                 style: Theme.of(context).textTheme.labelSmall,
               ),
               Container(
@@ -226,7 +226,7 @@ class _HeroCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const _MonoTag(label: 'PR #58'),
+              const _MonoTag(label: 'معاينة الواجهة'),
               const SizedBox(width: 8),
               const Text(
                 '4/4 فحوصات ناجحة',

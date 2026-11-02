@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/app_providers.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 
@@ -59,10 +60,10 @@ class AccountSettingsPage extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         const SectionLabel('الأمان'),
-        const SettingsTile(
+        SettingsTile(
           icon: Icons.email_outlined,
           title: 'الإيميل',
-          subtitle: 'osama@company.com',
+          subtitle: ref.watch(authNotifierProvider).value?.email ?? '—',
           color: AppColors.info,
         ),
         const SettingsTile(
@@ -334,7 +335,7 @@ class _WorkspaceCreatePageState extends State<WorkspaceCreatePage> {
           decoration: InputDecoration(
             labelText: 'اسم الشركة أو الفريق',
             prefixText: '6dx.app/',
-            hintText: 'acme',
+            hintText: 'my-company',
           ),
         ),
         const SizedBox(height: 16),
@@ -354,7 +355,7 @@ class _WorkspaceCreatePageState extends State<WorkspaceCreatePage> {
         const SectionLabel('ربط مؤسسة GitHub'),
         const SettingsTile(
           icon: Icons.business_rounded,
-          title: 'acme-org',
+          title: 'ربط مؤسسة GitHub',
           subtitle: 'نقترح أعضاء المؤسسة عليك عند الدعوة',
           color: AppColors.accent,
           trailing: TextButton(onPressed: null, child: Text('ربط')),

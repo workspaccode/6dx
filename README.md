@@ -33,10 +33,30 @@ flutter run
 Useful flags:
 
 ```bash
-flutter run --dart-define=USE_MOCK=false          # hit the real API
 flutter run --dart-define=API_BASE_URL=https://api.example.com
 flutter run --dart-define=GITHUB_CLIENT_ID=xxxx --dart-define=GITHUB_CLIENT_SECRET=yyyy
+flutter run --dart-define=USE_MOCK=true           # demo catalogue (see below)
 ```
+
+## No fake data in a normal build
+
+The app **never invents workspace content**. `USE_MOCK` defaults to `false`,
+so every screen renders exactly one of:
+
+1. the API response,
+2. an honest empty state (`AppEmptyState`), or
+3. an error state (the workspace provider resolves to an empty snapshot and
+   exposes the reason through `workspaceErrorProvider`).
+
+All sample content lives in a single file — `lib/core/demo/demo_data.dart` —
+and is only reachable with `--dart-define=USE_MOCK=true`. When demo mode is
+on, a banner («بيانات تجريبية») appears on the main screens so the sample
+content is never mistaken for real data. The demo catalogue is consumed
+through the same repository/provider path as the real API, so nothing in the
+UI layer is aware of the difference.
+
+A regression test (`test/no_fake_data_test.dart`) asserts that the default
+build serves an empty workspace instead of the demo records.
 
 ## Architecture
 
@@ -45,6 +65,7 @@ lib/
 ├── app/                 # composition root (SixDxApp + global providers)
 ├── core/
 │   ├── config/          # AppConfig (mock mode, endpoints)
+│   ├── demo/            # the demo catalogue + "demo data" banner
 │   ├── constants/       # colors, constants, endpoints
 │   ├── errors/          # Failure (sealed) + exceptions
 │   ├── extensions/      # BuildContext.l10n
@@ -58,6 +79,10 @@ lib/
 │   ├── domain/          # entities, repository contracts, use cases
 │   ├── data/            # models, data sources, repository implementations
 │   └── presentation/    # pages, providers (Riverpod), widgets
+├── features/workspace/  # one aggregated workspace projection
+│   ├── domain/          # WorkspaceSnapshot + all sub-entities
+│   ├── data/            # API data source + JSON mapper
+│   └── presentation/    # providers used by every secondary screen
 ├── routes/              # go_router (AppRoutes) + auto_route typed table
 └── shared/widgets/      # reusable UI (logo, badges, empty/error states)
 ```

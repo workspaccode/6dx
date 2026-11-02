@@ -1,174 +1,191 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 
-/// حجم شغل الفريق — V2Workload.dc.html
+/// حجم شغل الفريق
 @RoutePage()
-class WorkloadPage extends StatelessWidget {
+class WorkloadPage extends ConsumerWidget {
   const WorkloadPage({super.key});
 
-  static const _members = <(String, int, int, Color)>[
-    ('أحمد', 13, 10, AppColors.danger),
-    ('سارة', 11, 12, AppColors.warning),
-    ('منى', 5, 10, AppColors.success),
-    ('عماد', 7, 8, AppColors.accent),
-  ];
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final workload = ref.watch(workspaceWorkloadProvider);
+    final suggestions = ref.watch(workspaceSuggestionsProvider);
+
     return AppScreen(
       title: 'حجم شغل الفريق',
-      subtitle: 'تطبيق المتجر · Sprint 4',
+      subtitle: workload.isEmpty ? null : 'Sprint الحالي',
       children: [
-        const SectionLabel('النقاط المفتوحة مقابل السعة'),
-        for (final (name, open, capacity, color) in _members)
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Theme.of(context).colorScheme.outline),
-            ),
-            child: Column(
-              children: [
-                Row(
+        if (workload.isEmpty && suggestions.isEmpty)
+          const AppEmptyState(
+            icon: Icons.group_work_outlined,
+            title: 'لا توجد بيانات حمل',
+            message: 'ستظهر نقاط كل عضو بعد توزيع المهام في الـ Sprint.',
+          )
+        else ...[
+          if (workload.isNotEmpty) ...[
+            const SectionLabel('النقاط المفتوحة مقابل السعة'),
+            for (final entry in workload)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: entry.overloaded
+                        ? AppColors.danger.withValues(alpha: 0.5)
+                        : Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                child: Column(
                   children: [
-                    Expanded(child: Text(name, style: Theme.of(context).textTheme.titleMedium)),
-                    Text(
-                      '$open / $capacity نقاط',
-                      style: TextStyle(
-                        fontFamily: 'JetBrainsMono',
-                        fontSize: 12,
-                        color: color,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(entry.name,
+                              style: Theme.of(context).textTheme.titleMedium),
+                        ),
+                        Text(
+                          '${entry.openPoints} / ${entry.capacity} نقاط',
+                          style: TextStyle(
+                            fontFamily: 'JetBrainsMono',
+                            fontSize: 12,
+                            color:
+                                entry.overloaded ? AppColors.danger : AppColors.accent,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(999),
+                      child: LinearProgressIndicator(
+                        value: entry.capacity == 0
+                            ? 0
+                            : (entry.openPoints / entry.capacity).clamp(0.0, 1.0),
+                        minHeight: 8,
+                        color: entry.overloaded ? AppColors.danger : AppColors.accent,
+                        backgroundColor: AppColors.border,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: LinearProgressIndicator(
-                    value: (open / capacity).clamp(0.0, 1.0),
-                    minHeight: 8,
-                    color: color,
-                    backgroundColor: AppColors.border,
-                  ),
+              ),
+          ],
+          if (suggestions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const SectionLabel('اقتراح لإعادة التوزيع'),
+            for (final suggestion in suggestions)
+              AppPanel(
+                accent: AppColors.accent,
+                margin: const EdgeInsetsDirectional.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.swap_horiz_rounded, color: AppColors.accent),
+                        const SizedBox(width: 8),
+                        Text(suggestion.taskTitle,
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${suggestion.taskTitle} (${suggestion.points} نقاط) من '
+                      '${suggestion.fromMemberName} إلى ${suggestion.toMemberName}'
+                      '${suggestion.reason == null ? '' : ' — ${suggestion.reason}'}',
+                      style: const TextStyle(color: AppColors.textMuted),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {},
+                            child: const Text('نقل المهمة'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {},
+                            child: const Text('تجاهل'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        const SizedBox(height: 8),
-        const SectionLabel('اقتراح لإعادة التوزيع'),
-        AppPanel(
-          accent: AppColors.accent,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.swap_horiz_rounded, color: AppColors.accent),
-                  const SizedBox(width: 8),
-                  Text('نقل MOB-22', style: Theme.of(context).textTheme.titleMedium),
-                ],
               ),
-              const SizedBox(height: 8),
-              const Text(
-                '«فلترة المنتجات» (3 نقاط) من أحمد إلى منى — لم يبدأ عليها أحد بعد.',
-                style: TextStyle(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton(onPressed: () {}, child: const Text('نقل المهمة')),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton(onPressed: () {}, child: const Text('تجاهل')),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+          ],
+        ],
       ],
     );
   }
 }
 
-/// الملخص اليومي — V2Digest.dc.html
+/// الملخص اليومي
 @RoutePage()
-class DigestPage extends StatelessWidget {
+class DigestPage extends ConsumerWidget {
   const DigestPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final digest = ref.watch(workspaceDigestProvider);
+    final user = ref.watch(authNotifierProvider).value;
+
     return AppScreen(
-      title: 'صباح الخير يا أسامة',
-      subtitle: 'الإثنين 2 نوفمبر · مُجمّع من GitHub تلقائيًا',
+      title: user == null ? 'الملخص اليومي' : 'صباح الخير يا ${user.displayName}',
+      subtitle: 'مُجمّع من GitHub تلقائيًا',
       children: [
-        const SectionLabel('أمس أنجزت'),
-        AppPanel(
-          child: Text(
-            'دمج PR #50 وإغلاق MOB-18 · 3 commits على MOB-27',
-            style: Theme.of(context).textTheme.bodyMedium,
+        if (digest.isEmpty)
+          const AppEmptyState(
+            icon: Icons.wb_sunny_outlined,
+            title: 'لا يوجد ملخص',
+            message: 'سيظهر ملخص نشاط الأمس هنا.',
+          )
+        else ...[
+          for (final section in const ['done', 'today', 'blocker']) ...[
+            if (digest.any((e) => e.section == section)) ...[
+              SectionLabel(switch (section) {
+                'done' => 'أمس أنجزت',
+                'today' => 'اليوم',
+                _ => 'عوائق في الفريق',
+              }),
+              for (final entry in digest.where((e) => e.section == section))
+                _DigestTile(entry: entry),
+              const SizedBox(height: 12),
+            ],
+          ],
+          FilledButton.icon(
+            onPressed: () {},
+            icon: const Icon(Icons.campaign_outlined),
+            label: const Text('نشر كتحديث Standup للفريق'),
           ),
-        ),
-        const SizedBox(height: 16),
-        const SectionLabel('اليوم'),
-        _TodayItem(
-          color: AppColors.warning,
-          title: 'الإشعارات الفورية لحالة الطلب',
-          detail: 'تسليم غدًا',
-        ),
-        _TodayItem(
-          color: AppColors.info,
-          title: 'مراجعة PR #58 لأحمد',
-          detail: 'صغير · 15 د',
-        ),
-        const SizedBox(height: 16),
-        const SectionLabel('عوائق في الفريق'),
-        _BlockerItem(
-          text: 'PR #55 لمنى ينتظر مراجعة منذ يومين',
-          action: 'مرّر لسارة',
-        ),
-        _BlockerItem(
-          text: 'فحص فاشل على store-api #112',
-          action: 'إعادة تشغيل',
-        ),
-        _BlockerItem(
-          text: 'MOB-31 بلا مسؤول وموعدها الخميس',
-          action: 'تعيين',
-        ),
-        const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.campaign_outlined),
-          label: const Text('نشر كتحديث Standup للفريق'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton(onPressed: () {}, child: const Text('نسخ كنص')),
+          const SizedBox(height: 8),
+          OutlinedButton(onPressed: () {}, child: const Text('نسخ كنص')),
+        ],
       ],
     );
   }
 }
 
-class _TodayItem extends StatelessWidget {
-  const _TodayItem({
-    required this.color,
-    required this.title,
-    required this.detail,
-  });
+class _DigestTile extends StatelessWidget {
+  const _DigestTile({required this.entry});
 
-  final Color color;
-  final String title;
-  final String detail;
+  final dynamic entry;
 
   @override
   Widget build(BuildContext context) {
+    final tone = entry.tone == 'danger' ? AppColors.danger : AppColors.info;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -183,7 +200,7 @@ class _TodayItem extends StatelessWidget {
             width: 4,
             height: 36,
             decoration: BoxDecoration(
-              color: color,
+              color: tone,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -192,39 +209,14 @@ class _TodayItem extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                Text(detail, style: Theme.of(context).textTheme.bodySmall),
+                Text(entry.text, style: Theme.of(context).textTheme.bodyMedium),
+                if (entry.meta != null)
+                  Text(entry.meta!, style: Theme.of(context).textTheme.labelSmall),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BlockerItem extends StatelessWidget {
-  const _BlockerItem({required this.text, required this.action});
-
-  final String text;
-  final String action;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.danger.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
-          TextButton(onPressed: () {}, child: Text(action)),
+          if (entry.actionLabel != null)
+            TextButton(onPressed: () {}, child: Text(entry.actionLabel!)),
         ],
       ),
     );

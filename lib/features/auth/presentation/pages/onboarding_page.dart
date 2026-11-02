@@ -33,7 +33,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           'كل عضو يرى مهامه فقط، وتعرف حجم الشغل الحالي قبل توزيع مهمة جديدة.',
       icon: Icons.groups_rounded,
       accent: AppColors.info,
-      stats: ['سارة · 4 مهام', 'أحمد · 2 مهام', 'عماد · 6 مهام'],
+      stats: ['4 مهام لكل عضو', '5 أعضاء', 'Sprint أسبوعي'],
     ),
     _OnboardingSlide(
       title: 'تابع كل شيء حتى الدمج',
@@ -41,7 +41,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           'مراجعات، فحوصات CI، تعليقات، وسجل نشاط كامل لكل مهمة — من تطبيقك.',
       icon: Icons.rocket_launch_rounded,
       accent: AppColors.purple,
-      stats: ['4/4 فحوصات ناجحة', 'PR #58 · بانتظار المراجعة'],
+      stats: ['فحوصات CI', 'مراجعة قبل الدمج', 'تتبّع الحالة'],
     ),
   ];
 

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/demo/demo_data.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/result.dart';
@@ -14,7 +15,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
 
   final ProjectRemoteDataSource _remote;
 
-  final List<ProjectModel> _cache = List.of(_seedProjects);
+  final List<ProjectModel> _cache = List.of(DemoData.projects);
 
   @override
   Future<Result<List<Project>>> getProjects() => _guard(() async {
@@ -94,54 +95,4 @@ class ProjectRepositoryImpl implements ProjectRepository {
     }
   }
 
-  static final List<ProjectModel> _seedProjects = [
-    const ProjectModel(
-      id: 'p-1',
-      name: '6DX Mobile',
-      description: 'تطبيق الموبايل لإدارة المشاريع والمهام',
-      icon: '📱',
-      colorHex: '#B8F25A',
-      openTasks: 24,
-      doneTasks: 61,
-      membersCount: 8,
-      repositoryFullName: 'sixdx/mobile',
-      updatedAt: null,
-    ),
-    const ProjectModel(
-      id: 'p-2',
-      name: '6DX Web',
-      description: 'لوحة التحكم على الويب',
-      icon: '🌐',
-      colorHex: '#8FB8FF',
-      openTasks: 17,
-      doneTasks: 43,
-      membersCount: 12,
-      repositoryFullName: 'sixdx/web',
-      updatedAt: null,
-    ),
-    const ProjectModel(
-      id: 'p-3',
-      name: 'Design System',
-      description: 'مكتبة التصميم والمواد',
-      icon: '🎨',
-      colorHex: '#C4A5FF',
-      openTasks: 5,
-      doneTasks: 28,
-      membersCount: 4,
-      repositoryFullName: 'sixdx/design-system',
-      updatedAt: null,
-    ),
-    const ProjectModel(
-      id: 'p-4',
-      name: 'API Gateway',
-      description: 'الواجهة الخلفية وواجهات REST',
-      icon: '🛠️',
-      colorHex: '#F5B54A',
-      openTasks: 9,
-      doneTasks: 37,
-      membersCount: 6,
-      repositoryFullName: 'sixdx/api',
-      updatedAt: null,
-    ),
-  ];
 }

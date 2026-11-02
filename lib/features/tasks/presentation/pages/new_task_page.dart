@@ -7,6 +7,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/entities/task.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 
 @RoutePage()
@@ -21,7 +22,7 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
   final _titleController = TextEditingController();
   TaskPriority _priority = TaskPriority.medium;
   final int _points = 3;
-  String _assignee = 'منى';
+  String? _assignee;
   bool _createIssue = true;
   bool _createBranch = true;
 
@@ -31,8 +32,10 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
     super.dispose();
   }
 
-  String get _branch =>
-      'feat/MOB-32-${_titleController.text.trim().isEmpty ? 'task' : _titleController.text.trim().toLowerCase().replaceAll(' ', '-')}';
+  String get _branch {
+    final slug = _titleController.text.trim().toLowerCase().replaceAll(' ', '-');
+    return 'feat/${slug.isEmpty ? 'new-task' : slug}';
+  }
 
   Future<void> _submit() async {
     final title = _titleController.text.trim();
@@ -47,9 +50,10 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
 
   @override
   Widget build(BuildContext context) {
+    final members = ref.watch(workspaceMembersProvider);
     return AppScreen(
       title: 'مهمة جديدة',
-      subtitle: 'MOB-32',
+      subtitle: null,
       children: [
         TextField(
           controller: _titleController,
@@ -60,19 +64,23 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
         const SizedBox(height: 16),
         const SectionLabel('المسؤول'),
         const HintBanner(
-          'الرقم = نقاط مفتوحة هذا الـ Sprint · أحمد لديه حمل أعلى من متوسط الفريق — منى هي الأقل حاليًا.',
+          'اختر عضوًا بعد التحقق من حجم الشغل الحالي عليه.',
         ),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final member in const ['أحمد', 'منى', 'سارة', 'عماد'])
-              ChoiceChip(
-                label: Text(member),
-                selected: _assignee == member,
-                onSelected: (_) => setState(() => _assignee = member),
-              ),
-          ],
-        ),
+        if (members.isEmpty)
+          const Text('لا يوجد أعضاء بعد.',
+              style: TextStyle(color: AppColors.textMuted))
+        else
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final member in members)
+                ChoiceChip(
+                  label: Text(member.name),
+                  selected: _assignee == member.id,
+                  onSelected: (_) => setState(() => _assignee = member.id),
+                ),
+            ],
+          ),
         const SizedBox(height: 20),
         const SectionLabel('الأولوية'),
         Wrap(

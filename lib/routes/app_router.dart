@@ -266,7 +266,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.prDetail,
         builder: (context, state) => PrDetailPage(
-          prNumber: state.pathParameters['number'] ?? '58',
+          prNumber: int.tryParse(state.pathParameters['number'] ?? '') ?? 58,
         ),
       ),
       GoRoute(

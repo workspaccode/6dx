@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/demo/demo_data_banner.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/task.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 import '../widgets/task_view_switcher.dart';
 
@@ -40,6 +42,7 @@ class TaskBoardPage extends ConsumerWidget {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
               children: [
+                const DemoDataBanner(),
                 Row(
                   children: [
                     Expanded(
@@ -82,11 +85,15 @@ class TaskBoardPage extends ConsumerWidget {
 
 }
 
-class _BoardHeader extends StatelessWidget {
+class _BoardHeader extends ConsumerWidget {
   const _BoardHeader();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repos = ref.watch(workspaceRepositoriesProvider);
+    final repoName = repos.isEmpty
+        ? 'لا يوجد مستودع مربوط'
+        : '${repos.first.fullName} · تمت المزامنة منذ دقيقة';
     return Row(
       children: [
         Expanded(
@@ -98,7 +105,7 @@ class _BoardHeader extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               Text(
-                'acme/store-mobile · تمت المزامنة منذ دقيقة',
+                repoName,
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ],

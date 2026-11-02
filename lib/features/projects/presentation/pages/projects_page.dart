@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/demo/demo_data_banner.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/project.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/project_providers.dart';
 
 @RoutePage()
@@ -75,6 +77,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 96),
           children: [
+            const DemoDataBanner(),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
               child: TextField(
@@ -119,9 +122,11 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 12),
-            const _PendingInviteCard(),
-            const SizedBox(height: 8),
+            if (ref.watch(workspaceInvitesProvider).isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const _PendingInviteCard(),
+              const SizedBox(height: 8),
+            ],
             if (projectsState.isLoading && projects.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(40),
@@ -209,7 +214,7 @@ class _PendingInviteCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'سارة دعتك للانضمام إلى مشروع «لوحة التحكم»',
+                  'لديك دعوة للانضمام إلى مشروع',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),

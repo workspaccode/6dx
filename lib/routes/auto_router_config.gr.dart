@@ -467,7 +467,7 @@ class OnboardingRoute extends _i26.PageRouteInfo<void> {
 class PrDetailRoute extends _i26.PageRouteInfo<PrDetailRouteArgs> {
   PrDetailRoute({
     _i27.Key? key,
-    String prNumber = '58',
+    int prNumber = 58,
     List<_i26.PageRouteInfo>? children,
   }) : super(
          PrDetailRoute.name,
@@ -489,11 +489,11 @@ class PrDetailRoute extends _i26.PageRouteInfo<PrDetailRouteArgs> {
 }
 
 class PrDetailRouteArgs {
-  const PrDetailRouteArgs({this.key, this.prNumber = '58'});
+  const PrDetailRouteArgs({this.key, this.prNumber = 58});
 
   final _i27.Key? key;
 
-  final String prNumber;
+  final int prNumber;
 
   @override
   String toString() {

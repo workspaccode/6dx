@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/demo/demo_data.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/result.dart';
@@ -14,7 +15,7 @@ class TaskRepositoryImpl implements TaskRepository {
 
   final TaskRemoteDataSource _remote;
 
-  final List<TaskModel> _cache = List.of(_seedTasks);
+  final List<TaskModel> _cache = List.of(DemoData.tasks);
 
   @override
   Future<Result<List<Task>>> getTasks({String? projectId}) => _guard(() async {
@@ -105,94 +106,4 @@ class TaskRepositoryImpl implements TaskRepository {
     }
   }
 
-  static final List<TaskModel> _seedTasks = [
-    const TaskModel(
-      id: '58',
-      title: 'صفحة تسجيل الدخول بكود OTP',
-      description: 'تصميم وتنفيذ صفحة التحقق بخطأ لمرة واحدة (OTP).',
-      status: TaskStatus.review,
-      priority: TaskPriority.high,
-      projectId: 'p-1',
-      projectName: 'Mobile',
-      assigneeName: 'Sami',
-      label: 'مراجعة',
-      prNumber: '58',
-      branchName: 'feat/otp-login',
-      subtasksDone: 4,
-      subtasksTotal: 4,
-      commentsCount: 7,
-    ),
-    const TaskModel(
-      id: '61',
-      title: 'ربط مستودع GitHub عبر GitHub App',
-      description: 'تثبيت التطبيق والتحقق من الصلاحيات.',
-      status: TaskStatus.inProgress,
-      priority: TaskPriority.urgent,
-      projectId: 'p-1',
-      projectName: 'Mobile',
-      assigneeName: 'Nadia',
-      label: 'تطوير',
-      prNumber: '61',
-      branchName: 'feat/github-app',
-      subtasksDone: 3,
-      subtasksTotal: 6,
-      commentsCount: 4,
-    ),
-    const TaskModel(
-      id: '63',
-      title: 'لوحة المهام — عرض الكانبو',
-      description: 'السحب والإفلات بين الأعمدة.',
-      status: TaskStatus.todo,
-      priority: TaskPriority.medium,
-      projectId: 'p-1',
-      projectName: 'Mobile',
-      assigneeName: 'Omar',
-      label: 'تطوير',
-      subtasksDone: 0,
-      subtasksTotal: 4,
-      commentsCount: 0,
-    ),
-    const TaskModel(
-      id: '70',
-      title: 'الملخص اليومي للإشعارات',
-      description: 'إرسال ملخص يومي بالبريد.',
-      status: TaskStatus.done,
-      priority: TaskPriority.low,
-      projectId: 'p-2',
-      projectName: 'Web',
-      assigneeName: 'Sami',
-      label: 'مهمة',
-      subtasksDone: 5,
-      subtasksTotal: 5,
-      commentsCount: 2,
-    ),
-    const TaskModel(
-      id: '72',
-      title: 'تقرير الفاتورة للعميل',
-      description: 'تصدير PDF مع الوقت المحسوب.',
-      status: TaskStatus.inProgress,
-      priority: TaskPriority.high,
-      projectId: 'p-2',
-      projectName: 'Web',
-      assigneeName: 'Lina',
-      label: 'عميل',
-      subtasksDone: 2,
-      subtasksTotal: 5,
-      commentsCount: 3,
-    ),
-    const TaskModel(
-      id: '75',
-      title: 'خريطة المعرفة داخل المشروع',
-      description: 'فهرسة المستندات والقرارات.',
-      status: TaskStatus.todo,
-      priority: TaskPriority.medium,
-      projectId: 'p-3',
-      projectName: 'Design',
-      assigneeName: 'Omar',
-      label: 'بحث',
-      subtasksDone: 1,
-      subtasksTotal: 3,
-      commentsCount: 1,
-    ),
-  ];
 }

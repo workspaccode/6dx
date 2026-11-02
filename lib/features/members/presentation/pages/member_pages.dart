@@ -1,74 +1,88 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
+import '../../../workspace/domain/entities/workspace_snapshot.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 
-/// الأعضاء والصلاحيات — V2Members.dc.html
+/// الأعضاء والصلاحيات
 @RoutePage()
-class MembersPage extends StatelessWidget {
+class MembersPage extends ConsumerWidget {
   const MembersPage({super.key});
 
-  static const _members = <(String, String, Color, String)>[
-    ('أسامة', 'مالك', AppColors.accent, 'أس'),
-    ('أحمد', 'مطوّر', AppColors.info, 'أح'),
-    ('سارة', 'مراجِع', AppColors.purple, 'سا'),
-    ('منى', 'مطوّر', AppColors.info, 'من'),
-    ('عماد', 'مشاهد', AppColors.textMuted, 'عم'),
-  ];
-
   @override
-  Widget build(BuildContext context) {
-    return AppScreen(
-      title: 'الأعضاء',
-      subtitle: '5 أعضاء · دعوة واحدة معلّقة',
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.accent,
-        foregroundColor: AppColors.background,
-        onPressed: () {},
-        icon: const Icon(Icons.person_add_alt_1_outlined),
-        label: const Text('+ دعوة'),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final members = ref.watch(workspaceMembersProvider);
+    final invites = ref.watch(workspaceInvitesProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('الأعضاء${members.isEmpty ? '' : ' · ${members.length}'}'),
       ),
-      children: [
-        for (final (name, role, color, initials) in _members)
-          Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Theme.of(context).colorScheme.outline),
+      floatingActionButton: members.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              backgroundColor: AppColors.accent,
+              foregroundColor: AppColors.background,
+              onPressed: () {},
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: const Text('+ دعوة'),
             ),
-            child: Row(
+      body: members.isEmpty && invites.isEmpty
+          ? const AppEmptyState(
+              icon: Icons.group_outlined,
+              title: 'لا يوجد أعضاء',
+              message: 'ادعُ فريقك لعرض المشروع معك.',
+            )
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 96),
               children: [
-                InitialsAvatar(name: initials, color: color),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, style: Theme.of(context).textTheme.titleMedium),
-                      Text(role, style: Theme.of(context).textTheme.bodySmall),
-                    ],
+                for (final member in members)
+                  _MemberTile(
+                    member: member,
+                    onRemove: () => _showRemoveSheet(context, ref, member),
                   ),
-                ),
-                PopupMenuButton<String>(
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'change', child: Text('تغيير الصلاحية')),
-                    PopupMenuItem(value: 'remove', child: Text('إزالة من المشروع')),
-                  ],
-                  onSelected: (value) {
-                    if (value == 'remove') _showRemoveSheet(context, name);
-                  },
-                ),
+                if (invites.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const SectionLabel('دعوات معلّقة'),
+                  for (final invite in invites)
+                    AppPanel(
+                      margin: const EdgeInsetsDirectional.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.mail_outline_rounded,
+                              color: AppColors.warning),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(invite.email),
+                                Text(
+                                  '${invite.role} · بانتظار القبول',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ],
             ),
-          ),
-      ],
     );
   }
 
-  void _showRemoveSheet(BuildContext context, String member) {
+  void _showRemoveSheet(
+    BuildContext context,
+    WidgetRef ref,
+    WorkspaceMember member,
+  ) {
+    final members = ref.read(workspaceMembersProvider);
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => Padding(
@@ -78,21 +92,28 @@ class MembersPage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'إزالة $member من المشروع؟',
+              'إزالة ${member.name} من المشروع؟',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text('مهامه المفتوحة (4) تنتقل إلى:',
+            Text('مهامه المفتوحة (${member.openTasks}) تنتقل إلى:',
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 12),
-            for (final option in const ['منى — 5 نقاط', 'سارة — 8 نقاط', 'بدون مسؤول'])
+            for (final option in members.where((m) => m.id != member.id))
               ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.person_outline, size: 18),
-                title: Text(option),
+                title: Text(option.name),
                 onTap: () => Navigator.of(sheetContext).pop(),
               ),
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.person_off_outlined, size: 18),
+              title: const Text('بدون مسؤول'),
+              onTap: () => Navigator.of(sheetContext).pop(),
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -122,16 +143,63 @@ class MembersPage extends StatelessWidget {
   }
 }
 
-/// دعوة الفريق — Invite.dc.html
+class _MemberTile extends StatelessWidget {
+  const _MemberTile({required this.member, required this.onRemove});
+
+  final WorkspaceMember member;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).colorScheme.outline),
+      ),
+      child: Row(
+        children: [
+          InitialsAvatar(
+            name: member.initials,
+            color: member.isOnline ? AppColors.accent : AppColors.info,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(member.name, style: Theme.of(context).textTheme.titleMedium),
+                Text(member.role, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'change', child: Text('تغيير الصلاحية')),
+              PopupMenuItem(value: 'remove', child: Text('إزالة من المشروع')),
+            ],
+            onSelected: (value) {
+              if (value == 'remove') onRemove();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// دعوة الفريق
 @RoutePage()
-class InvitePage extends StatefulWidget {
+class InvitePage extends ConsumerStatefulWidget {
   const InvitePage({super.key});
 
   @override
-  State<InvitePage> createState() => _InvitePageState();
+  ConsumerState<InvitePage> createState() => _InvitePageState();
 }
 
-class _InvitePageState extends State<InvitePage> {
+class _InvitePageState extends ConsumerState<InvitePage> {
   final _controller = TextEditingController();
   String _role = 'مطوّر';
 
@@ -143,6 +211,8 @@ class _InvitePageState extends State<InvitePage> {
 
   @override
   Widget build(BuildContext context) {
+    final invites = ref.watch(workspaceInvitesProvider);
+
     return AppScreen(
       title: 'دعوة الفريق',
       subtitle: '1 · التفاصيل   2 · المستودع   3 · الفريق',
@@ -153,7 +223,7 @@ class _InvitePageState extends State<InvitePage> {
           onChanged: (_) => setState(() {}),
           decoration: const InputDecoration(
             labelText: 'البريد الإلكتروني',
-            hintText: 'omar@company.com, mona@company.com',
+            hintText: 'name@company.com',
           ),
         ),
         const SizedBox(height: 8),
@@ -174,21 +244,42 @@ class _InvitePageState extends State<InvitePage> {
         const SizedBox(height: 16),
         ToggleRow(
           title: 'إضافتهم أيضًا للمستودع على GitHub',
-          subtitle: 'acme/store-mobile · write',
           value: false,
           onChanged: (v) {},
         ),
-        const SizedBox(height: 16),
-        const SectionLabel('بانتظار القبول · تنتهي بعد 7 أيام'),
-        _PendingInvite(
-          email: 'mona@company.com',
-          details: 'مطوّر · أُرسلت أمس · لم تُفتح بعد',
-        ),
+        if (invites.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const SectionLabel('بانتظار القبول · تنتهي بعد 7 أيام'),
+          for (final invite in invites)
+            AppPanel(
+              margin: const EdgeInsetsDirectional.only(bottom: 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.mail_outline_rounded, color: AppColors.warning),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(invite.email,
+                            style: Theme.of(context).textTheme.titleMedium),
+                        Text(
+                          '${invite.role} · أُرسلت أمس · لم تُفتح بعد',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(onPressed: () {}, child: const Text('إعادة إرسال')),
+                ],
+              ),
+            ),
+        ],
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () {},
           icon: const Icon(Icons.link_rounded),
-          label: const Text('نسخ رابط دعوة (لنطاق @company.com فقط)'),
+          label: const Text('نسخ رابط دعوة'),
         ),
         const SizedBox(height: 12),
         FilledButton(
@@ -196,36 +287,6 @@ class _InvitePageState extends State<InvitePage> {
           child: const Text('إرسال الدعوات'),
         ),
       ],
-    );
-  }
-}
-
-class _PendingInvite extends StatelessWidget {
-  const _PendingInvite({required this.email, required this.details});
-
-  final String email;
-  final String details;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppPanel(
-      child: Row(
-        children: [
-          const Icon(Icons.mail_outline_rounded, color: AppColors.warning),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(email, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 2),
-                Text(details, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-          TextButton(onPressed: () {}, child: const Text('إعادة إرسال')),
-        ],
-      ),
     );
   }
 }
