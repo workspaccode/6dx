@@ -9,6 +9,9 @@ import '../../domain/entities/github_device_code.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
+import '../backends/auth_backend.dart';
+import '../backends/device_flow_auth_backend.dart';
+import '../backends/supabase_auth_backend.dart';
 import '../datasources/github_auth_data_source.dart';
 import '../models/user_model.dart';
 
@@ -17,13 +20,16 @@ class AuthRepositoryImpl implements AuthRepository {
     required AuthRemoteDataSource remote,
     required AuthLocalDataSource local,
     required GithubAuthDataSource github,
+    required AuthBackend backend,
   })  : _remote = remote,
         _local = local,
-        _github = github;
+        _github = github,
+        _backend = backend;
 
   final AuthRemoteDataSource _remote;
   final AuthLocalDataSource _local;
   final GithubAuthDataSource _github;
+  final AuthBackend _backend;
 
   @override
   Future<Result<GithubDeviceCode>> startGithubDeviceFlow() => _guard(() async {
@@ -32,6 +38,16 @@ class AuthRepositoryImpl implements AuthRepository {
             deviceCode: 'mock',
             userCode: 'MOCK-0000',
             verificationUri: 'https://github.com/login/device',
+          );
+        }
+        if (_backend is SupabaseAuthBackend) {
+          // Supabase runs the whole OAuth round trip itself.
+          final user = await _backend.signInWithGithub();
+          await _local.cacheSession(user: UserModel.fromEntity(user));
+          return const GithubDeviceCode(
+            deviceCode: 'supabase',
+            userCode: 'SUPABASE',
+            verificationUri: 'https://github.com/login/oauth/authorize',
           );
         }
         final code = await _github.requestDeviceCode();
@@ -56,36 +72,16 @@ class AuthRepositoryImpl implements AuthRepository {
           return user.toEntity();
         }
 
-        final deadline =
-            DateTime.now().add(Duration(seconds: deviceCode.expiresIn));
-        var token = await _github.pollAccessToken(
-          deviceCode: deviceCode.deviceCode,
-          interval: deviceCode.interval,
-        );
-        while (token == null) {
-          if (DateTime.now().isAfter(deadline)) {
-            throw const ServerException('انتهت صلاحية رمز الدخول');
-          }
-          onPending?.call(true);
-          await Future<void>.delayed(Duration(seconds: deviceCode.interval));
-          token = await _github.pollAccessToken(
-            deviceCode: deviceCode.deviceCode,
-            interval: deviceCode.interval,
-          );
+        if (_backend is DeviceFlowAuthBackend) {
+          final user = await _backend
+              .completeDeviceFlow(deviceCode, onPending: onPending);
+          await _local.cacheSession(user: UserModel.fromEntity(user));
+          return user;
         }
 
-        final user = await _github.fetchUser(token);
-        final email = await _github.fetchPrimaryEmail(token);
-        final model = UserModel(
-          id: '${user['id']}',
-          login: user['login'] as String? ?? 'github-user',
-          name: user['name'] as String?,
-          email: email['email'] as String?,
-          avatarUrl: user['avatar_url'] as String?,
-          accessToken: token,
-        );
-        await _local.cacheSession(user: model);
-        return model.toEntity();
+        final user = await _backend.signInWithGithub();
+        await _local.cacheSession(user: UserModel.fromEntity(user));
+        return user;
       });
 
   @override

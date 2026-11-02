@@ -143,6 +143,58 @@ nothing yet — no invented content (see “No fake data in a normal build”).
 shell (sidebar on wide screens, top bar on narrow ones, always LTR). The 51
 design screens are registered in `web_routes.dart` and served under `/web/...`.
 
+## Authentication: Supabase
+
+The app signs users in with **GitHub**. Two interchangeable backends sit behind
+one interface (`features/auth/data/backends/auth_backend.dart`):
+
+| Backend | When it is used | Notes |
+|---|---|---|
+| `SupabaseAuthBackend` | `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY` are set (default choice) | GitHub OAuth with PKCE. **No GitHub client secret ever ships in the app** — Supabase performs the code exchange server side. The session (access token + refresh) is managed by Supabase and mirrored into the secure storage so the API layer can send `Authorization: Bearer …`. |
+| `DeviceFlowAuthBackend` | Supabase is not configured | GitHub OAuth *device flow*: the app shows a short code, the user confirms it on github.com, the app polls until the grant is approved. |
+
+Both backends implement the same contract, so the UI never knows which one is
+active.
+
+### 1. Supabase project
+
+Create a project and add **GitHub** as an auth provider
+(Authentication → Providers → GitHub). You need your own GitHub OAuth app:
+*Authorization URL* `https://<project-ref>.supabase.co/auth/v1/authorize`,
+*Callback URL* `https://<project-ref>.supabase.co/auth/v1/callback`.
+
+### 2. Redirect URL
+
+Add the callback that the app receives to
+*Authentication → URL Configuration → Redirect URLs*:
+
+```
+io.supabase.flutter://login-callback
+```
+
+The scheme is already registered for Android (`AndroidManifest.xml` intent
+filter) and iOS (`Info.plist` → `CFBundleURLTypes`).
+
+### 3. Run the app
+
+```bash
+flutter run \
+  --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable key> \
+  --dart-define=API_BASE_URL=https://api.6dx.app/v1
+```
+
+The publishable key is safe to ship in the app; never put the service-role key
+in the client.
+
+### Limits of the free plan
+
+The free plan is comfortable for an early release: 50,000 monthly active
+users in Auth, 500 MB of database, 1 GB of file storage and 5 GB of egress.
+GitHub sign-ins count towards the MAU limit, so the only number to watch is
+the number of *active* users per month — not the number of registered
+accounts.
+
 ## GitHub authentication
 
 `GithubAuthDataSource` implements the GitHub **OAuth device flow**, so no

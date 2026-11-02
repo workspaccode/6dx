@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sixdx/core/storage/secure_storage_service.dart';
+import 'package:sixdx/features/auth/data/backends/device_flow_auth_backend.dart';
 import 'package:sixdx/features/auth/data/datasources/auth_local_data_source.dart';
 import 'package:sixdx/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:sixdx/features/auth/data/datasources/github_auth_data_source.dart';
@@ -64,6 +65,10 @@ void main() {
       remote: _unusedRemote(),
       local: _unusedLocal(),
       github: github,
+      backend: DeviceFlowAuthBackend(
+        github: github,
+        secureStorage: SecureStorageService(),
+      ),
     );
 
     // Step 1 — the app asks GitHub for a code the user confirms.
@@ -99,6 +104,10 @@ void main() {
       remote: _unusedRemote(),
       local: _unusedLocal(),
       github: github,
+      backend: DeviceFlowAuthBackend(
+        github: github,
+        secureStorage: SecureStorageService(),
+      ),
     );
 
     await repository.startGithubDeviceFlow();

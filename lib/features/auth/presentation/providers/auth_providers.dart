@@ -2,9 +2,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_endpoints.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/network/dio_factory.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/result.dart';
+import '../../data/backends/auth_backend.dart';
+import '../../data/backends/device_flow_auth_backend.dart';
+import '../../data/backends/supabase_auth_backend.dart';
 import '../../data/datasources/auth_local_data_source.dart';
 import '../../data/datasources/auth_remote_data_source.dart';
 import '../../data/datasources/github_auth_data_source.dart';
@@ -49,11 +53,25 @@ final githubAuthDataSourceProvider = Provider<GithubAuthDataSource>(
   (ref) => GithubAuthDataSource(ref.watch(githubDioProvider)),
 );
 
+/// Supabase is preferred when it is configured, otherwise the app falls back
+/// to the GitHub OAuth device flow.
+final authBackendProvider = Provider<AuthBackend>((ref) {
+  final secureStorage = ref.watch(secureStorageProvider);
+  if (AppConfig.useSupabaseAuth) {
+    return SupabaseAuthBackend(secureStorage: secureStorage);
+  }
+  return DeviceFlowAuthBackend(
+    github: ref.watch(githubAuthDataSourceProvider),
+    secureStorage: secureStorage,
+  );
+});
+
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepositoryImpl(
     remote: ref.watch(authRemoteDataSourceProvider),
     local: ref.watch(authLocalDataSourceProvider),
     github: ref.watch(githubAuthDataSourceProvider),
+    backend: ref.watch(authBackendProvider),
   ),
 );
 
