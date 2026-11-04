@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/exceptions.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/result.dart';
 import '../../domain/entities/auth_user.dart';
@@ -31,8 +32,11 @@ class AuthRepositoryImpl implements AuthRepository {
   final GithubAuthDataSource _github;
   final AuthBackend _backend;
 
+  static const String _tag = 'Auth';
+
   @override
   Future<Result<GithubDeviceCode>> startGithubDeviceFlow() => _guard(() async {
+        AppLogger.action(_tag, 'sign-in with GitHub: requesting a device code');
         if (AppConfig.useMockData) {
           return const GithubDeviceCode(
             deviceCode: 'mock',
@@ -51,6 +55,10 @@ class AuthRepositoryImpl implements AuthRepository {
           );
         }
         final code = await _github.requestDeviceCode();
+        AppLogger.action(
+          _tag,
+          'sign-in with GitHub: device code received, the user must confirm it',
+        );
         return GithubDeviceCode(
           deviceCode: code.deviceCode,
           userCode: code.userCode,
@@ -73,14 +81,18 @@ class AuthRepositoryImpl implements AuthRepository {
         }
 
         if (_backend is DeviceFlowAuthBackend) {
+          AppLogger.action(_tag, 'sign-in with GitHub: waiting for the approval');
           final user = await _backend
               .completeDeviceFlow(deviceCode, onPending: onPending);
           await _local.cacheSession(user: UserModel.fromEntity(user));
+          AppLogger.action(_tag, 'sign-in with GitHub: success');
           return user;
         }
 
+        AppLogger.action(_tag, 'sign-in with GitHub: completing through Supabase');
         final user = await _backend.signInWithGithub();
         await _local.cacheSession(user: UserModel.fromEntity(user));
+        AppLogger.action(_tag, 'sign-in with GitHub: success');
         return user;
       });
 
@@ -90,10 +102,12 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
   }) =>
       _guard(() async {
+        AppLogger.action(_tag, 'sign-in with email: $email');
         final model = AppConfig.useMockData
             ? _mockEmailUser(email)
             : await _remote.loginWithEmail(email: email, password: password);
         await _local.cacheSession(user: model);
+        AppLogger.action(_tag, 'sign-in with email: success');
         return model.toEntity();
       });
 
@@ -104,6 +118,7 @@ class AuthRepositoryImpl implements AuthRepository {
     required String displayName,
   }) =>
       _guard(() async {
+        AppLogger.action(_tag, 'sign-up: $email');
         final model = AppConfig.useMockData
             ? _mockEmailUser(email, displayName: displayName)
             : await _remote.register(
@@ -112,16 +127,19 @@ class AuthRepositoryImpl implements AuthRepository {
                 displayName: displayName,
               );
         await _local.cacheSession(user: model);
+        AppLogger.action(_tag, 'sign-up: success, the verification code was sent');
         return model.toEntity();
       });
 
   @override
   Future<Result<AuthUser>> verifyOtp({required String email, required String otp}) =>
       _guard(() async {
+        AppLogger.action(_tag, 'verify the OTP sent to $email');
         final model = AppConfig.useMockData
             ? _mockEmailUser(email)
             : await _remote.verifyOtp(email: email, otp: otp);
         await _local.cacheSession(user: model);
+        AppLogger.action(_tag, 'verify the OTP: success');
         return model.toEntity();
       });
 
@@ -173,9 +191,28 @@ class AuthRepositoryImpl implements AuthRepository {
       return Result.failure(Failure.server(e.message));
     } on CacheException catch (e) {
       return Result.failure(Failure.cache(e.message));
+    } on DioException catch (e) {
+      return Result.failure(Failure.network(_describeDioError(e)));
     } catch (e) {
       return Result.failure(Failure.unknown(e.toString()));
     }
+  }
+
+  /// Turns a transport error into a short, actionable message.
+  static String _describeDioError(DioException error) {
+    final status = error.response?.statusCode;
+    return switch (status) {
+      400 || 401 || 403 =>
+        'رفض GitHub الطلب — تأكد من ضبط GITHUB_CLIENT_ID في إعدادات المشروع.',
+      404 => 'المسار غير موجود على GitHub.',
+      429 => 'تم تجاوز حد الطلبات على GitHub، حاول بعد قليل.',
+      _ when error.type == DioExceptionType.connectionTimeout ||
+              error.type == DioExceptionType.receiveTimeout =>
+        'انتهت مهلة الاتصال بـ GitHub.',
+      _ when error.type == DioExceptionType.connectionError =>
+        'تعذّر الاتصال بالإنترنت.',
+      _ => 'تعذّر الاتصال بـ GitHub.',
+    };
   }
 
   UserModel _mockGithubUser() => UserModel(

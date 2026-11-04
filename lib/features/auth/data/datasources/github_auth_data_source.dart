@@ -31,7 +31,7 @@ class GithubAuthDataSource {
   /// without needing a redirect URI.
   Future<GithubDeviceCodeResponse> requestDeviceCode() async {
     final response = await _dio.post<Map<String, dynamic>>(
-      'https://github.com/login/device/code',
+      '/login/device/code',
       queryParameters: {
         'client_id': AppConstants.githubClientId,
         'scope': AppConstants.githubScopes,
@@ -55,7 +55,7 @@ class GithubAuthDataSource {
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
-        'https://github.com/login/oauth/access_token',
+        '/login/oauth/access_token',
         queryParameters: {
           'client_id': AppConstants.githubClientId,
           'client_secret': AppConstants.githubClientSecret,
@@ -81,7 +81,7 @@ class GithubAuthDataSource {
   Future<String> exchangeCode(String code) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
-        'https://github.com/login/oauth/access_token',
+        '/login/oauth/access_token',
         queryParameters: {
           'client_id': AppConstants.githubClientId,
           'client_secret': AppConstants.githubClientSecret,

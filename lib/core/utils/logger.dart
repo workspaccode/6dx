@@ -12,6 +12,15 @@ class AppLogger {
   static void e(String tag, String message, [Object? error]) =>
       _log('ERROR', tag, message, error);
 
+  /// User action (sign in, sign up, sign out …).
+  ///
+  /// These are always printed — including in release builds — because they are
+  /// what you look for when a tester reports "the sign-in does not work".
+  /// They never contain tokens or personal data.
+  static void action(String tag, String message) {
+    dev.log('[ACTION] $tag: $message', name: tag);
+  }
+
   static void _log(
     String level,
     String tag,

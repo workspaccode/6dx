@@ -8,6 +8,9 @@ class AppEndpoints {
 
   static const String githubBaseUrl = 'https://api.github.com';
 
+  /// GitHub OAuth (device flow + token exchange) lives here.
+  static const String githubOAuthBaseUrl = 'https://github.com';
+
   // Auth
   static const String login = '/auth/login';
   static const String register = '/auth/register';

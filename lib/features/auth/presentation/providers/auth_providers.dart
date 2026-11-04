@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_endpoints.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/network/dio_factory.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/result.dart';
 import '../../data/backends/auth_backend.dart';
@@ -41,6 +42,23 @@ final githubDioProvider = Provider<Dio>(
   ),
 );
 
+/// The OAuth endpoints live on github.com, not on api.github.com. They need
+/// their own client: Dio prepends `baseUrl` to every path, so an absolute
+/// URL would end up as `https://api.github.com/https://github.com/...`.
+final githubOAuthDioProvider = Provider<Dio>(
+  (ref) => Dio(
+    BaseOptions(
+      baseUrl: AppEndpoints.githubOAuthBaseUrl,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
+      headers: const {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    ),
+  ),
+);
+
 final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>(
   (ref) => AuthRemoteDataSource(ref.watch(dioProvider)),
 );
@@ -50,7 +68,7 @@ final authLocalDataSourceProvider = Provider<AuthLocalDataSource>(
 );
 
 final githubAuthDataSourceProvider = Provider<GithubAuthDataSource>(
-  (ref) => GithubAuthDataSource(ref.watch(githubDioProvider)),
+  (ref) => GithubAuthDataSource(ref.watch(githubOAuthDioProvider)),
 );
 
 /// Supabase is preferred when it is configured, otherwise the app falls back
@@ -109,13 +127,26 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
   @override
   Future<AuthUser?> build() async {
     final result = await ref.watch(getCurrentUserProvider).call();
-    return result.dataOrNull;
+    final user = result.dataOrNull;
+    AppLogger.action(
+      'AuthSession',
+      user == null
+          ? 'no stored session, the user has to sign in'
+          : 'session restored for ${user.login}',
+    );
+    return user;
   }
 
   /// Step 1: ask GitHub for a device code the user confirms on the web.
+  ///
+  /// The state is restored afterwards so the sign-in button never stays
+  /// disabled after a failed attempt.
   Future<Result<GithubDeviceCode>> startGithubDeviceFlow() async {
+    final previous = state;
     state = const AsyncLoading();
-    return ref.read(startGithubDeviceFlowProvider).call();
+    final result = await ref.read(startGithubDeviceFlowProvider).call();
+    state = previous.hasValue ? previous : const AsyncData(null);
+    return result;
   }
 
   /// Step 2: poll GitHub until the user approved, then create the session.
@@ -165,6 +196,7 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
   }
 
   Future<void> signOut() async {
+    AppLogger.action('AuthSession', 'sign-out requested');
     await ref.read(signOutProvider).call();
     state = const AsyncData(null);
   }

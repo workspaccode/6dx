@@ -10,6 +10,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_logo.dart';
 import '../../../../core/errors/failures.dart';
+import '../../../../core/utils/logger.dart';
 import '../../domain/entities/github_device_code.dart';
 import '../providers/auth_providers.dart';
 
@@ -37,6 +38,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Future<void> _submitEmailSignIn() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    AppLogger.action('LoginPage', 'tapped "sign in with email" for $email');
     if (email.isEmpty || password.isEmpty) {
       _showSnack('أدخل البريد الإلكتروني وكلمة المرور');
       return;
@@ -58,75 +60,66 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   /// 2. the user confirms it on github.com (opened in the browser),
   /// 3. the app polls GitHub until the grant is approved and signs in.
   Future<void> _continueWithGithub() async {
+    AppLogger.action('LoginPage', 'tapped "continue with GitHub"');
     final notifier = ref.read(authNotifierProvider.notifier);
     final started = await notifier.startGithubDeviceFlow();
     final deviceCode = started.dataOrNull;
     if (!mounted) return;
 
     if (deviceCode == null) {
-      _showSnack(started.failureOrNull?.message ?? 'تعذّر الاتصال بـ GitHub');
+      final reason = started.failureOrNull?.message ?? 'تعذّر الاتصال بـ GitHub';
+      AppLogger.action('LoginPage', 'sign-in with GitHub failed: $reason');
+      _showSnack(reason);
       return;
     }
 
-    final approved = await _showDeviceCodeSheet(deviceCode);
+    final signedIn = await _runDeviceFlow(deviceCode);
     if (!mounted) return;
-    if (!approved) return;
-
-    final ok = await notifier.completeGithubDeviceFlow(deviceCode);
-    if (!mounted) return;
-    if (ok) {
+    if (signedIn) {
+      AppLogger.action('LoginPage', 'sign-in with GitHub finished, opening the app');
       context.go(AppRoutes.home);
-    } else {
-      _showSnack('تعذّر تسجيل الدخول بـ GitHub');
     }
   }
 
-  /// Shows the user code and polls GitHub in the background.
-  Future<bool> _showDeviceCodeSheet(GithubDeviceCode deviceCode) async {
-    var pending = false;
-
-    final completer = Completer<bool>();
-    unawaited(_pollForApproval(deviceCode, completer, () => pending));
-
-    final opened = await showModalBottomSheet<bool>(
+  /// Runs the device flow. The sheet owns the polling and closes itself as
+  /// soon as GitHub answers, so no route is popped from the outside.
+  Future<bool> _runDeviceFlow(GithubDeviceCode deviceCode) async {
+    final result = await showModalBottomSheet<bool>(
       context: context,
       isDismissible: true,
       builder: (sheetContext) => _DeviceCodeSheet(
         userCode: deviceCode.userCode,
         verificationUri: deviceCode.verificationUri,
-        isPending: () => pending,
+        startFlow: (onPending) =>
+            _pollForApproval(deviceCode, onPending),
         onOpenBrowser: () => _openBrowser(deviceCode.verificationUri),
       ),
     );
-
-    if (opened != true) {
-      if (!completer.isCompleted) completer.complete(false);
-      return false;
-    }
-    return completer.future;
+    return result == true;
   }
 
-  /// Polls GitHub in the background while the user confirms the code.
-  Future<void> _pollForApproval(
+  /// Polls GitHub until the user approved the device and signs in.
+  Future<bool> _pollForApproval(
     GithubDeviceCode deviceCode,
-    Completer<bool> completer,
-    bool Function() isPending,
+    void Function(bool pending) onPending,
   ) async {
-    final result = await ref
+    final ok = await ref
         .read(authNotifierProvider.notifier)
-        .completeGithubDeviceFlow(
-          deviceCode,
-          onPending: (_) => setState(() {}),
-        );
-    if (!completer.isCompleted) completer.complete(result);
+        .completeGithubDeviceFlow(deviceCode, onPending: onPending);
+    return ok;
   }
 
   Future<void> _openBrowser(String uri) async {
     final url = Uri.tryParse(uri);
     if (url == null) return;
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      if (!mounted) return;
-      _showSnack('تعذّر فتح المتصفح — افتح $uri يدويًا');
+    try {
+      final opened =
+          await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        _showSnack('تعذّر فتح المتصفح — افتح $uri يدويًا');
+      }
+    } catch (error) {
+      if (mounted) _showSnack('تعذّر فتح المتصفح — افتح $uri يدويًا');
     }
   }
 
@@ -174,8 +167,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     const SizedBox(height: 28),
                     FilledButton.icon(
                       onPressed: isLoading ? null : _continueWithGithub,
-                      icon: const Icon(Icons.code, size: 20),
-                      label: const Text('المتابعة باستخدام GitHub'),
+                      icon: isLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.background,
+                              ),
+                            )
+                          : const Icon(Icons.code, size: 20),
+                      label: Text(isLoading
+                          ? 'جارٍ الاتصال بـ GitHub…'
+                          : 'المتابعة باستخدام GitHub'),
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton(
@@ -337,17 +341,23 @@ class _MonoTag extends StatelessWidget {
 }
 
 /// Bottom sheet shown during the GitHub device flow.
+///
+/// It starts the polling itself and closes as soon as GitHub approves (or
+/// rejects) the device.
 class _DeviceCodeSheet extends StatefulWidget {
   const _DeviceCodeSheet({
     required this.userCode,
     required this.verificationUri,
-    required this.isPending,
+    required this.startFlow,
     required this.onOpenBrowser,
   });
 
   final String userCode;
   final String verificationUri;
-  final bool Function() isPending;
+
+  /// Starts the polling; the returned future resolves with the sign-in result.
+  final Future<bool> Function(ValueChanged<bool> onPending) startFlow;
+
   final VoidCallback onOpenBrowser;
 
   @override
@@ -355,10 +365,35 @@ class _DeviceCodeSheet extends StatefulWidget {
 }
 
 class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
+  bool _pending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start after the first frame: the polling reports progress with
+    // setState, which is not allowed while the first frame is building.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _run());
+  }
+
+  Future<void> _run() async {
+    bool ok;
+    try {
+      ok = await widget.startFlow((pending) {
+        if (mounted) setState(() => _pending = pending);
+      });
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    AppLogger.action(
+      'LoginPage',
+      ok ? 'sign-in with GitHub: approved' : 'sign-in with GitHub: failed',
+    );
+    Navigator.of(context).pop(ok);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pending = widget.isPending();
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
       child: Column(
@@ -404,7 +439,7 @@ class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (pending)
+              if (_pending)
                 const SizedBox(
                   width: 14,
                   height: 14,
@@ -415,7 +450,7 @@ class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
                     size: 16, color: AppColors.textDim),
               const SizedBox(width: 8),
               Text(
-                pending ? 'في انتظار موافقتك على GitHub…' : 'لم تبدأ بعد',
+                _pending ? 'في انتظار موافقتك على GitHub…' : 'لم تبدأ بعد',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],

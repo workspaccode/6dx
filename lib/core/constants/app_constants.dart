@@ -6,11 +6,11 @@ class AppConstants {
 
   /// GitHub OAuth (https://github.com/settings/developers)
   static const String githubClientId = String.fromEnvironment(
-    'GITHUB_CLIENT_ID',
+    'Ov23liw4p0LMObMu8l9b',
     defaultValue: 'Ov23li6MnH0CEEPyRk6',
   );
   static const String githubClientSecret = String.fromEnvironment(
-    'GITHUB_CLIENT_SECRET',
+    'd73fe18de841e457ed7b2130898c078bf7a682ef',
     defaultValue: '',
   );
   static const String githubScopes = 'read:user user:email repo read:org';

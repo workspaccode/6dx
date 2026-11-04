@@ -22,13 +22,13 @@ class AppConfig {
 
   /// Supabase project URL, e.g. `https://abcdefgh.supabase.co`.
   static const String supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
+    'https://ifrpswaclrrsshspdmzd.supabase.co',
     defaultValue: '',
   );
 
   /// Supabase publishable (anon) key. Safe to ship in the app.
   static const String supabasePublishableKey = String.fromEnvironment(
-    'SUPABASE_PUBLISHABLE_KEY',
+    'sb_publishable_eYtVhUSrk6QDblHyUaCq6g_CzskyhRY',
     defaultValue: '',
   );
 
@@ -39,7 +39,7 @@ class AppConfig {
   /// Redirect URI GitHub sends the user back to. Must be registered in the
   /// Supabase dashboard (Authentication → URL Configuration).
   static const String supabaseRedirectUrl = String.fromEnvironment(
-    'SUPABASE_REDIRECT_URL',
+    'io.supabase.flutter://login-callback',
     defaultValue: 'io.supabase.flutter://login-callback',
   );
 

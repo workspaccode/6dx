@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/app.dart';
@@ -24,8 +25,6 @@ Future<void> main() async {
   }
 
   final localStorage = await LocalStorageService.create();
-  final notificationService = NotificationService();
-  await notificationService.initialize();
 
   runApp(
     ProviderScope(
@@ -35,4 +34,17 @@ Future<void> main() async {
       child: const SixDxApp(),
     ),
   );
+
+  // The notification plugin talks to the platform and must never block the
+  // launch: on a slow device (or when the app is started by the
+  // BOOT_COMPLETED broadcast) it would ANR the whole process.
+  unawaited(_initNotifications());
+}
+
+Future<void> _initNotifications() async {
+  try {
+    await NotificationService().initialize();
+  } catch (error) {
+    debugPrint('6DX: notification init failed — $error');
+  }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../routes/app_router.dart';
+import '../../../../core/utils/logger.dart';
 import '../providers/auth_providers.dart';
 
 @RoutePage()
@@ -28,6 +29,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
 
   Future<void> _sendCode() async {
     if (!_formKey.currentState!.validate()) return;
+    AppLogger.action('SignUpPage', 'tapped "send the verification code" for ${_emailController.text.trim()}');
     final ok = await ref.read(authNotifierProvider.notifier).register(
           email: _emailController.text.trim(),
           password: '',
