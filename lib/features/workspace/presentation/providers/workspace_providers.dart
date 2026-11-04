@@ -1,7 +1,8 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/config/app_config.dart';
-import '../../../../core/demo/demo_data.dart';
+import '../../../../core/network/current_workspace.dart';
+import '../../../../core/network/supabase_client.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/workspace_remote_data_source.dart';
 import '../../data/repositories/workspace_repository_impl.dart';
@@ -10,22 +11,17 @@ import '../../domain/repositories/workspace_repository.dart';
 import '../../domain/usecases/workspace_usecases.dart';
 
 final workspaceRemoteDataSourceProvider = Provider<WorkspaceRemoteDataSource>(
-  (ref) => WorkspaceRemoteDataSource(ref.watch(dioProvider)),
+  (ref) => WorkspaceRemoteDataSource(
+    ref.watch(supabaseClientResolverProvider),
+    ref.watch(currentWorkspaceProvider),
+  ),
 );
 
-/// The workspace the app is currently scoped to. Taken from the API in a
-/// normal build; the demo workspace id is only used in demo mode.
-final workspaceIdProvider = Provider<String>((ref) {
-  if (AppConfig.useMockData) return 'w-1';
-  return ref.watch(authNotifierProvider).value?.id ?? '';
-});
-
-final workspaceRepositoryProvider = Provider<WorkspaceRepository>((ref) {
-  return WorkspaceRepositoryImpl(
+final workspaceRepositoryProvider = Provider<WorkspaceRepository>(
+  (ref) => WorkspaceRepositoryImpl(
     remote: ref.watch(workspaceRemoteDataSourceProvider),
-    workspaceId: ref.watch(workspaceIdProvider),
-  );
-});
+  ),
+);
 
 final getWorkspaceSnapshotProvider = Provider<GetWorkspaceSnapshot>(
   (ref) => GetWorkspaceSnapshot(ref.watch(workspaceRepositoryProvider)),
@@ -41,12 +37,19 @@ final sendInvitesProvider = Provider<SendInvites>(
 /// empty snapshot and [workspaceErrorProvider] carries the reason, so every
 /// screen can render an honest empty/error state instead of crashing.
 final workspaceSnapshotProvider = FutureProvider<WorkspaceSnapshot>((ref) async {
-  if (AppConfig.useMockData) {
-    return DemoData.snapshot;
-  }
+  // Reload whenever the signed-in account changes.
+  ref.watch(authNotifierProvider.select((state) => state.value?.id));
   try {
-    return await ref.watch(getWorkspaceSnapshotProvider).call();
+    final snapshot = await ref.watch(getWorkspaceSnapshotProvider).call();
+    AppLogger.action(
+      'Workspace',
+      'snapshot loaded: ${snapshot.members.length} members, '
+          '${snapshot.pullRequests.length} PRs, '
+          '${snapshot.notifications.length} notifications',
+    );
+    return snapshot;
   } catch (error) {
+    AppLogger.action('Workspace', 'snapshot FAILED', error);
     ref.read(workspaceErrorProvider.notifier).setError(error.toString());
     return const WorkspaceSnapshot();
   }

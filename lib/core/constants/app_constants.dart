@@ -4,14 +4,14 @@ class AppConstants {
   static const String appName = '6DX';
   static const String appTag = '6DX';
 
-  /// GitHub OAuth (https://github.com/settings/developers)
+  /// GitHub OAuth app used by Supabase (https://github.com/settings/developers).
+  ///
+  /// Client **id** only: the device flow never needs the client secret, and a
+  /// secret that ships inside an app is public anyway.
+  /// Override with `--dart-define=GITHUB_CLIENT_ID=...`.
   static const String githubClientId = String.fromEnvironment(
-    'Ov23liw4p0LMObMu8l9b',
-    defaultValue: 'Ov23li6MnH0CEEPyRk6',
-  );
-  static const String githubClientSecret = String.fromEnvironment(
-    'd73fe18de841e457ed7b2130898c078bf7a682ef',
-    defaultValue: '',
+    'GITHUB_CLIENT_ID',
+    defaultValue: 'Ov23liw4p0LMObMu8l9b',
   );
   static const String githubScopes = 'read:user user:email repo read:org';
 
@@ -22,6 +22,10 @@ class AppConstants {
   static const int maxRetryCount = 3;
 
   static const String keyAccessToken = 'access_token';
+
+  /// GitHub access token issued by the OAuth provider during sign-in. It is a
+  /// different token from [keyAccessToken] (which is the 6DX/Supabase session).
+  static const String keyGithubToken = 'github_token';
   static const String keyUser = 'user';
   static const String keyOnboardingDone = 'onboarding_done';
   static const String keyLocale = 'locale';

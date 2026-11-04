@@ -1,7 +1,3 @@
-import 'package:dio/dio.dart';
-
-import '../../../../core/config/app_config.dart';
-import '../../../../core/demo/demo_data.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/result.dart';
@@ -15,16 +11,10 @@ class TaskRepositoryImpl implements TaskRepository {
 
   final TaskRemoteDataSource _remote;
 
-  final List<TaskModel> _cache = List.of(DemoData.tasks);
+  final List<TaskModel> _cache = [];
 
   @override
   Future<Result<List<Task>>> getTasks({String? projectId}) => _guard(() async {
-        if (AppConfig.useMockData) {
-          final filtered = projectId == null
-              ? _cache
-              : _cache.where((t) => t.projectId == projectId).toList();
-          return filtered.map((e) => e.toEntity()).toList();
-        }
         final tasks = await _remote.getTasks(projectId: projectId);
         _cache
           ..clear()
@@ -34,11 +24,13 @@ class TaskRepositoryImpl implements TaskRepository {
 
   @override
   Future<Result<Task>> getTask(String id) => _guard(() async {
-        final found = _cache.firstWhere(
-          (t) => t.id == id,
-          orElse: () => _cache.first,
-        );
-        return found.toEntity();
+        final cached = _cache.where((t) => t.id == id);
+        if (cached.isNotEmpty) return cached.first.toEntity();
+        final tasks = await _remote.getTasks();
+        _cache
+          ..clear()
+          ..addAll(tasks);
+        return tasks.firstWhere((t) => t.id == id).toEntity();
       });
 
   @override
@@ -50,25 +42,13 @@ class TaskRepositoryImpl implements TaskRepository {
     String? assigneeName,
   }) =>
       _guard(() async {
-        final model = AppConfig.useMockData
-            ? TaskModel(
-                id: 't-${DateTime.now().millisecondsSinceEpoch}',
-                title: title,
-                description: description,
-                status: TaskStatus.todo,
-                priority: priority,
-                projectId: projectId,
-                projectName: '6DX Mobile',
-                assigneeName: assigneeName ?? 'Sami',
-                createdAt: DateTime.now(),
-              )
-            : await _remote.createTask(
-                title: title,
-                description: description,
-                projectId: projectId,
-                priority: priority.name,
-                assigneeName: assigneeName,
-              );
+        final model = await _remote.createTask(
+          title: title,
+          description: description,
+          projectId: projectId,
+          priority: priority.name,
+          assigneeName: assigneeName,
+        );
         _cache.insert(0, model);
         return model.toEntity();
       });
@@ -76,17 +56,20 @@ class TaskRepositoryImpl implements TaskRepository {
   @override
   Future<Result<Task>> updateStatus(String id, TaskStatus status) =>
       _guard(() async {
+        final updated = await _remote.updateStatus(
+          id,
+          TaskRemoteDataSource.statusToDb(status),
+        );
         final index = _cache.indexWhere((t) => t.id == id);
-        if (index == -1) {
-          throw const ServerException('Task not found');
+        if (index != -1) {
+          _cache[index] = updated;
         }
-        final updated = _cache[index].copyWith(status: status);
-        _cache[index] = updated;
         return updated.toEntity();
       });
 
   @override
   Future<Result<void>> deleteTask(String id) => _guard(() async {
+        await _remote.deleteTask(id);
         _cache.removeWhere((t) => t.id == id);
       });
 
@@ -99,11 +82,8 @@ class TaskRepositoryImpl implements TaskRepository {
       return Result.failure(Failure.network(e.message));
     } on ServerException catch (e) {
       return Result.failure(Failure.server(e.message));
-    } on DioException catch (e) {
-      return Result.failure(Failure.network(e.message ?? 'Network error'));
     } catch (e) {
       return Result.failure(Failure.unknown(e.toString()));
     }
   }
-
 }

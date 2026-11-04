@@ -39,49 +39,67 @@ class _ConnectRepositoryPageState extends ConsumerState<ConnectRepositoryPage> {
           Expanded(
             child: reposState.isLoading
                 ? const AppLoadingView()
-                : repos.isEmpty
-                    ? const AppEmptyState(
-                        icon: Icons.code_off_rounded,
-                        title: 'لا توجد مستودعات',
-                        message: 'جرّب اسمًا آخر أو اربط حساب GitHub.',
+                : reposState.hasError
+                    ? AppEmptyState(
+                        icon: Icons.error_outline_rounded,
+                        title: 'تعذّر تحميل المستودعات',
+                        message: '${reposState.error}'.replaceFirst(
+                          'Exception: ',
+                          '',
+                        ),
                       )
-                    : ListView.separated(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        itemCount: repos.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          final repo = repos[index];
-                          return ListTile(
-                            leading: const Icon(
-                              Icons.code_rounded,
-                              color: AppColors.textMuted,
-                            ),
-                            title: Text(repo.fullName),
-                            subtitle: Text(
-                              repo.description ?? repo.language ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (repo.language != null)
-                                  Text(
-                                    repo.language!,
-                                    style: Theme.of(context).textTheme.labelSmall,
-                                  ),
-                                const SizedBox(width: 8),
-                                const Icon(Icons.star_border_rounded, size: 16),
-                                Text(
-                                  '${repo.stargazersCount}',
-                                  style: Theme.of(context).textTheme.labelSmall,
+                    : repos.isEmpty
+                        ? const AppEmptyState(
+                            icon: Icons.code_off_rounded,
+                            title: 'لا توجد مستودعات',
+                            message: 'جرّب اسمًا آخر أو اربط حساب GitHub.',
+                          )
+                        : ListView.separated(
+                            padding: const EdgeInsets.only(bottom: 24),
+                            itemCount: repos.length,
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final repo = repos[index];
+                              return ListTile(
+                                leading: const Icon(
+                                  Icons.code_rounded,
+                                  color: AppColors.textMuted,
                                 ),
-                              ],
-                            ),
-                            onTap: () => Navigator.of(context).pop(),
-                          );
-                        },
-                      ),
+                                title: Text(repo.fullName),
+                                subtitle: Text(
+                                  repo.description ?? repo.language ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (repo.language != null)
+                                      Text(
+                                        repo.language!,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall,
+                                      ),
+                                    const SizedBox(width: 8),
+                                    const Icon(Icons.star_border_rounded,
+                                        size: 16),
+                                    Text(
+                                      '${repo.stargazersCount}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall,
+                                    ),
+                                  ],
+                                ),
+                                // Hand the choice back to the create-project
+                                // form.
+                                onTap: () =>
+                                    Navigator.of(context).pop(repo.fullName),
+                              );
+                            },
+                          ),
           ),
         ],
       ),

@@ -75,19 +75,25 @@ class AppPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: margin,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: (accent ?? Theme.of(context).colorScheme.outline)
-              .withValues(alpha: accent == null ? 1 : 0.45),
+    final outline = accent ?? Theme.of(context).colorScheme.outline;
+    return Padding(
+      padding: margin ?? EdgeInsets.zero,
+      child: SizedBox(
+        width: double.infinity,
+        // `Material` (not a decorated `Container`) so a nested `ListTile` can
+        // paint its background and ink splashes.
+        child: Material(
+          color: Theme.of(context).colorScheme.surface,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: outline.withValues(alpha: accent == null ? 1 : 0.45),
+            ),
+          ),
+          child: Padding(padding: padding, child: child),
         ),
       ),
-      child: child,
     );
   }
 }
@@ -186,22 +192,27 @@ class SettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      // `Material` (not a decorated `Container`) so the tile background and the
+      // ink splash stay visible.
+      child: Material(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        leading: Icon(icon, color: color),
-        title: Text(title),
-        subtitle: subtitle == null ? null : Text(subtitle!),
-        trailing: trailing ??
-            const Icon(Icons.chevron_left_rounded, color: AppColors.textDim),
-        onTap: onTap,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: Theme.of(context).colorScheme.outline),
+        ),
+        child: ListTile(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+          leading: Icon(icon, color: color),
+          title: Text(title),
+          subtitle: subtitle == null ? null : Text(subtitle!),
+          trailing: trailing ??
+              const Icon(Icons.chevron_left_rounded, color: AppColors.textDim),
+          onTap: onTap,
+        ),
       ),
     );
   }

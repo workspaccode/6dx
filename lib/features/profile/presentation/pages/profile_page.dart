@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/demo/demo_data_banner.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_logo.dart';
 import '../../../../app/app_providers.dart';
@@ -24,7 +23,6 @@ class ProfilePage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          const DemoDataBanner(),
           Row(
             children: [
               const CircleAvatar(

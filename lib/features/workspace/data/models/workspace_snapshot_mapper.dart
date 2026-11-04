@@ -17,8 +17,10 @@ class WorkspaceSnapshotMapper {
       invites: _list(data['invites']).map(_invite).toList(growable: false),
       comments: _list(data['comments']).map(_comment).toList(growable: false),
       subtasks: _list(data['subtasks']).map(_subtask).toList(growable: false),
+      dependencies:
+          _list(data['dependencies']).map(_dependency).toList(growable: false),
       activity: _list(data['activity']).map(_activity).toList(growable: false),
-      sprints: _list(data[' sprints']).map(_sprint).toList(growable: false),
+      sprints: _list(data['sprints']).map(_sprint).toList(growable: false),
       pullRequests:
           _list(data['pull_requests']).map(_pullRequest).toList(growable: false),
       labels: _list(data['labels']).map(_label).toList(growable: false),
@@ -92,6 +94,15 @@ class WorkspaceSnapshotMapper {
         taskId: _str(json['task_id']) ?? '',
         title: _str(json['title']) ?? '',
         isDone: json['is_done'] == true,
+      );
+
+  TaskDependency _dependency(Map<String, dynamic> json) => TaskDependency(
+        id: _str(json['id']) ?? '',
+        taskKey: _str(json['task_key']) ?? '',
+        title: _str(json['title']) ?? '',
+        state: _str(json['state']) ?? 'blocked',
+        reason: _str(json['reason']),
+        assigneeName: _str(json['assignee_name']),
       );
 
   ActivityEvent _activity(Map<String, dynamic> json) => ActivityEvent(

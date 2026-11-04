@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import '../../../../core/config/app_config.dart';
 import '../../../../core/storage/secure_storage_service.dart';
+import '../../../../core/utils/logger.dart';
 import '../../domain/entities/auth_user.dart';
 import '../../domain/entities/github_device_code.dart';
 import '../datasources/github_auth_data_source.dart';
@@ -21,6 +21,8 @@ class DeviceFlowAuthBackend implements AuthBackend {
   final GithubAuthDataSource _github;
   final SecureStorageService _secureStorage;
 
+  static const String _tag = 'DeviceFlow';
+
   @override
   String get name => 'GitHub Device Flow';
 
@@ -28,23 +30,33 @@ class DeviceFlowAuthBackend implements AuthBackend {
   bool get isConfigured => true;
 
   @override
+  bool get usesDeviceCode => true;
+
+  @override
   Stream<AuthUser?> get authStateChanges => const Stream.empty();
 
   @override
   Future<AuthUser?> restoreSession() async {
     final token = await _secureStorage.readAccessToken();
-    if (token == null || token.isEmpty) return null;
+    if (token == null || token.isEmpty) {
+      AppLogger.action(_tag, 'restore session: no stored token');
+      return null;
+    }
     try {
       final payload = await _github.fetchUser(token);
+      AppLogger.action(_tag, 'restore session: ok (${payload['login']})');
       return _toUser(payload, token);
-    } catch (_) {
+    } catch (error) {
+      AppLogger.action(_tag, 'restore session: FAILED', error);
       return null;
     }
   }
 
   @override
   Future<AuthUser> signInWithGithub() async {
+    AppLogger.action(_tag, 'sign-in: requesting a device code');
     final code = await _github.requestDeviceCode();
+    AppLogger.action(_tag, 'sign-in: device code received (${code.userCode})');
     final deviceCode = GithubDeviceCode(
       deviceCode: code.deviceCode,
       userCode: code.userCode,
@@ -62,31 +74,43 @@ class DeviceFlowAuthBackend implements AuthBackend {
   }) async {
     final deadline =
         DateTime.now().add(Duration(seconds: deviceCode.expiresIn));
-    var token = await _github.pollAccessToken(
-      deviceCode: deviceCode.deviceCode,
-      interval: deviceCode.interval,
-    );
-    while (token == null) {
+    var interval = deviceCode.interval;
+    var polls = 0;
+    AppLogger.action(_tag, 'waiting for the approval (every ${interval}s)');
+    var poll = await _github.pollAccessToken(deviceCode: deviceCode.deviceCode);
+    while (poll.accessToken == null) {
+      polls++;
       if (DateTime.now().isAfter(deadline)) {
+        AppLogger.action(_tag, 'the device code expired after $polls polls');
         throw StateError('انتهت صلاحية رمز الدخول');
       }
+      // GitHub answers `slow_down` when the app polls too often.
+      if (poll.interval != null && poll.interval != interval) {
+        interval = poll.interval!;
+        AppLogger.action(_tag, 'GitHub asked to slow down: polling every ${interval}s');
+      }
       onPending?.call(true);
-      await Future<void>.delayed(Duration(seconds: deviceCode.interval));
-      token = await _github.pollAccessToken(
-        deviceCode: deviceCode.deviceCode,
-        interval: deviceCode.interval,
-      );
+      await Future<void>.delayed(Duration(seconds: interval));
+      poll = await _github.pollAccessToken(deviceCode: deviceCode.deviceCode);
     }
+    final token = poll.accessToken!;
+    AppLogger.action(_tag, 'the user approved the device after $polls polls');
 
     await _secureStorage.writeAccessToken(token);
+    // The device-flow grant *is* a GitHub token: the repo picker uses it too.
+    await _secureStorage.writeGithubToken(token);
+    AppLogger.action(_tag, 'loading the GitHub profile');
     final payload = await _github.fetchUser(token);
     final email = await _github.fetchPrimaryEmail(token);
+    AppLogger.action(_tag, 'sign-in: ok (${payload['login']})');
     return _toUser(payload, token, email: email['email'] as String?);
   }
 
   @override
   Future<void> signOut() async {
+    AppLogger.action(_tag, 'sign-out');
     await _secureStorage.deleteAccessToken();
+    await _secureStorage.deleteGithubToken();
   }
 
   AuthUser _toUser(
@@ -104,7 +128,4 @@ class DeviceFlowAuthBackend implements AuthBackend {
       accessToken: token,
     );
   }
-
-  /// Whether the app should use the demo account instead of a real provider.
-  bool get isDemoMode => AppConfig.useMockData;
 }

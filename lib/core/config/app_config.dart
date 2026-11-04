@@ -1,35 +1,22 @@
-import '../constants/app_endpoints.dart';
-
 class AppConfig {
   AppConfig._();
 
-  /// When enabled the data layer serves the demo catalogue from
-  /// `lib/core/demo/demo_data.dart` instead of hitting the production API.
-  ///
-  /// The default is `false`: a normal build never shows invented data — it
-  /// renders whatever the API returns, an empty state, or an error state.
-  /// Demo builds are opt-in:
-  /// `flutter run --dart-define=USE_MOCK=true`
-  static const bool useMockData = bool.fromEnvironment(
-    'USE_MOCK',
-    defaultValue: false,
-  );
-
-  static bool get isProductionApiConfigured =>
-      !AppEndpoints.baseUrl.contains('api.6dx.app');
-
-  // --- Supabase (auth + optional database) -------------------------------
+  // --- Supabase (authentication + database) ------------------------------
 
   /// Supabase project URL, e.g. `https://abcdefgh.supabase.co`.
+  ///
+  /// Override with `--dart-define=SUPABASE_URL=...`.
   static const String supabaseUrl = String.fromEnvironment(
-    'https://ifrpswaclrrsshspdmzd.supabase.co',
-    defaultValue: '',
+    'SUPABASE_URL',
+    defaultValue: 'https://ifrpswaclrrsshspdmzd.supabase.co',
   );
 
   /// Supabase publishable (anon) key. Safe to ship in the app.
+  ///
+  /// Override with `--dart-define=SUPABASE_PUBLISHABLE_KEY=...`.
   static const String supabasePublishableKey = String.fromEnvironment(
-    'sb_publishable_eYtVhUSrk6QDblHyUaCq6g_CzskyhRY',
-    defaultValue: '',
+    'SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: 'sb_publishable_eYtVhUSrk6QDblHyUaCq6g_CzskyhRY',
   );
 
   /// Supabase is used for authentication only when it is configured.
@@ -39,7 +26,7 @@ class AppConfig {
   /// Redirect URI GitHub sends the user back to. Must be registered in the
   /// Supabase dashboard (Authentication → URL Configuration).
   static const String supabaseRedirectUrl = String.fromEnvironment(
-    'io.supabase.flutter://login-callback',
+    'SUPABASE_REDIRECT_URL',
     defaultValue: 'io.supabase.flutter://login-callback',
   );
 

@@ -12,13 +12,16 @@ class AppLogger {
   static void e(String tag, String message, [Object? error]) =>
       _log('ERROR', tag, message, error);
 
-  /// User action (sign in, sign up, sign out …).
+  /// User action or data operation (sign in, sign up, a query …).
   ///
   /// These are always printed — including in release builds — because they are
-  /// what you look for when a tester reports "the sign-in does not work".
+  /// what you look for when a tester reports "it does not work". Pass [error]
+  /// to record why a step failed.
+  ///
   /// They never contain tokens or personal data.
-  static void action(String tag, String message) {
-    dev.log('[ACTION] $tag: $message', name: tag);
+  static void action(String tag, String message, [Object? error]) {
+    final suffix = error == null ? '' : ' — $error';
+    dev.log('[ACTION] $tag: $message$suffix', name: tag);
   }
 
   static void _log(

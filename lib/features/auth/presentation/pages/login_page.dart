@@ -55,13 +55,31 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  /// GitHub OAuth device flow:
-  /// 1. the app asks GitHub for a short user code,
-  /// 2. the user confirms it on github.com (opened in the browser),
-  /// 3. the app polls GitHub until the grant is approved and signs in.
+  /// GitHub sign-in. Supabase runs the OAuth round trip in the browser and
+  /// answers through a deep link; the fallback backend shows a device code the
+  /// user confirms on github.com and polls until it is approved.
   Future<void> _continueWithGithub() async {
     AppLogger.action('LoginPage', 'tapped "continue with GitHub"');
     final notifier = ref.read(authNotifierProvider.notifier);
+
+    if (!notifier.usesDeviceCode) {
+      final result = await notifier.signInWithGithub();
+      if (!mounted) return;
+      final user = result.dataOrNull;
+      if (user != null) {
+        AppLogger.action(
+          'LoginPage',
+          'sign-in with GitHub finished, opening the app',
+        );
+        context.go(AppRoutes.home);
+        return;
+      }
+      final reason = result.failureOrNull?.message ?? 'تعذّر الاتصال بـ GitHub';
+      AppLogger.action('LoginPage', 'sign-in with GitHub failed: $reason');
+      _showSnack(reason);
+      return;
+    }
+
     final started = await notifier.startGithubDeviceFlow();
     final deviceCode = started.dataOrNull;
     if (!mounted) return;

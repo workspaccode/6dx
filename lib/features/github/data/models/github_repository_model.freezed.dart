@@ -16,7 +16,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$GithubRepositoryModel {
 
- String get id; String get name; String get fullName; String? get description; String? get htmlUrl; String? get language; bool get isPrivate; bool get isFork; int get stargazersCount; int get openIssuesCount; String? get defaultBranch; DateTime? get updatedAt;
+@JsonKey(fromJson: _idAsString) String get id; String get name;@JsonKey(name: 'full_name') String get fullName; String? get description;@JsonKey(name: 'html_url') String? get htmlUrl; String? get language;@JsonKey(name: 'private') bool get isPrivate;@JsonKey(name: 'fork') bool get isFork;@JsonKey(name: 'stargazers_count') int get stargazersCount;@JsonKey(name: 'open_issues_count') int get openIssuesCount;@JsonKey(name: 'default_branch') String? get defaultBranch;@JsonKey(name: 'updated_at') DateTime? get updatedAt;
 /// Create a copy of GithubRepositoryModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -54,7 +54,7 @@ abstract mixin class $GithubRepositoryModelCopyWith<$Res>  {
   factory $GithubRepositoryModelCopyWith(GithubRepositoryModel value, $Res Function(GithubRepositoryModel) _then) = _$GithubRepositoryModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String fullName, String? description, String? htmlUrl, String? language, bool isPrivate, bool isFork, int stargazersCount, int openIssuesCount, String? defaultBranch, DateTime? updatedAt
+@JsonKey(fromJson: _idAsString) String id, String name,@JsonKey(name: 'full_name') String fullName, String? description,@JsonKey(name: 'html_url') String? htmlUrl, String? language,@JsonKey(name: 'private') bool isPrivate,@JsonKey(name: 'fork') bool isFork,@JsonKey(name: 'stargazers_count') int stargazersCount,@JsonKey(name: 'open_issues_count') int openIssuesCount,@JsonKey(name: 'default_branch') String? defaultBranch,@JsonKey(name: 'updated_at') DateTime? updatedAt
 });
 
 
@@ -170,7 +170,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String fullName,  String? description,  String? htmlUrl,  String? language,  bool isPrivate,  bool isFork,  int stargazersCount,  int openIssuesCount,  String? defaultBranch,  DateTime? updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _idAsString)  String id,  String name, @JsonKey(name: 'full_name')  String fullName,  String? description, @JsonKey(name: 'html_url')  String? htmlUrl,  String? language, @JsonKey(name: 'private')  bool isPrivate, @JsonKey(name: 'fork')  bool isFork, @JsonKey(name: 'stargazers_count')  int stargazersCount, @JsonKey(name: 'open_issues_count')  int openIssuesCount, @JsonKey(name: 'default_branch')  String? defaultBranch, @JsonKey(name: 'updated_at')  DateTime? updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _GithubRepositoryModel() when $default != null:
 return $default(_that.id,_that.name,_that.fullName,_that.description,_that.htmlUrl,_that.language,_that.isPrivate,_that.isFork,_that.stargazersCount,_that.openIssuesCount,_that.defaultBranch,_that.updatedAt);case _:
@@ -191,7 +191,7 @@ return $default(_that.id,_that.name,_that.fullName,_that.description,_that.htmlU
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String fullName,  String? description,  String? htmlUrl,  String? language,  bool isPrivate,  bool isFork,  int stargazersCount,  int openIssuesCount,  String? defaultBranch,  DateTime? updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _idAsString)  String id,  String name, @JsonKey(name: 'full_name')  String fullName,  String? description, @JsonKey(name: 'html_url')  String? htmlUrl,  String? language, @JsonKey(name: 'private')  bool isPrivate, @JsonKey(name: 'fork')  bool isFork, @JsonKey(name: 'stargazers_count')  int stargazersCount, @JsonKey(name: 'open_issues_count')  int openIssuesCount, @JsonKey(name: 'default_branch')  String? defaultBranch, @JsonKey(name: 'updated_at')  DateTime? updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _GithubRepositoryModel():
 return $default(_that.id,_that.name,_that.fullName,_that.description,_that.htmlUrl,_that.language,_that.isPrivate,_that.isFork,_that.stargazersCount,_that.openIssuesCount,_that.defaultBranch,_that.updatedAt);case _:
@@ -211,7 +211,7 @@ return $default(_that.id,_that.name,_that.fullName,_that.description,_that.htmlU
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String fullName,  String? description,  String? htmlUrl,  String? language,  bool isPrivate,  bool isFork,  int stargazersCount,  int openIssuesCount,  String? defaultBranch,  DateTime? updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(fromJson: _idAsString)  String id,  String name, @JsonKey(name: 'full_name')  String fullName,  String? description, @JsonKey(name: 'html_url')  String? htmlUrl,  String? language, @JsonKey(name: 'private')  bool isPrivate, @JsonKey(name: 'fork')  bool isFork, @JsonKey(name: 'stargazers_count')  int stargazersCount, @JsonKey(name: 'open_issues_count')  int openIssuesCount, @JsonKey(name: 'default_branch')  String? defaultBranch, @JsonKey(name: 'updated_at')  DateTime? updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _GithubRepositoryModel() when $default != null:
 return $default(_that.id,_that.name,_that.fullName,_that.description,_that.htmlUrl,_that.language,_that.isPrivate,_that.isFork,_that.stargazersCount,_that.openIssuesCount,_that.defaultBranch,_that.updatedAt);case _:
@@ -226,21 +226,21 @@ return $default(_that.id,_that.name,_that.fullName,_that.description,_that.htmlU
 @JsonSerializable()
 
 class _GithubRepositoryModel extends GithubRepositoryModel {
-  const _GithubRepositoryModel({required this.id, required this.name, required this.fullName, this.description, this.htmlUrl, this.language, this.isPrivate = false, this.isFork = false, this.stargazersCount = 0, this.openIssuesCount = 0, this.defaultBranch, this.updatedAt}): super._();
+  const _GithubRepositoryModel({@JsonKey(fromJson: _idAsString) required this.id, required this.name, @JsonKey(name: 'full_name') required this.fullName, this.description, @JsonKey(name: 'html_url') this.htmlUrl, this.language, @JsonKey(name: 'private') this.isPrivate = false, @JsonKey(name: 'fork') this.isFork = false, @JsonKey(name: 'stargazers_count') this.stargazersCount = 0, @JsonKey(name: 'open_issues_count') this.openIssuesCount = 0, @JsonKey(name: 'default_branch') this.defaultBranch, @JsonKey(name: 'updated_at') this.updatedAt}): super._();
   factory _GithubRepositoryModel.fromJson(Map<String, dynamic> json) => _$GithubRepositoryModelFromJson(json);
 
-@override final  String id;
+@override@JsonKey(fromJson: _idAsString) final  String id;
 @override final  String name;
-@override final  String fullName;
+@override@JsonKey(name: 'full_name') final  String fullName;
 @override final  String? description;
-@override final  String? htmlUrl;
+@override@JsonKey(name: 'html_url') final  String? htmlUrl;
 @override final  String? language;
-@override@JsonKey() final  bool isPrivate;
-@override@JsonKey() final  bool isFork;
-@override@JsonKey() final  int stargazersCount;
-@override@JsonKey() final  int openIssuesCount;
-@override final  String? defaultBranch;
-@override final  DateTime? updatedAt;
+@override@JsonKey(name: 'private') final  bool isPrivate;
+@override@JsonKey(name: 'fork') final  bool isFork;
+@override@JsonKey(name: 'stargazers_count') final  int stargazersCount;
+@override@JsonKey(name: 'open_issues_count') final  int openIssuesCount;
+@override@JsonKey(name: 'default_branch') final  String? defaultBranch;
+@override@JsonKey(name: 'updated_at') final  DateTime? updatedAt;
 
 /// Create a copy of GithubRepositoryModel
 /// with the given fields replaced by the non-null parameter values.
@@ -277,7 +277,7 @@ abstract mixin class _$GithubRepositoryModelCopyWith<$Res> implements $GithubRep
   factory _$GithubRepositoryModelCopyWith(_GithubRepositoryModel value, $Res Function(_GithubRepositoryModel) _then) = __$GithubRepositoryModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String fullName, String? description, String? htmlUrl, String? language, bool isPrivate, bool isFork, int stargazersCount, int openIssuesCount, String? defaultBranch, DateTime? updatedAt
+@JsonKey(fromJson: _idAsString) String id, String name,@JsonKey(name: 'full_name') String fullName, String? description,@JsonKey(name: 'html_url') String? htmlUrl, String? language,@JsonKey(name: 'private') bool isPrivate,@JsonKey(name: 'fork') bool isFork,@JsonKey(name: 'stargazers_count') int stargazersCount,@JsonKey(name: 'open_issues_count') int openIssuesCount,@JsonKey(name: 'default_branch') String? defaultBranch,@JsonKey(name: 'updated_at') DateTime? updatedAt
 });
 
 
@@ -319,7 +319,7 @@ as DateTime?,
 /// @nodoc
 mixin _$GithubIssueModel {
 
- String get id; String get number; String get title; String? get body; String get state; bool get isPullRequest; String? get userLogin; DateTime? get createdAt;
+@JsonKey(fromJson: _idAsString) String get id;@JsonKey(fromJson: _idAsString) String get number; String get title; String? get body; String get state;@JsonKey(name: 'pull_request', fromJson: _isPresent) bool get isPullRequest;@JsonKey(name: 'user', fromJson: _login) String? get userLogin;@JsonKey(name: 'created_at') DateTime? get createdAt;
 /// Create a copy of GithubIssueModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -357,7 +357,7 @@ abstract mixin class $GithubIssueModelCopyWith<$Res>  {
   factory $GithubIssueModelCopyWith(GithubIssueModel value, $Res Function(GithubIssueModel) _then) = _$GithubIssueModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String number, String title, String? body, String state, bool isPullRequest, String? userLogin, DateTime? createdAt
+@JsonKey(fromJson: _idAsString) String id,@JsonKey(fromJson: _idAsString) String number, String title, String? body, String state,@JsonKey(name: 'pull_request', fromJson: _isPresent) bool isPullRequest,@JsonKey(name: 'user', fromJson: _login) String? userLogin,@JsonKey(name: 'created_at') DateTime? createdAt
 });
 
 
@@ -469,7 +469,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String number,  String title,  String? body,  String state,  bool isPullRequest,  String? userLogin,  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _idAsString)  String id, @JsonKey(fromJson: _idAsString)  String number,  String title,  String? body,  String state, @JsonKey(name: 'pull_request', fromJson: _isPresent)  bool isPullRequest, @JsonKey(name: 'user', fromJson: _login)  String? userLogin, @JsonKey(name: 'created_at')  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _GithubIssueModel() when $default != null:
 return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.isPullRequest,_that.userLogin,_that.createdAt);case _:
@@ -490,7 +490,7 @@ return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.i
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String number,  String title,  String? body,  String state,  bool isPullRequest,  String? userLogin,  DateTime? createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _idAsString)  String id, @JsonKey(fromJson: _idAsString)  String number,  String title,  String? body,  String state, @JsonKey(name: 'pull_request', fromJson: _isPresent)  bool isPullRequest, @JsonKey(name: 'user', fromJson: _login)  String? userLogin, @JsonKey(name: 'created_at')  DateTime? createdAt)  $default,) {final _that = this;
 switch (_that) {
 case _GithubIssueModel():
 return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.isPullRequest,_that.userLogin,_that.createdAt);case _:
@@ -510,7 +510,7 @@ return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.i
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String number,  String title,  String? body,  String state,  bool isPullRequest,  String? userLogin,  DateTime? createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(fromJson: _idAsString)  String id, @JsonKey(fromJson: _idAsString)  String number,  String title,  String? body,  String state, @JsonKey(name: 'pull_request', fromJson: _isPresent)  bool isPullRequest, @JsonKey(name: 'user', fromJson: _login)  String? userLogin, @JsonKey(name: 'created_at')  DateTime? createdAt)?  $default,) {final _that = this;
 switch (_that) {
 case _GithubIssueModel() when $default != null:
 return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.isPullRequest,_that.userLogin,_that.createdAt);case _:
@@ -525,17 +525,17 @@ return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.i
 @JsonSerializable()
 
 class _GithubIssueModel implements GithubIssueModel {
-  const _GithubIssueModel({required this.id, required this.number, required this.title, this.body, this.state = 'open', this.isPullRequest = false, this.userLogin, this.createdAt});
+  const _GithubIssueModel({@JsonKey(fromJson: _idAsString) required this.id, @JsonKey(fromJson: _idAsString) required this.number, required this.title, this.body, this.state = 'open', @JsonKey(name: 'pull_request', fromJson: _isPresent) this.isPullRequest = false, @JsonKey(name: 'user', fromJson: _login) this.userLogin, @JsonKey(name: 'created_at') this.createdAt});
   factory _GithubIssueModel.fromJson(Map<String, dynamic> json) => _$GithubIssueModelFromJson(json);
 
-@override final  String id;
-@override final  String number;
+@override@JsonKey(fromJson: _idAsString) final  String id;
+@override@JsonKey(fromJson: _idAsString) final  String number;
 @override final  String title;
 @override final  String? body;
 @override@JsonKey() final  String state;
-@override@JsonKey() final  bool isPullRequest;
-@override final  String? userLogin;
-@override final  DateTime? createdAt;
+@override@JsonKey(name: 'pull_request', fromJson: _isPresent) final  bool isPullRequest;
+@override@JsonKey(name: 'user', fromJson: _login) final  String? userLogin;
+@override@JsonKey(name: 'created_at') final  DateTime? createdAt;
 
 /// Create a copy of GithubIssueModel
 /// with the given fields replaced by the non-null parameter values.
@@ -572,7 +572,7 @@ abstract mixin class _$GithubIssueModelCopyWith<$Res> implements $GithubIssueMod
   factory _$GithubIssueModelCopyWith(_GithubIssueModel value, $Res Function(_GithubIssueModel) _then) = __$GithubIssueModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String number, String title, String? body, String state, bool isPullRequest, String? userLogin, DateTime? createdAt
+@JsonKey(fromJson: _idAsString) String id,@JsonKey(fromJson: _idAsString) String number, String title, String? body, String state,@JsonKey(name: 'pull_request', fromJson: _isPresent) bool isPullRequest,@JsonKey(name: 'user', fromJson: _login) String? userLogin,@JsonKey(name: 'created_at') DateTime? createdAt
 });
 
 
@@ -610,7 +610,7 @@ as DateTime?,
 /// @nodoc
 mixin _$GithubPullRequestModel {
 
- String get id; String get number; String get title; String? get body; String get state; String? get userLogin; String? get headBranch; String? get baseBranch; int get additions; int get deletions; int get changedFiles; int get comments; bool get isDraft; bool get mergeable; DateTime? get createdAt;
+@JsonKey(fromJson: _idAsString) String get id;@JsonKey(fromJson: _idAsString) String get number; String get title; String? get body; String get state;@JsonKey(name: 'user', fromJson: _login) String? get userLogin;@JsonKey(name: 'head', fromJson: _ref) String? get headBranch;@JsonKey(name: 'base', fromJson: _ref) String? get baseBranch; int get additions; int get deletions;@JsonKey(name: 'changed_files') int get changedFiles; int get comments;@JsonKey(name: 'draft') bool get isDraft;@JsonKey(name: 'mergeable') bool get mergeable;@JsonKey(name: 'created_at') DateTime? get createdAt;
 /// Create a copy of GithubPullRequestModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -648,7 +648,7 @@ abstract mixin class $GithubPullRequestModelCopyWith<$Res>  {
   factory $GithubPullRequestModelCopyWith(GithubPullRequestModel value, $Res Function(GithubPullRequestModel) _then) = _$GithubPullRequestModelCopyWithImpl;
 @useResult
 $Res call({
- String id, String number, String title, String? body, String state, String? userLogin, String? headBranch, String? baseBranch, int additions, int deletions, int changedFiles, int comments, bool isDraft, bool mergeable, DateTime? createdAt
+@JsonKey(fromJson: _idAsString) String id,@JsonKey(fromJson: _idAsString) String number, String title, String? body, String state,@JsonKey(name: 'user', fromJson: _login) String? userLogin,@JsonKey(name: 'head', fromJson: _ref) String? headBranch,@JsonKey(name: 'base', fromJson: _ref) String? baseBranch, int additions, int deletions,@JsonKey(name: 'changed_files') int changedFiles, int comments,@JsonKey(name: 'draft') bool isDraft,@JsonKey(name: 'mergeable') bool mergeable,@JsonKey(name: 'created_at') DateTime? createdAt
 });
 
 
@@ -767,7 +767,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String number,  String title,  String? body,  String state,  String? userLogin,  String? headBranch,  String? baseBranch,  int additions,  int deletions,  int changedFiles,  int comments,  bool isDraft,  bool mergeable,  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _idAsString)  String id, @JsonKey(fromJson: _idAsString)  String number,  String title,  String? body,  String state, @JsonKey(name: 'user', fromJson: _login)  String? userLogin, @JsonKey(name: 'head', fromJson: _ref)  String? headBranch, @JsonKey(name: 'base', fromJson: _ref)  String? baseBranch,  int additions,  int deletions, @JsonKey(name: 'changed_files')  int changedFiles,  int comments, @JsonKey(name: 'draft')  bool isDraft, @JsonKey(name: 'mergeable')  bool mergeable, @JsonKey(name: 'created_at')  DateTime? createdAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _GithubPullRequestModel() when $default != null:
 return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.userLogin,_that.headBranch,_that.baseBranch,_that.additions,_that.deletions,_that.changedFiles,_that.comments,_that.isDraft,_that.mergeable,_that.createdAt);case _:
@@ -788,7 +788,7 @@ return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.u
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String number,  String title,  String? body,  String state,  String? userLogin,  String? headBranch,  String? baseBranch,  int additions,  int deletions,  int changedFiles,  int comments,  bool isDraft,  bool mergeable,  DateTime? createdAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _idAsString)  String id, @JsonKey(fromJson: _idAsString)  String number,  String title,  String? body,  String state, @JsonKey(name: 'user', fromJson: _login)  String? userLogin, @JsonKey(name: 'head', fromJson: _ref)  String? headBranch, @JsonKey(name: 'base', fromJson: _ref)  String? baseBranch,  int additions,  int deletions, @JsonKey(name: 'changed_files')  int changedFiles,  int comments, @JsonKey(name: 'draft')  bool isDraft, @JsonKey(name: 'mergeable')  bool mergeable, @JsonKey(name: 'created_at')  DateTime? createdAt)  $default,) {final _that = this;
 switch (_that) {
 case _GithubPullRequestModel():
 return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.userLogin,_that.headBranch,_that.baseBranch,_that.additions,_that.deletions,_that.changedFiles,_that.comments,_that.isDraft,_that.mergeable,_that.createdAt);case _:
@@ -808,7 +808,7 @@ return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.u
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String number,  String title,  String? body,  String state,  String? userLogin,  String? headBranch,  String? baseBranch,  int additions,  int deletions,  int changedFiles,  int comments,  bool isDraft,  bool mergeable,  DateTime? createdAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(fromJson: _idAsString)  String id, @JsonKey(fromJson: _idAsString)  String number,  String title,  String? body,  String state, @JsonKey(name: 'user', fromJson: _login)  String? userLogin, @JsonKey(name: 'head', fromJson: _ref)  String? headBranch, @JsonKey(name: 'base', fromJson: _ref)  String? baseBranch,  int additions,  int deletions, @JsonKey(name: 'changed_files')  int changedFiles,  int comments, @JsonKey(name: 'draft')  bool isDraft, @JsonKey(name: 'mergeable')  bool mergeable, @JsonKey(name: 'created_at')  DateTime? createdAt)?  $default,) {final _that = this;
 switch (_that) {
 case _GithubPullRequestModel() when $default != null:
 return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.userLogin,_that.headBranch,_that.baseBranch,_that.additions,_that.deletions,_that.changedFiles,_that.comments,_that.isDraft,_that.mergeable,_that.createdAt);case _:
@@ -823,24 +823,24 @@ return $default(_that.id,_that.number,_that.title,_that.body,_that.state,_that.u
 @JsonSerializable()
 
 class _GithubPullRequestModel implements GithubPullRequestModel {
-  const _GithubPullRequestModel({required this.id, required this.number, required this.title, this.body, this.state = 'open', this.userLogin, this.headBranch, this.baseBranch, this.additions = 0, this.deletions = 0, this.changedFiles = 0, this.comments = 0, this.isDraft = false, this.mergeable = false, this.createdAt});
+  const _GithubPullRequestModel({@JsonKey(fromJson: _idAsString) required this.id, @JsonKey(fromJson: _idAsString) required this.number, required this.title, this.body, this.state = 'open', @JsonKey(name: 'user', fromJson: _login) this.userLogin, @JsonKey(name: 'head', fromJson: _ref) this.headBranch, @JsonKey(name: 'base', fromJson: _ref) this.baseBranch, this.additions = 0, this.deletions = 0, @JsonKey(name: 'changed_files') this.changedFiles = 0, this.comments = 0, @JsonKey(name: 'draft') this.isDraft = false, @JsonKey(name: 'mergeable') this.mergeable = false, @JsonKey(name: 'created_at') this.createdAt});
   factory _GithubPullRequestModel.fromJson(Map<String, dynamic> json) => _$GithubPullRequestModelFromJson(json);
 
-@override final  String id;
-@override final  String number;
+@override@JsonKey(fromJson: _idAsString) final  String id;
+@override@JsonKey(fromJson: _idAsString) final  String number;
 @override final  String title;
 @override final  String? body;
 @override@JsonKey() final  String state;
-@override final  String? userLogin;
-@override final  String? headBranch;
-@override final  String? baseBranch;
+@override@JsonKey(name: 'user', fromJson: _login) final  String? userLogin;
+@override@JsonKey(name: 'head', fromJson: _ref) final  String? headBranch;
+@override@JsonKey(name: 'base', fromJson: _ref) final  String? baseBranch;
 @override@JsonKey() final  int additions;
 @override@JsonKey() final  int deletions;
-@override@JsonKey() final  int changedFiles;
+@override@JsonKey(name: 'changed_files') final  int changedFiles;
 @override@JsonKey() final  int comments;
-@override@JsonKey() final  bool isDraft;
-@override@JsonKey() final  bool mergeable;
-@override final  DateTime? createdAt;
+@override@JsonKey(name: 'draft') final  bool isDraft;
+@override@JsonKey(name: 'mergeable') final  bool mergeable;
+@override@JsonKey(name: 'created_at') final  DateTime? createdAt;
 
 /// Create a copy of GithubPullRequestModel
 /// with the given fields replaced by the non-null parameter values.
@@ -877,7 +877,7 @@ abstract mixin class _$GithubPullRequestModelCopyWith<$Res> implements $GithubPu
   factory _$GithubPullRequestModelCopyWith(_GithubPullRequestModel value, $Res Function(_GithubPullRequestModel) _then) = __$GithubPullRequestModelCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String number, String title, String? body, String state, String? userLogin, String? headBranch, String? baseBranch, int additions, int deletions, int changedFiles, int comments, bool isDraft, bool mergeable, DateTime? createdAt
+@JsonKey(fromJson: _idAsString) String id,@JsonKey(fromJson: _idAsString) String number, String title, String? body, String state,@JsonKey(name: 'user', fromJson: _login) String? userLogin,@JsonKey(name: 'head', fromJson: _ref) String? headBranch,@JsonKey(name: 'base', fromJson: _ref) String? baseBranch, int additions, int deletions,@JsonKey(name: 'changed_files') int changedFiles, int comments,@JsonKey(name: 'draft') bool isDraft,@JsonKey(name: 'mergeable') bool mergeable,@JsonKey(name: 'created_at') DateTime? createdAt
 });
 
 
@@ -922,7 +922,7 @@ as DateTime?,
 /// @nodoc
 mixin _$GithubUserModel {
 
- String get login; String get id; String? get name; String? get email; String? get avatarUrl; String? get bio; int get publicRepos; int get followers; int get following;
+ String get login;@JsonKey(fromJson: _idAsString) String get id; String? get name; String? get email;@JsonKey(name: 'avatar_url') String? get avatarUrl; String? get bio;@JsonKey(name: 'public_repos') int get publicRepos; int get followers; int get following;
 /// Create a copy of GithubUserModel
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -960,7 +960,7 @@ abstract mixin class $GithubUserModelCopyWith<$Res>  {
   factory $GithubUserModelCopyWith(GithubUserModel value, $Res Function(GithubUserModel) _then) = _$GithubUserModelCopyWithImpl;
 @useResult
 $Res call({
- String login, String id, String? name, String? email, String? avatarUrl, String? bio, int publicRepos, int followers, int following
+ String login,@JsonKey(fromJson: _idAsString) String id, String? name, String? email,@JsonKey(name: 'avatar_url') String? avatarUrl, String? bio,@JsonKey(name: 'public_repos') int publicRepos, int followers, int following
 });
 
 
@@ -1073,7 +1073,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String login,  String id,  String? name,  String? email,  String? avatarUrl,  String? bio,  int publicRepos,  int followers,  int following)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String login, @JsonKey(fromJson: _idAsString)  String id,  String? name,  String? email, @JsonKey(name: 'avatar_url')  String? avatarUrl,  String? bio, @JsonKey(name: 'public_repos')  int publicRepos,  int followers,  int following)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _GithubUserModel() when $default != null:
 return $default(_that.login,_that.id,_that.name,_that.email,_that.avatarUrl,_that.bio,_that.publicRepos,_that.followers,_that.following);case _:
@@ -1094,7 +1094,7 @@ return $default(_that.login,_that.id,_that.name,_that.email,_that.avatarUrl,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String login,  String id,  String? name,  String? email,  String? avatarUrl,  String? bio,  int publicRepos,  int followers,  int following)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String login, @JsonKey(fromJson: _idAsString)  String id,  String? name,  String? email, @JsonKey(name: 'avatar_url')  String? avatarUrl,  String? bio, @JsonKey(name: 'public_repos')  int publicRepos,  int followers,  int following)  $default,) {final _that = this;
 switch (_that) {
 case _GithubUserModel():
 return $default(_that.login,_that.id,_that.name,_that.email,_that.avatarUrl,_that.bio,_that.publicRepos,_that.followers,_that.following);case _:
@@ -1114,7 +1114,7 @@ return $default(_that.login,_that.id,_that.name,_that.email,_that.avatarUrl,_tha
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String login,  String id,  String? name,  String? email,  String? avatarUrl,  String? bio,  int publicRepos,  int followers,  int following)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String login, @JsonKey(fromJson: _idAsString)  String id,  String? name,  String? email, @JsonKey(name: 'avatar_url')  String? avatarUrl,  String? bio, @JsonKey(name: 'public_repos')  int publicRepos,  int followers,  int following)?  $default,) {final _that = this;
 switch (_that) {
 case _GithubUserModel() when $default != null:
 return $default(_that.login,_that.id,_that.name,_that.email,_that.avatarUrl,_that.bio,_that.publicRepos,_that.followers,_that.following);case _:
@@ -1129,16 +1129,16 @@ return $default(_that.login,_that.id,_that.name,_that.email,_that.avatarUrl,_tha
 @JsonSerializable()
 
 class _GithubUserModel implements GithubUserModel {
-  const _GithubUserModel({required this.login, required this.id, this.name, this.email, this.avatarUrl, this.bio, this.publicRepos = 0, this.followers = 0, this.following = 0});
+  const _GithubUserModel({required this.login, @JsonKey(fromJson: _idAsString) required this.id, this.name, this.email, @JsonKey(name: 'avatar_url') this.avatarUrl, this.bio, @JsonKey(name: 'public_repos') this.publicRepos = 0, this.followers = 0, this.following = 0});
   factory _GithubUserModel.fromJson(Map<String, dynamic> json) => _$GithubUserModelFromJson(json);
 
 @override final  String login;
-@override final  String id;
+@override@JsonKey(fromJson: _idAsString) final  String id;
 @override final  String? name;
 @override final  String? email;
-@override final  String? avatarUrl;
+@override@JsonKey(name: 'avatar_url') final  String? avatarUrl;
 @override final  String? bio;
-@override@JsonKey() final  int publicRepos;
+@override@JsonKey(name: 'public_repos') final  int publicRepos;
 @override@JsonKey() final  int followers;
 @override@JsonKey() final  int following;
 
@@ -1177,7 +1177,7 @@ abstract mixin class _$GithubUserModelCopyWith<$Res> implements $GithubUserModel
   factory _$GithubUserModelCopyWith(_GithubUserModel value, $Res Function(_GithubUserModel) _then) = __$GithubUserModelCopyWithImpl;
 @override @useResult
 $Res call({
- String login, String id, String? name, String? email, String? avatarUrl, String? bio, int publicRepos, int followers, int following
+ String login,@JsonKey(fromJson: _idAsString) String id, String? name, String? email,@JsonKey(name: 'avatar_url') String? avatarUrl, String? bio,@JsonKey(name: 'public_repos') int publicRepos, int followers, int following
 });
 
 

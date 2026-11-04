@@ -14,7 +14,12 @@ import 'package:sixdx/features/auth/presentation/providers/auth_providers.dart';
 
 /// A repository that records what the login screen asks for.
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository({this.failAtStart = false, this.approval});
+  _FakeAuthRepository({
+    this.failAtStart = false,
+    this.approval,
+    this.usesDeviceCode = true,
+    this.browserSignInFails = false,
+  });
 
   final bool failAtStart;
 
@@ -22,8 +27,28 @@ class _FakeAuthRepository implements AuthRepository {
   /// when GitHub "approves" the device.
   final Completer<bool>? approval;
 
+  /// `false` mimics the browser based backend (Supabase).
+  final bool usesDeviceCode;
+
+  final bool browserSignInFails;
+
   int startCalls = 0;
   int completeCalls = 0;
+  int browserCalls = 0;
+
+  @override
+  bool get usesGithubDeviceCode => usesDeviceCode;
+
+  @override
+  Future<Result<AuthUser>> signInWithGithub() async {
+    browserCalls++;
+    if (browserSignInFails) {
+      return const Result.failure(Failure.network('تعذّر تسجيل الدخول'));
+    }
+    return const Result.success(
+      AuthUser(id: '42', login: 'sami', name: 'Sami'),
+    );
+  }
 
   @override
   Future<Result<GithubDeviceCode>> startGithubDeviceFlow() async {
@@ -167,5 +192,47 @@ void main() {
     );
     expect(button.onPressed, isNotNull,
         reason: 'the button must not stay disabled after a failure');
+  });
+
+  testWidgets('the browser flow (Supabase) signs in without a device code',
+      (tester) async {
+    final repository = _FakeAuthRepository(usesDeviceCode: false);
+    await _pumpLogin(tester, repository);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('المتابعة باستخدام GitHub'));
+    await tester.pump();
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    expect(repository.browserCalls, 1);
+    // No device code sheet: the browser owns the flow.
+    expect(repository.startCalls, 0);
+    expect(find.text('فتح GitHub'), findsNothing);
+    expect(find.text('HOME_SCREEN'), findsOneWidget);
+  });
+
+  testWidgets('a browser sign-in failure shows the reason and stays usable',
+      (tester) async {
+    final repository = _FakeAuthRepository(
+      usesDeviceCode: false,
+      browserSignInFails: true,
+    );
+    await _pumpLogin(tester, repository);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('المتابعة باستخدام GitHub'));
+    await tester.pump();
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    expect(repository.browserCalls, 1);
+    expect(find.text('تعذّر تسجيل الدخول'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'المتابعة باستخدام GitHub'),
+    );
+    expect(button.onPressed, isNotNull);
   });
 }

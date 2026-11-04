@@ -31,13 +31,12 @@ class _FakeGithubDataSource extends GithubAuthDataSource {
   }
 
   @override
-  Future<String?> pollAccessToken({
-    required String deviceCode,
-    required int interval,
-  }) async {
+  Future<GithubTokenPoll> pollAccessToken({required String deviceCode}) async {
     pollCalls++;
-    if (pollCalls <= pollResultsBeforeApproval) return null;
-    return token ?? 'gho_test_token';
+    if (pollCalls <= pollResultsBeforeApproval) {
+      return const GithubTokenPoll.pending();
+    }
+    return GithubTokenPoll.approved(token ?? 'gho_test_token');
   }
 
   @override

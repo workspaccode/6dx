@@ -1,14 +1,22 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/errors/failures.dart';
+import '../../../../core/network/current_workspace.dart';
+import '../../../../core/network/supabase_client.dart';
+import '../../../../core/utils/logger.dart';
+import '../../../../core/utils/result.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/task_remote_data_source.dart';
 import '../../data/repositories/task_repository_impl.dart';
 import '../../domain/entities/task.dart';
 import '../../domain/repositories/task_repository.dart';
 import '../../domain/usecases/task_usecases.dart';
-import '../../../auth/presentation/providers/auth_providers.dart';
 
 final taskRemoteDataSourceProvider = Provider<TaskRemoteDataSource>(
-  (ref) => TaskRemoteDataSource(ref.watch(dioProvider)),
+  (ref) => TaskRemoteDataSource(
+    ref.watch(supabaseClientResolverProvider),
+    ref.watch(currentWorkspaceProvider),
+  ),
 );
 
 final taskRepositoryProvider = Provider<TaskRepository>(
@@ -38,15 +46,21 @@ final deleteTaskProvider = Provider<DeleteTask>(
 class TasksNotifier extends AsyncNotifier<List<Task>> {
   String? _projectId;
 
+  static const String _tag = 'Tasks';
+
   @override
   Future<List<Task>> build() async {
+    // Reload whenever the signed-in account changes.
+    ref.watch(authNotifierProvider.select((state) => state.value?.id));
     final result = await ref.watch(getTasksProvider).call(projectId: _projectId);
+    _logResult('load', result);
     return result.dataOrNull ?? const [];
   }
 
   Future<void> refresh() async {
     state = const AsyncLoading();
     final result = await ref.read(getTasksProvider).call(projectId: _projectId);
+    _logResult('refresh', result);
     state = AsyncData(result.dataOrNull ?? const []);
   }
 
@@ -54,6 +68,7 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
     _projectId = projectId;
     state = const AsyncLoading();
     final result = await ref.read(getTasksProvider).call(projectId: projectId);
+    _logResult('filter by project $projectId', result);
     state = AsyncData(result.dataOrNull ?? const []);
   }
 
@@ -69,6 +84,7 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
           projectId: projectId,
           priority: priority,
         );
+    _logResult('create "$title"', result);
     final created = result.dataOrNull;
     if (created == null) return false;
     state = AsyncData([created, ...?state.value]);
@@ -77,6 +93,7 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
 
   Future<bool> updateStatus(String id, TaskStatus status) async {
     final result = await ref.read(updateTaskStatusProvider).call(id, status);
+    _logResult('move $id to ${status.name}', result);
     final updated = result.dataOrNull;
     if (updated == null) return false;
     final current = [...?state.value];
@@ -90,11 +107,22 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
 
   Future<bool> remove(String id) async {
     final result = await ref.read(deleteTaskProvider).call(id);
+    _logResult('delete $id', result);
     if (result.isFailure) return false;
     state = AsyncData(
       [...?state.value]..removeWhere((t) => t.id == id),
     );
     return true;
+  }
+
+  void _logResult<T>(String operation, Result<T> result) {
+    final failure = result.failureOrNull;
+    AppLogger.action(
+      _tag,
+      failure == null
+          ? '$operation → ok'
+          : '$operation → FAILED: ${failure.message}',
+    );
   }
 }
 

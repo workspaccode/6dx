@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/demo/demo_data_banner.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
@@ -77,7 +76,6 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 96),
           children: [
-            const DemoDataBanner(),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
               child: TextField(

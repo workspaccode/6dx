@@ -13,6 +13,11 @@ abstract interface class AuthBackend {
   /// Whether the backend is ready to be used.
   bool get isConfigured;
 
+  /// Whether the GitHub sign-in needs a short code the user types on
+  /// github.com (the device flow), instead of a browser redirect that comes
+  /// back through a deep link.
+  bool get usesDeviceCode;
+
   /// Restores a previously stored session, if any.
   Future<AuthUser?> restoreSession();
 

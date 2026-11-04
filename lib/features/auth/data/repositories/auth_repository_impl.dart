@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 
-import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/errors/failures.dart';
@@ -12,7 +13,6 @@ import '../datasources/auth_local_data_source.dart';
 import '../datasources/auth_remote_data_source.dart';
 import '../backends/auth_backend.dart';
 import '../backends/device_flow_auth_backend.dart';
-import '../backends/supabase_auth_backend.dart';
 import '../datasources/github_auth_data_source.dart';
 import '../models/user_model.dart';
 
@@ -35,23 +35,23 @@ class AuthRepositoryImpl implements AuthRepository {
   static const String _tag = 'Auth';
 
   @override
+  bool get usesGithubDeviceCode => _backend.usesDeviceCode;
+
+  @override
+  Future<Result<AuthUser>> signInWithGithub() => _guard(() async {
+        AppLogger.action(_tag, 'sign-in with GitHub: opening the browser');
+        final user = await _backend.signInWithGithub();
+        await _local.cacheSession(user: UserModel.fromEntity(user));
+        AppLogger.action(_tag, 'sign-in with GitHub: success');
+        return user;
+      });
+
+  @override
   Future<Result<GithubDeviceCode>> startGithubDeviceFlow() => _guard(() async {
         AppLogger.action(_tag, 'sign-in with GitHub: requesting a device code');
-        if (AppConfig.useMockData) {
-          return const GithubDeviceCode(
-            deviceCode: 'mock',
-            userCode: 'MOCK-0000',
-            verificationUri: 'https://github.com/login/device',
-          );
-        }
-        if (_backend is SupabaseAuthBackend) {
-          // Supabase runs the whole OAuth round trip itself.
-          final user = await _backend.signInWithGithub();
-          await _local.cacheSession(user: UserModel.fromEntity(user));
-          return const GithubDeviceCode(
-            deviceCode: 'supabase',
-            userCode: 'SUPABASE',
-            verificationUri: 'https://github.com/login/oauth/authorize',
+        if (!_backend.usesDeviceCode) {
+          throw const ServerException(
+            'تسجيل الدخول عبر Supabase يستخدم المتصفح، لا كود جهاز.',
           );
         }
         final code = await _github.requestDeviceCode();
@@ -74,23 +74,16 @@ class AuthRepositoryImpl implements AuthRepository {
     void Function(bool pending)? onPending,
   }) =>
       _guard(() async {
-        if (AppConfig.useMockData) {
-          final user = _mockGithubUser();
-          await _local.cacheSession(user: user);
-          return user.toEntity();
+        final backend = _backend;
+        if (backend is! DeviceFlowAuthBackend) {
+          throw const ServerException(
+            'تسجيل الدخول عبر Supabase يستخدم المتصفح، لا كود جهاز.',
+          );
         }
 
-        if (_backend is DeviceFlowAuthBackend) {
-          AppLogger.action(_tag, 'sign-in with GitHub: waiting for the approval');
-          final user = await _backend
-              .completeDeviceFlow(deviceCode, onPending: onPending);
-          await _local.cacheSession(user: UserModel.fromEntity(user));
-          AppLogger.action(_tag, 'sign-in with GitHub: success');
-          return user;
-        }
-
-        AppLogger.action(_tag, 'sign-in with GitHub: completing through Supabase');
-        final user = await _backend.signInWithGithub();
+        AppLogger.action(_tag, 'sign-in with GitHub: waiting for the approval');
+        final user =
+            await backend.completeDeviceFlow(deviceCode, onPending: onPending);
         await _local.cacheSession(user: UserModel.fromEntity(user));
         AppLogger.action(_tag, 'sign-in with GitHub: success');
         return user;
@@ -103,9 +96,8 @@ class AuthRepositoryImpl implements AuthRepository {
   }) =>
       _guard(() async {
         AppLogger.action(_tag, 'sign-in with email: $email');
-        final model = AppConfig.useMockData
-            ? _mockEmailUser(email)
-            : await _remote.loginWithEmail(email: email, password: password);
+        final model =
+            await _remote.loginWithEmail(email: email, password: password);
         await _local.cacheSession(user: model);
         AppLogger.action(_tag, 'sign-in with email: success');
         return model.toEntity();
@@ -119,13 +111,11 @@ class AuthRepositoryImpl implements AuthRepository {
   }) =>
       _guard(() async {
         AppLogger.action(_tag, 'sign-up: $email');
-        final model = AppConfig.useMockData
-            ? _mockEmailUser(email, displayName: displayName)
-            : await _remote.register(
-                email: email,
-                password: password,
-                displayName: displayName,
-              );
+        final model = await _remote.register(
+          email: email,
+          password: password,
+          displayName: displayName,
+        );
         await _local.cacheSession(user: model);
         AppLogger.action(_tag, 'sign-up: success, the verification code was sent');
         return model.toEntity();
@@ -135,9 +125,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<Result<AuthUser>> verifyOtp({required String email, required String otp}) =>
       _guard(() async {
         AppLogger.action(_tag, 'verify the OTP sent to $email');
-        final model = AppConfig.useMockData
-            ? _mockEmailUser(email)
-            : await _remote.verifyOtp(email: email, otp: otp);
+        final model = await _remote.verifyOtp(email: email, otp: otp);
         await _local.cacheSession(user: model);
         AppLogger.action(_tag, 'verify the OTP: success');
         return model.toEntity();
@@ -145,57 +133,55 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<Result<AuthUser?>> currentUser() => _guard(() async {
-        final cached = await _local.readCachedUser();
-        if (cached == null) return null;
-        if (!AppConfig.useMockData) {
-          final token = cached.accessToken;
-          if (token != null) {
-            try {
-              final fresh = await _github.fetchUser(token);
-              final updated = cached.copyWith(
-                login: fresh['login'] as String? ?? cached.login,
-                name: fresh['name'] as String? ?? cached.name,
-                avatarUrl: fresh['avatar_url'] as String? ?? cached.avatarUrl,
-              );
-              await _local.cacheSession(user: updated);
-              return updated.toEntity();
-            } on DioException {
-              await _local.clearSession();
-              return null;
-            }
-          }
+        // The backend owns its session: GitHub validates the stored token,
+        // Supabase refreshes its own. Both return `null` once it is gone.
+        final restored = await _backend.restoreSession();
+        if (restored == null) {
+          await _local.clearSession();
+          return null;
         }
-        return cached.toEntity();
+        await _local.cacheSession(user: UserModel.fromEntity(restored));
+        return restored;
       });
 
   @override
   Future<Result<void>> signOut() => _guard(() async {
-        if (!AppConfig.useMockData) {
-          try {
-            await _remote.logout();
-          } on DioException {
-            // The local session is cleared regardless of the server answer.
-          }
+        try {
+          await _remote.logout();
+        } on DioException {
+          // The local session is cleared regardless of the server answer.
         }
+        // Supabase keeps its own copy of the session (and a refresh token),
+        // it has to be ended as well or the user comes back signed in.
+        await _backend.signOut();
         await _local.clearSession();
       });
 
+  /// Every failure is logged with its reason so a tester log shows exactly
+  /// which step broke.
   Future<Result<T>> _guard<T>(Future<T> Function() action) async {
     try {
       return Result.success(await action());
-    } on UnauthorizedException {
-      return const Result.failure(Failure.unauthorized());
-    } on NetworkException catch (e) {
-      return Result.failure(Failure.network(e.message));
-    } on ServerException catch (e) {
-      return Result.failure(Failure.server(e.message));
-    } on CacheException catch (e) {
-      return Result.failure(Failure.cache(e.message));
-    } on DioException catch (e) {
-      return Result.failure(Failure.network(_describeDioError(e)));
-    } catch (e) {
-      return Result.failure(Failure.unknown(e.toString()));
+    } catch (error) {
+      final failure = _describeFailure(error);
+      AppLogger.action(_tag, 'FAILED: ${failure.message}', error);
+      return Result.failure(failure);
     }
+  }
+
+  static Failure _describeFailure(Object error) {
+    if (error is UnauthorizedException) return const Failure.unauthorized();
+    if (error is NetworkException) return Failure.network(error.message);
+    if (error is ServerException) return Failure.server(error.message);
+    if (error is CacheException) return Failure.cache(error.message);
+    if (error is TimeoutException) {
+      return Failure.network(error.message ?? 'انتهت مهلة الاتصال.');
+    }
+    if (error is StateError) return Failure.unknown(error.message.toString());
+    if (error is DioException) {
+      return Failure.network(_describeDioError(error));
+    }
+    return Failure.unknown(error.toString());
   }
 
   /// Turns a transport error into a short, actionable message.
@@ -214,21 +200,4 @@ class AuthRepositoryImpl implements AuthRepository {
       _ => 'تعذّر الاتصال بـ GitHub.',
     };
   }
-
-  UserModel _mockGithubUser() => UserModel(
-        id: '10001',
-        login: 'sixdx-dev',
-        name: 'Sami Developer',
-        email: 'sami@example.com',
-        avatarUrl: 'https://avatars.githubusercontent.com/u/10001?v=4',
-        accessToken: 'mock-github-token',
-      );
-
-  UserModel _mockEmailUser(String email, {String? displayName}) => UserModel(
-        id: '20002',
-        login: email.split('@').first,
-        name: displayName ?? email.split('@').first,
-        email: email,
-        accessToken: 'mock-email-token',
-      );
 }

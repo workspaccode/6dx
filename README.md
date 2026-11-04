@@ -8,6 +8,10 @@ The design source of truth is `6DX-all-screens.html` (92 mobile + 51 web screens
 The Flutter app currently implements the core mobile flow: onboarding → auth →
 projects → task board → task detail → notifications → profile.
 
+📘 **Backend / self-hosting:** [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) — full
+schema, RLS policies, RPC contracts, auth flows and a step-by-step
+self-hosted Supabase setup.
+
 ## Tech stack
 
 | Concern            | Package                                                        |
@@ -33,30 +37,23 @@ flutter run
 Useful flags:
 
 ```bash
-flutter run --dart-define=API_BASE_URL=https://api.example.com
-flutter run --dart-define=GITHUB_CLIENT_ID=xxxx --dart-define=GITHUB_CLIENT_SECRET=yyyy
-flutter run --dart-define=USE_MOCK=true           # demo catalogue (see below)
+flutter run --dart-define=SUPABASE_URL=https://<project>.supabase.co \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable key> \
+            --dart-define=GITHUB_CLIENT_ID=<oauth app client id>
 ```
 
-## No fake data in a normal build
+## No fake data, ever
 
-The app **never invents workspace content**. `USE_MOCK` defaults to `false`,
-so every screen renders exactly one of:
+The app ships **no sample content**. Every screen renders exactly one of:
 
-1. the API response,
-2. an honest empty state (`AppEmptyState`), or
-3. an error state (the workspace provider resolves to an empty snapshot and
-   exposes the reason through `workspaceErrorProvider`).
+1. the data the signed-in member is allowed to read (RLS decides), or
+2. an honest empty state (`AppEmptyState`) — a new account starts with an
+   empty workspace, no projects and no tasks.
 
-All sample content lives in a single file — `lib/core/demo/demo_data.dart` —
-and is only reachable with `--dart-define=USE_MOCK=true`. When demo mode is
-on, a banner («بيانات تجريبية») appears on the main screens so the sample
-content is never mistaken for real data. The demo catalogue is consumed
-through the same repository/provider path as the real API, so nothing in the
-UI layer is aware of the difference.
-
-A regression test (`test/no_fake_data_test.dart`) asserts that the default
-build serves an empty workspace instead of the demo records.
+There is no mock/demo mode and no fallback catalogue: a failing query surfaces
+as an empty snapshot with the reason kept in `workspaceErrorProvider`, so the
+UI never shows invented records. `test/no_fake_data_test.dart` guards that
+contract.
 
 ## Architecture
 
@@ -64,12 +61,11 @@ build serves an empty workspace instead of the demo records.
 lib/
 ├── app/                 # composition root (SixDxApp + global providers)
 ├── core/
-│   ├── config/          # AppConfig (mock mode, endpoints)
-│   ├── demo/            # the demo catalogue + "demo data" banner
+│   ├── config/          # AppConfig (Supabase URL/key, redirect URL)
 │   ├── constants/       # colors, constants, endpoints
 │   ├── errors/          # Failure (sealed) + exceptions
 │   ├── extensions/      # BuildContext.l10n
-│   ├── network/         # Dio factory, auth interceptor, retry interceptor
+│   ├── network/         # Supabase client, current workspace, Dio interceptors
 │   ├── notifications/   # awesome_notifications wrapper
 │   ├── storage/         # secure + local storage
 │   ├── theme/           # dark/light theme from the 6DX design tokens
@@ -180,8 +176,7 @@ filter) and iOS (`Info.plist` → `CFBundleURLTypes`).
 ```bash
 flutter run \
   --dart-define=SUPABASE_URL=https://<project-ref>.supabase.co \
-  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable key> \
-  --dart-define=API_BASE_URL=https://api.6dx.app/v1
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=<publishable key>
 ```
 
 The publishable key is safe to ship in the app; never put the service-role key
@@ -189,25 +184,53 @@ in the client.
 
 ### Database
 
-`supabase/migrations/0001_init.sql` contains the whole 6DX schema:
+`supabase/migrations/` contains the whole 6DX schema:
 
-* `workspaces`, `workspace_members`, `workspace_invites`
-* `projects`, `repositories`, `project_labels`, `integrations`
-* `sprints`, `sprint_items`, `tasks`, `task_comments`, `task_subtasks`,
-  `task_dependencies`, `pull_requests`
-* `notifications`, `activity_events`, `digest_entries`, `client_reports`,
-  `time_entries`
-* row level security on every table, scoped by `is_workspace_member()`
-* `get_workspace_snapshot(workspace_id)` — a `jsonb` function that returns the
-  exact payload the Flutter app expects (the same shape as
-  `WorkspaceSnapshot` in `features/workspace/domain/entities`)
+* `0001_init.sql` — tables, RLS policies, `get_workspace_snapshot()` and the
+  API privileges:
 
-Apply it with the Supabase MCP (`execute_sql`) or the CLI:
+  * `workspaces`, `workspace_members`, `workspace_invites`
+  * `projects`, `repositories`, `project_labels`, `integrations`
+  * `sprints`, `sprint_items`, `tasks`, `task_comments`, `task_subtasks`,
+    `task_dependencies`, `pull_requests`
+  * `notifications`, `activity_events`, `digest_entries`, `client_reports`,
+    `time_entries`
+  * row level security on every table, scoped by `is_workspace_member()`
+  * `get_workspace_snapshot(workspace_id)` — a `jsonb` function that returns
+    the exact payload the Flutter app expects (the same shape as
+    `WorkspaceSnapshot` in `features/workspace/domain/entities`)
+  * the grants PostgREST needs (`select/insert/update/delete` for the
+    `authenticated` role) — without them every query answers `42501`
+
+* `0002_workspace_bootstrap.sql` — `ensure_my_workspace()`, which creates the
+  first workspace for a new account, because RLS has no insert policy on
+  `workspaces` (a member has to exist first)
+
+Apply them with the Supabase MCP (`execute_sql`) or the CLI:
 
 ```bash
 supabase link --project-ref ifrpswaclrrsshspdmzd
 supabase db push
 ```
+
+A project whose tables exist but whose functions and grants are missing was
+migrated half way. Start from a clean schema, then push:
+
+```sql
+drop schema public cascade;
+create schema public;
+grant usage on schema public to anon, authenticated, service_role;
+```
+
+The app reads and writes every screen through Supabase, under the member's own
+JWT (so RLS applies):
+
+| Screen | Query |
+|--------|-------|
+| workspace projection | `rpc get_workspace_snapshot` |
+| projects | `projects` + embedded `repositories` / `tasks(status)` |
+| tasks | `tasks` + embedded `projects(name)` |
+| workspace id | first `workspace_members` row, else `rpc ensure_my_workspace` |
 
 ### Limits of the free plan
 
@@ -219,16 +242,80 @@ accounts.
 
 ## GitHub authentication
 
-`GithubAuthDataSource` implements the GitHub **OAuth device flow**, so no
-redirect URI / browser callback is required on mobile, desktop or web:
+Two backends live behind `AuthBackend`; the app picks one at start-up:
 
-1. `POST https://github.com/login/device/code` → user code + verification URI.
-2. The user confirms the code on GitHub.
+| Backend | Used when | Flow |
+|---------|-----------|------|
+| `SupabaseAuthBackend` | `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY` are set (the default) | browser OAuth, the session comes back through the `io.supabase.flutter://login-callback` deep link |
+| `DeviceFlowAuthBackend` | Supabase is not configured | GitHub OAuth **device flow**, no redirect URI and no secret |
+
+The GitHub OAuth **client secret** must live only in the Supabase dashboard
+(Authentication → Providers → GitHub). It is never read by the app.
+
+### Supabase (default)
+
+1. `signInWithOAuth(OAuthProvider.github, redirectTo: SUPABASE_REDIRECT_URL)`
+   opens github.com in the browser.
+2. GitHub redirects to the Supabase callback, which exchanges the code and
+   sends the session to the app with the custom scheme.
+3. `supabase_flutter` handles the deep link (`detectSessionInUri: true`) and
+   emits `AuthChangeEvent.signedIn`; `SupabaseAuthBackend` waits for that
+   event.
+
+Both URLs have to be registered in the Supabase dashboard:
+
+* Authentication → URL Configuration → Redirect URLs:
+  `io.supabase.flutter://login-callback`
+* `android/app/src/main/AndroidManifest.xml` already declares the
+  `io.supabase.flutter://login-callback` intent filter, and `ios/Runner/Info.plist`
+  the matching URL scheme.
+
+### Device flow (fallback)
+
+Used when Supabase is not configured — e.g. a local build with
+`--dart-define=SUPABASE_URL=`. The app only needs a client **id**:
+
+1. `POST https://github.com/login/device/code` → user code + verification URI
+   (parameters are form-encoded, a query string answers `404`).
+2. The user confirms the code on github.com.
 3. The app polls `POST https://github.com/login/oauth/access_token` until the
-   token is issued, then loads `/user` and `/user/emails`.
+   token is issued (honouring `authorization_pending` and `slow_down`), then
+   loads `/user` and `/user/emails`.
+
+**Device Flow has to be enabled** on the GitHub OAuth app
+(github.com/settings/developers → the app → *Enable Device Flow*); otherwise
+GitHub answers `400 device_flow_disabled` and the login screen shows that
+hint. The client id is read from `--dart-define=GITHUB_CLIENT_ID=...`
+(default `Ov23liw4p0LMObMu8l9b`).
 
 The token is stored with `flutter_secure_storage` and attached to every API
 call by `AuthInterceptor`.
+
+### Reading the log when something fails
+
+Every operation prints one always-on line (`AppLogger.action` — it is *not*
+stripped in release builds), so a tester log shows exactly which step broke:
+
+```
+[ACTION] LoginPage: tapped "continue with GitHub"
+[ACTION] Auth: sign-in with GitHub: opening the browser, redirect io.supabase.flutter://login-callback
+[ACTION] Auth: sign-in with GitHub: the deep link arrived
+[ACTION] Data: workspace.resolve → ok (12ms)
+[ACTION] Data: workspace.snapshot → FAILED [42501] permission denied for table projects
+[ACTION] Workspace: snapshot FAILED ...
+[ACTION] Projects: load → FAILED: لا توجد صلاحيات على قاعدة البيانات …
+```
+
+| Tag | Covers |
+|-----|--------|
+| `LoginPage`, `AuthSession` | what the user tapped, session restore |
+| `Auth`, `DeviceFlow` | sign-in steps, device-code polling, provider token capture |
+| `Data` | every Supabase query — `label → ok (Nms)` or `FAILED [code] message` |
+| `GitHub` | every GitHub API request, its status and item count (never the token) |
+| `Workspace`, `Projects`, `Tasks` | provider-level results and failures |
+
+No token, e-mail or personal data is ever printed.
+
 
 ## Notifications
 

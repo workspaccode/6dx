@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/app_endpoints.dart';
 import '../../../../core/config/app_config.dart';
 import '../../../../core/network/dio_factory.dart';
+import '../../../../core/network/github_auth_interceptor.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/result.dart';
@@ -29,17 +30,23 @@ final dioProvider = Provider<Dio>(
 );
 
 final githubDioProvider = Provider<Dio>(
-  (ref) => Dio(
-    BaseOptions(
-      baseUrl: AppEndpoints.githubBaseUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: const {
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    ),
-  ),
+  (ref) {
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: AppEndpoints.githubBaseUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+        headers: const {
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      ),
+    );
+    // GitHub API calls need the token the provider issued at sign-in; the
+    // session bearer alone is a Supabase JWT and GitHub rejects it.
+    dio.interceptors.add(GithubAuthInterceptor(ref.watch(secureStorageProvider)));
+    return dio;
+  },
 );
 
 /// The OAuth endpoints live on github.com, not on api.github.com. They need
@@ -94,6 +101,10 @@ final authRepositoryProvider = Provider<AuthRepository>(
 );
 
 // Use cases
+final signInWithGithubProvider = Provider<SignInWithGithub>(
+  (ref) => SignInWithGithub(ref.watch(authRepositoryProvider)),
+);
+
 final startGithubDeviceFlowProvider = Provider<StartGithubDeviceFlow>(
   (ref) => StartGithubDeviceFlow(ref.watch(authRepositoryProvider)),
 );
@@ -135,6 +146,24 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
           : 'session restored for ${user.login}',
     );
     return user;
+  }
+
+  /// `true` when GitHub sign-in needs a code typed on github.com, `false` when
+  /// it completes in the browser and comes back through a deep link.
+  bool get usesDeviceCode =>
+      ref.read(authRepositoryProvider).usesGithubDeviceCode;
+
+  /// Browser based sign-in (Supabase): opens GitHub in the browser and waits
+  /// for the deep link that carries the session.
+  Future<Result<AuthUser>> signInWithGithub() async {
+    final previous = state;
+    state = const AsyncLoading();
+    final result = await ref.read(signInWithGithubProvider).call();
+    final user = result.dataOrNull;
+    state = user != null
+        ? AsyncData(user)
+        : (previous.hasValue ? previous : const AsyncData(null));
+    return result;
   }
 
   /// Step 1: ask GitHub for a device code the user confirms on the web.

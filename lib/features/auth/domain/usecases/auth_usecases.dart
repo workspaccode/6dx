@@ -3,6 +3,14 @@ import '../entities/auth_user.dart';
 import '../entities/github_device_code.dart';
 import '../repositories/auth_repository.dart';
 
+class SignInWithGithub {
+  const SignInWithGithub(this._repository);
+
+  final AuthRepository _repository;
+
+  Future<Result<AuthUser>> call() => _repository.signInWithGithub();
+}
+
 class StartGithubDeviceFlow {
   const StartGithubDeviceFlow(this._repository);
 
