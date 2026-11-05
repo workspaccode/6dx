@@ -30,6 +30,10 @@ class AppConfig {
     defaultValue: 'io.supabase.flutter://login-callback',
   );
 
-  /// GitHub scopes requested from Supabase.
-  static const String githubScopes = 'read:user user:email repo read:org';
+  /// GitHub scopes requested from Supabase — identity only.
+  ///
+  /// Repository access is granted separately through a GitHub App (see
+  /// `supabase/functions/github-app`), so the app never asks for `repo` and the
+  /// user is never forced to hand over every private repository.
+  static const String githubScopes = 'read:user user:email';
 }

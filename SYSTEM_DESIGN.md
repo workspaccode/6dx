@@ -6,8 +6,9 @@ are the authoritative schema; this document explains what they contain, why,
 and what the client expects from them.
 
 * App: Flutter 3.x / Dart 3.13, Riverpod, go_router, auto_route
-* Backend: **Supabase only** (Postgres + PostgREST + GoTrue). No custom server,
-  no REST API of our own, no Edge Functions.
+* Backend: **Supabase only** — Postgres + PostgREST + GoTrue, plus **one**
+  Edge Function (`github-app`) that brokers GitHub App tokens, because a GitHub
+  App's private key cannot live in a client (§6.3). No REST API of our own.
 * Auth: GitHub OAuth through Supabase (PKCE) with a device-flow fallback.
 * Current hosted project: `ifrpswaclrrsshspdmzd` (region `eu-central-2`, Postgres 17.11)
 
@@ -22,22 +23,24 @@ and what the client expects from them.
 │        │  Riverpod providers = DI container                        │
 │  domain (entities, repository contracts, use cases)                │
 │        │                                                           │
-│  data (data sources → Supabase / GitHub, repositories → Result<T>) │
+│  data (data sources → Supabase, repositories → Result<T>)          │
 │        │                                                           │
 │  core (Supabase client, workspace resolver, logger, storage, Dio)  │
-└───────┬─────────────────────────────────────────────┬──────────────┘
-        │  PostgREST (JWT = Supabase access token)    │  HTTPS + GitHub token
-        ▼                                             ▼
-┌─────────────────────── Supabase ───────────────────┐  ┌──────────────┐
-│  GoTrue (auth)  →  JWT  ──┐                        │  │ api.github.com│
-│  PostgREST      →  RLS ───┤  public schema         │  │ /user/repos   │
-│  Postgres 17    →  functions, policies, grants     │  │ /user/emails  │
-└────────────────────────────────────────────────────┘  └──────────────┘
+└───────┬────────────────────────────────────────────────────────────┘
+        │  HTTPS (JWT = Supabase access token)
+        ▼
+┌──────────────────────────── Supabase ──────────────────────────────┐
+│  GoTrue (auth)        →  JWT                                       │
+│  PostgREST            →  RLS → public schema                       │
+│  Postgres 17          →  functions, policies, grants               │
+│  Edge Function github-app → GitHub App private key → api.github.com│
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-There is **no server-side business layer**: every read/write is a PostgREST
+There is **no server-side business layer**: every data read/write is a PostgREST
 call executed as the signed-in user, and Row Level Security decides what that
-user may touch. The only server logic is five SQL functions (§5).
+user may touch. The only server logic is five SQL functions (§5.4) and the
+`github-app` Edge Function that brokers GitHub (§6.3).
 
 ---
 
@@ -82,7 +85,7 @@ Conventions that matter for the backend:
 | `SUPABASE_PUBLISHABLE_KEY` | `--dart-define` | project publishable key (safe to ship) |
 | `SUPABASE_REDIRECT_URL` | `--dart-define` | `io.supabase.flutter://login-callback` |
 | `GITHUB_CLIENT_ID` | `--dart-define` | `Ov23liw4p0LMObMu8l9b` (device-flow fallback only) |
-| GitHub scopes | `AppConfig.githubScopes` | `read:user user:email repo read:org` |
+| GitHub scopes | `AppConfig.githubScopes` | `read:user user:email` — **identity only**; repositories are granted through a GitHub App (§6.3) |
 | `API_BASE_URL` | `--dart-define` | `https://api.6dx.app/v1` — **dead host**, only the legacy email path uses it |
 
 Supabase auth activates whenever both `SUPABASE_URL` and
@@ -96,11 +99,11 @@ Leaving the URL empty forces the GitHub **device-flow** backend instead.
 | Key | Content |
 |---|---|
 | `access_token` | Supabase access token (JWT) — attached as `Authorization: Bearer` to app API calls |
-| `github_token` | GitHub *provider* token (`session.providerToken`) — attached to `api.github.com` calls |
 | `user` | cached `UserModel` JSON |
 
-The GitHub token is a different token from the session JWT; conflating them
-breaks `/user/repos` with `401` (§6.3).
+**No GitHub credential is stored on the device.** Repository access is brokered
+by the `github-app` Edge Function, which holds the App private key and mints a
+short-lived installation token server-side (§6.3).
 
 ---
 
@@ -199,7 +202,6 @@ Dart ↔ Postgres mapping: `TaskStatus.inProgress` ⇄ `in_progress`
 identical.
 
 ### 5.2 Tables
-
 All tables have RLS enabled. `auth.users` is owned by GoTrue — the app never
 writes it.
 
@@ -209,7 +211,7 @@ writes it.
 | `workspace_members` | pk (`workspace_id`, `user_id`) · `role` member_role `developer` · `created_at` |
 | `workspace_invites` | `id` uuid pk · `workspace_id` · `email` text · `role` member_role `developer` · `status` invite_status `pending` · `invited_by` uuid → auth.users null · `sent_at` · `expires_at` `now()+7d` |
 | `projects` | `id` uuid pk · `workspace_id` · `name` text · `description` · `icon` · `color` · `is_archived` bool `false` · `created_by` uuid → auth.users null · `created_at` · `updated_at` |
-| `repositories` | `id` uuid pk · `project_id` · `provider` text `github` · `full_name` text · `branch` text `main` · `description` · `language` · `last_synced_at` |
+| `repositories` | `id` uuid pk · `project_id` · `provider` text `github` · `full_name` text · `branch` text `main` · `description` · `language` · `last_synced_at` · `installation_id` bigint (which GitHub App installation owns it) |
 | `project_labels` | `id` uuid pk · `project_id` · `name` · `color` `#9AA3B2` · unique (`project_id`,`name`) |
 | `integrations` | `id` uuid pk · `workspace_id` · `kind` integration_kind · `name` · `connected` bool · `workspace` text · `channels` text[] · `events` text[] · unique (`workspace_id`,`kind`) |
 | `sprints` | `id` uuid pk · `workspace_id` · `project_id` null · `name` · `goal` · `starts_at` date · `ends_at` date · `capacity` int · `committed` int · `created_at` |
@@ -224,6 +226,7 @@ writes it.
 | `client_reports` | `id` uuid pk · `workspace_id` · `client_name` · `project_name` · `period` · `progress` numeric `0` · `next_milestone` · `milestone_date` date · `decision_question` · `decision_options` text[] · `weekly_highlights` text[] · `invoice_lines` jsonb `[]` · `total_hours` · `hourly_rate` · `invoice_number` · `delivered_items` text[] |
 | `time_entries` | `id` uuid pk · `workspace_id` · `user_id` · `kind` text · `span` text · `branch` · `client_name` · `created_at` |
 | `digest_entries` | `id` uuid pk · `workspace_id` · `user_id` · `section` text `today` · `text` · `meta` · `action_label` · `tone` · `created_at` |
+| `github_installations` | `id` uuid pk · `workspace_id` · `installation_id` bigint · `account_login` text · `account_type` text `User` · `created_by` uuid → auth.users null · `created_at` · unique (`workspace_id`,`installation_id`) |
 
 Foreign keys use `ON DELETE CASCADE` for workspace-scoped children and
 `ON DELETE SET NULL` for actor/assignee/reviewer columns.
@@ -310,7 +313,7 @@ Every section is `coalesce(..., '[]')` so a new workspace gets a valid payload
 instead of `null`s. The function returns **no rows** (null) for a workspace the
 caller is not a member of.
 
-### 5.6 Row Level Security — 28 policies
+### 5.6 Row Level Security — 31 policies
 
 Names and expressions mirror the hosted project exactly.
 
@@ -344,6 +347,9 @@ Names and expressions mirror the hosted project exactly.
 | `client_reports` | `client_reports_read` | SELECT | `is_workspace_member(workspace_id)` |
 | `time_entries` | `time_entries_read` | SELECT | `user_id = auth.uid()` ∧ `is_workspace_member(workspace_id)` |
 | `digest_entries` | `digest_write` | ALL | `user_id = auth.uid()` ∧ `is_workspace_member(workspace_id)` |
+| `github_installations` | `github_installations_read` | SELECT | `is_workspace_member(workspace_id)` |
+| | `github_installations_insert` | INSERT | `is_workspace_admin(workspace_id)` ∧ `created_by = auth.uid()` |
+| | `github_installations_delete` | DELETE | `is_workspace_admin(workspace_id)` |
 
 Design decisions encoded here:
 
@@ -418,21 +424,53 @@ The embedded selects (`repositories(full_name)`, `tasks(status)`,
 | `42501` | grant/RLS refusal | «لا توجد صلاحيات على قاعدة البيانات — أعد تطبيق supabase/migrations لضبط الـ grants» |
 | `PGRST301` / expired JWT | session gone | «انتهت الجلسة، سجّل الدخول من جديد» |
 
-### 6.3 GitHub API usage
+### 6.3 GitHub access — GitHub App (no credential in the client)
 
-`api.github.com` with `Authorization: Bearer <github_token>` (never the Supabase
-JWT):
+Identity and repository access are deliberately separated:
 
-* `GET /user/repos?per_page=100&sort=updated` — repository picker
-* `GET /repos/{owner}/{repo}` — single repo
-* `GET /repos/{owner}/{repo}/issues?state=open`
-* `GET /repos/{owner}/{repo}/pulls?state=open`
-* `GET /user`
+| | Identity (login) | Repository access |
+|---|---|---|
+| Mechanism | Supabase OAuth → GitHub **OAuth App** | GitHub **App** installed on selected repos |
+| Scopes | `read:user user:email` | App permissions: `Metadata:R`, `Contents:R`, `Issues:RW`, `Pull requests:RW` |
+| Who sees what | the user's profile only | **only** the repositories picked at installation |
+| Token location | Supabase session JWT | minted per request inside the Edge Function, never sent to the client |
 
-`401/403` is reported as «لمنح التطبيق صلاحية قراءة مستودعاتك، سجّل الخروج ثم
-ادخل مرة أخرى بحساب GitHub» — the usual cause is a session created before the
-provider token was captured, or a GitHub account that never granted the `repo`
-scope (revoke the app in GitHub → Authorized OAuth Apps, then sign in again).
+The client calls one Supabase function and never `api.github.com`:
+
+```
+app → POST /functions/v1/github-app  { action: 'repositories' }
+        │  (Supabase JWT in Authorization)
+        ▼
+   github-app (Edge Function, holds GITHUB_PRIVATE_KEY)
+        ├─ App JWT (RS256, ≤10 min)
+        ├─ POST /app/installations/{id}/access_tokens   → 1 hour token
+        └─ GET  /installation/repositories               → the allowed repos
+```
+
+Actions: `installation` · `repositories` · `install-url` · `disconnect`.
+Plus two GitHub-facing routes that carry no Supabase JWT:
+
+* `GET ?installation_id=…&state=…` — the post-install redirect. `state` is an
+  HMAC (30 min TTL) carrying `workspace_id.user_id`, so the function knows where
+  to store the installation without trusting the browser.
+* `POST /webhook` — `x-hub-signature-256` verified with `GITHUB_WEBHOOK_SECRET`;
+  `pull_request` events are upserted into `pull_requests`.
+
+Because those two routes must work for GitHub, the function is deployed with
+`--no-verify-jwt` (it authenticates everything itself).
+
+**GitHub App permissions** (least privilege for what the UI does):
+
+| Permission | Level | Used for |
+|---|---|---|
+| Metadata | read | always required by GitHub |
+| Contents | read | repository list and branch names |
+| Issues | read & write | task ↔ issue sync |
+| Pull requests | read & write | PR list, review state |
+
+`Administration: write` is **not** requested: it is needed to create
+repositories and is only available for organization-owned repos, not personal
+accounts — so the app links existing repositories instead (§10).
 
 ---
 
@@ -442,7 +480,8 @@ scope (revoke the app in GitHub → Authorized OAuth Apps, then sign in again).
 
 Use the official self-host bundle (`docker compose` from
 `supabase/supabase/docker`) or the hosted free plan. Required services: `db`,
-`auth` (GoTrue), `rest` (PostgREST), `kong` (gateway), `studio` (optional).
+`auth` (GoTrue), `rest` (PostgREST), `kong` (gateway), `functions` (Edge
+Functions runtime, for `github-app`), `studio` (optional).
 
 Environment you must set (names from the official `.env.example`):
 
@@ -467,8 +506,8 @@ the only one that ships inside the app.
 
 ### 7.2 Apply the schema
 
-`supabase/migrations/0001_init.sql` must run **before**
-`0002_workspace_bootstrap.sql`. Either:
+`supabase/migrations/` must run in order — `0001_init.sql`, then
+`0002_workspace_bootstrap.sql`, then `0003_github_app.sql`. Either:
 
 ```bash
 supabase link --project-ref <ref>     # or --db-url for self-host
@@ -486,10 +525,61 @@ create schema public;
 grant usage on schema public to anon, authenticated, service_role;
 ```
 
-Then apply the two files. Both files together produce 19 tables, 6 enums,
-28 policies and 5 functions.
+Then apply the files. All three together produce 20 tables, 6 enums,
+31 policies and 5 functions.
 
-### 7.3 Point the app at the new backend
+### 7.3 Deploy the GitHub App function
+
+Fast path: fill in `scripts/github-app.local.json` (copy
+`scripts/github-app.local.example.json`) and run
+
+```powershell
+.\scripts\setup-github-app.ps1            # add -DryRun to preview the commands
+```
+
+It stores the four secrets, deploys with `--no-verify-jwt` and probes the
+endpoint. The equivalent manual steps:
+
+1. Create the GitHub App (Settings → Developer settings → GitHub Apps → *New
+   GitHub App*), owned by your personal account or by an organization:
+
+   * **Homepage URL**: any real URL (e.g. `https://6dx.app`).
+   * **Callback URL**: `https://<host>/auth/v1/callback` — only needed if you
+     also use the App for user authorization (the design keeps Supabase's OAuth
+     App for identity, so this can stay empty).
+   * **Setup URL**: `https://<host>/functions/v1/github-app` (leave *Redirect on
+     update* off).
+   * **Webhook URL**: `https://<host>/functions/v1/github-app/webhook`
+   * **Webhook secret**: the same random string you store as
+     `GITHUB_WEBHOOK_SECRET`.
+   * **Permissions**: Metadata `R`, Contents `R`, Issues `RW`, Pull requests `RW`;
+     subscribe to the **Pull request** event.
+   * **Where can this GitHub App be installed?**: either any account, or only
+     yours while testing.
+
+   > GitHub itself warns that `installation_id` on the setup URL can be spoofed.
+   > The function therefore only accepts an installation *created after* the
+   > signed `state` was issued (30-minute window), so nobody can attach somebody
+   > else's installation — and therefore their repositories — to their workspace.
+
+2. Store the secrets and deploy. The two GitHub-facing routes carry no Supabase
+   JWT, so `--no-verify-jwt` is required — the function authenticates callers
+   itself:
+
+   ```bash
+   supabase secrets set \
+     GITHUB_APP_ID=<app id> \
+     GITHUB_APP_SLUG=<app slug> \
+     GITHUB_PRIVATE_KEY="$(cat app-private-key.pem)" \
+     GITHUB_WEBHOOK_SECRET=<random 32+ chars>
+
+   supabase functions deploy github-app --no-verify-jwt
+   ```
+
+3. In the app: *ربط مستودع GitHub* → «تثبيت التطبيق على GitHub» → pick the
+   repositories → «ثبّتته؟ حدّث الحالة».
+
+### 7.4 Point the app at the new backend
 
 ```bash
 flutter run \
@@ -498,11 +588,14 @@ flutter run \
   --dart-define=SUPABASE_REDIRECT_URL=io.supabase.flutter://login-callback
 ```
 
-Register the same scheme as redirect URL / Site URL on the new instance, and
-create a **new** GitHub OAuth app (or add the callback URL to the existing one)
-pointing at `https://<your-host>/auth/v1/callback`.
+Register the same scheme as redirect URL / Site URL on the new instance.
 
-### 7.4 Verify
+> The **OAuth App** used by Supabase for identity stays as it is — the GitHub
+> App is a *separate* registration used only for repository access. Do not point
+> the Supabase provider at the App's credentials: that would force every user to
+> authorize again for no benefit (§6.3).
+
+### 7.5 Verify
 
 ```bash
 # functions exist (401/42501 = present, 404 PGRST202 = missing)
@@ -513,10 +606,15 @@ curl -s -X POST "https://<host>/rest/v1/rpc/ensure_my_workspace" \
 # columns exist (42501/[] = exists, 42703 = missing column)
 curl -s "https://<host>/rest/v1/projects?select=icon&limit=1" \
   -H "apikey: <key>" -H "Authorization: Bearer <key>"
+
+# the broker is deployed (401 unauthenticated = alive)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  "https://<host>/functions/v1/github-app" -d '{"action":"installation"}'
 ```
 
 Then sign in inside the app and confirm the log shows
-`Data: workspace.resolve → ok` and `Data: workspace.snapshot → ok`.
+`Data: workspace.resolve → ok`, `Data: workspace.snapshot → ok`, and
+`GitHubApp: opening the installation page` when linking a repository.
 
 ---
 
@@ -530,7 +628,7 @@ Every operation prints one always-on line (also in release builds):
 [ACTION] Auth: sign-in with GitHub: the deep link arrived
 [ACTION] Data: workspace.resolve → ok (12ms)
 [ACTION] Data: projects.list → FAILED [42501] permission denied for table projects
-[ACTION] GitHub: GET /user/repos → 200 (17 items)
+[ACTION] GitHubApp: opening the installation page
 [ACTION] Workspace: snapshot loaded: 1 members, 0 PRs, 0 notifications
 ```
 
@@ -539,7 +637,7 @@ Every operation prints one always-on line (also in release builds):
 | `LoginPage`, `AuthSession` | taps, session restore |
 | `Auth`, `DeviceFlow` | sign-in steps, polling, provider-token capture |
 | `Data` | every Supabase query with label, duration, error code |
-| `GitHub` | every GitHub request, status, item count |
+| `GitHub`, `GitHubApp` | GitHub operations through the `github-app` function (no token, no payload) |
 | `Workspace`, `Projects`, `Tasks` | provider results |
 
 Never logged: tokens, e-mails, personal data.
@@ -552,7 +650,10 @@ Never logged: tokens, e-mails, personal data.
 | `42501 permission denied for table …` | grants not applied | run the grants block (end of `0001`) |
 | `PGRST202 could not find the function` | functions missing | apply `0001` + `0002` |
 | app waits ~2 min then "did not come back" | deep link never arrived | redirect URL + rebuild app (manifest changed) |
-| repository picker empty + `401` | no GitHub provider token stored | sign out/in; check `repo` scope |
+| repository picker empty | `no_installation` — the App is not installed | tap «تثبيت التطبيق على GitHub», then «حدّث الحالة» |
+| `github_not_configured` | App secrets missing on the function | `supabase secrets set GITHUB_APP_ID=… GITHUB_APP_SLUG=… GITHUB_PRIVATE_KEY=… GITHUB_WEBHOOK_SECRET=…` |
+| `github_error_401` from the function | App private key / App id mismatch | regenerate the key, update `GITHUB_PRIVATE_KEY` |
+| install page returns “expired” | the `state` link is older than 30 min | start the install again from the app |
 | snapshot loads but a screen is empty | payload key renamed / table empty | compare with §5.5 |
 
 ---
@@ -575,11 +676,15 @@ Never logged: tokens, e-mails, personal data.
 
 ---
 
-## 10. Known gaps| Area | State |
+## 10. Known gaps
+
+| Area | State |
 |---|---|
 | E-mail/password sign-in + OTP | still calls the retired REST API (`api.6dx.app`, DNS does not resolve). GitHub sign-in is fully on Supabase. To finish: move to `signInWithPassword` / `signUp` / `verifyOTP(signup)`. |
 | Snapshot sections without SQL | `workload`, `workload_suggestions`, `rate_limit`, `agents`, `commits`, `releases`, `code_platforms`, `project_reports`, `sprint_retros`, `billing` — the mapper accepts them, nothing produces them. |
-| GitHub sync | repositories/PRs are stored but never fetched from GitHub by a worker; there is no background job. |
+| GitHub sync | `pull_request` webhooks upsert into `pull_requests`, but nothing imports issues, branches or commit history yet. |
+| Creating a repository | not supported: a GitHub App token cannot create repositories on a personal account (`Administration` only covers organizations). The app links existing repositories. |
+| One workspace per account | `ensure_my_workspace` and `CurrentWorkspace` use the first membership; the “switch workspace” screen exists in the design but is not wired. |
 | Invites | rows are written to `workspace_invites`; nothing sends the e-mail and no accept flow exists. |
 | Realtime | not used; screens refresh manually. |
 | `updated_at` | no trigger maintains it. |

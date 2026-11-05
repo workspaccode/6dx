@@ -25,13 +25,6 @@ class SecureStorageService {
 
   Future<void> writeUser(String user) => _write(AppConstants.keyUser, user);
 
-  Future<String?> readGithubToken() => _read(AppConstants.keyGithubToken);
-
-  Future<void> writeGithubToken(String token) =>
-      _write(AppConstants.keyGithubToken, token);
-
-  Future<void> deleteGithubToken() => _delete(AppConstants.keyGithubToken);
-
   Future<String?> _read(String key) async {
     try {
       return await _storage.read(key: key);

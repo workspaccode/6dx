@@ -291,6 +291,29 @@ hint. The client id is read from `--dart-define=GITHUB_CLIENT_ID=...`
 The token is stored with `flutter_secure_storage` and attached to every API
 call by `AuthInterceptor`.
 
+## Repository access (GitHub App)
+
+Login only asks for the profile (`read:user user:email`). Reading a user's
+repositories uses a **GitHub App** installed on the repositories the user (or
+the org admin) picks, so the app never receives a credential for the whole
+account — unlike an OAuth app with the `repo` scope.
+
+* Broker: `supabase/functions/github-app` holds the App private key and mints a
+  one-hour installation token per request. The client never talks to
+  `api.github.com` and stores no GitHub token.
+* Flow: *ربط مستودع GitHub* → «تثبيت التطبيق على GitHub» → choose repositories
+  → «ثبّتته؟ حدّث الحالة».
+* Webhooks (`pull_request`) are verified with `x-hub-signature-256` and upsert
+  into `pull_requests`.
+* Deploy: fill in `scripts/github-app.local.json` (copy the `.example`) and run
+  `.\scripts\setup-github-app.ps1` — it stores the secrets and deploys with
+  `--no-verify-jwt` (the function authenticates callers itself; GitHub's setup
+  redirect and webhook carry no JWT). The manual equivalent is
+  `supabase functions deploy github-app --no-verify-jwt`.
+
+See [SYSTEM_DESIGN.md](./SYSTEM_DESIGN.md) §6.3 and §7.3 for the permissions,
+secrets and self-hosting steps.
+
 ### Reading the log when something fails
 
 Every operation prints one always-on line (`AppLogger.action` — it is *not*

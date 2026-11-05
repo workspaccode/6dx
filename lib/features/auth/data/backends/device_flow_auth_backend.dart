@@ -97,8 +97,6 @@ class DeviceFlowAuthBackend implements AuthBackend {
     AppLogger.action(_tag, 'the user approved the device after $polls polls');
 
     await _secureStorage.writeAccessToken(token);
-    // The device-flow grant *is* a GitHub token: the repo picker uses it too.
-    await _secureStorage.writeGithubToken(token);
     AppLogger.action(_tag, 'loading the GitHub profile');
     final payload = await _github.fetchUser(token);
     final email = await _github.fetchPrimaryEmail(token);
@@ -110,7 +108,6 @@ class DeviceFlowAuthBackend implements AuthBackend {
   Future<void> signOut() async {
     AppLogger.action(_tag, 'sign-out');
     await _secureStorage.deleteAccessToken();
-    await _secureStorage.deleteGithubToken();
   }
 
   AuthUser _toUser(

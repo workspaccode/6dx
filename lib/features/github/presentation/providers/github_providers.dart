@@ -1,25 +1,44 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/failures.dart';
+import '../../../../core/network/supabase_client.dart';
+import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/github_api.dart';
 import '../../data/repositories/github_repository_repository_impl.dart';
+import '../../domain/entities/github_installation.dart';
 import '../../domain/entities/github_repository.dart';
 import '../../domain/repositories/github_repository_repository.dart';
-import '../../../auth/presentation/providers/auth_providers.dart';
 
 final githubApiProvider = Provider<GithubApi>(
-  (ref) => GithubApi(ref.watch(githubDioProvider)),
+  (ref) => GithubApi(ref.watch(supabaseClientResolverProvider)),
 );
 
 final githubRepositoryRepositoryProvider = Provider<GithubRepositoryRepository>(
   (ref) => GithubRepositoryRepositoryImpl(ref.watch(githubApiProvider)),
 );
 
+/// The GitHub App installation of the current workspace (`null` = not installed
+/// yet, so the picker offers the install button).
+final githubInstallationProvider = FutureProvider<GithubInstallation?>(
+  (ref) async {
+    ref.watch(authNotifierProvider.select((state) => state.value?.id));
+    final result =
+        await ref.watch(githubRepositoryRepositoryProvider).installation();
+    if (result.isFailure) {
+      throw Exception(
+        result.failureOrNull?.message ?? 'تعذّر قراءة حالة تطبيق GitHub.',
+      );
+    }
+    return result.dataOrNull;
+  },
+  retry: (retryCount, error) => null,
+);
+
 /// The user's GitHub repositories, for the project ↔ repository picker.
 ///
 /// `retry` is disabled on purpose: a failing request must surface as an error
 /// state right away. With Riverpod's default retry the page would look like an
-/// endless loader while GitHub was hit ten more times.
+/// endless loader while the server was hit ten more times.
 final githubRepositoriesProvider = FutureProvider<List<GithubRepository>>(
   (ref) async {
     // Reload whenever the signed-in account changes.

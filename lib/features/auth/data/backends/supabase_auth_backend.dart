@@ -45,30 +45,13 @@ class SupabaseAuthBackend implements AuthBackend {
     final token = state.session?.accessToken;
     if (token == null) {
       await _secureStorage.deleteAccessToken();
-      await _secureStorage.deleteGithubToken();
       AppLogger.action('Auth', 'session changed: signed out');
     } else {
       // The API layer reads the bearer token from the secure storage.
       await _secureStorage.writeAccessToken(token);
-      final hadProviderToken = await _persistProviderToken(state.session);
-      AppLogger.action(
-        'Auth',
-        'session changed: ${state.event.name}'
-            '${hadProviderToken ? ' (GitHub token stored)' : ''}',
-      );
+      AppLogger.action('Auth', 'session changed: ${state.event.name}');
     }
     _controller?.add(_mapUser(state.session?.user, state.session?.accessToken));
-  }
-
-  /// Stores the GitHub access token Supabase hands back with the session.
-  ///
-  /// It is only present on the sign-in exchange (not on a refresh), so a `null`
-  /// must not wipe the token that is already stored.
-  Future<bool> _persistProviderToken(sb.Session? session) async {
-    final providerToken = session?.providerToken;
-    if (providerToken == null || providerToken.isEmpty) return false;
-    await _secureStorage.writeGithubToken(providerToken);
-    return true;
   }
 
   @override
@@ -79,11 +62,9 @@ class SupabaseAuthBackend implements AuthBackend {
       return null;
     }
     await _secureStorage.writeAccessToken(session.accessToken);
-    final storedGithubToken = await _persistProviderToken(session);
     AppLogger.action(
       'Auth',
-      'restore session: ok (${session.user.email ?? session.user.id})'
-          '${storedGithubToken ? ', GitHub token refreshed' : ''}',
+      'restore session: ok (${session.user.email ?? session.user.id})',
     );
     return _mapUser(session.user, session.accessToken);
   }
@@ -123,7 +104,6 @@ class SupabaseAuthBackend implements AuthBackend {
       );
       AppLogger.action('Auth', 'sign-in with GitHub: the deep link arrived');
       await _secureStorage.writeAccessToken(session.accessToken);
-      await _persistProviderToken(session);
       return _mapUser(session.user, session.accessToken)!;
     } finally {
       await subscription.cancel();
@@ -145,7 +125,6 @@ class SupabaseAuthBackend implements AuthBackend {
     AppLogger.action('Auth', 'sign-out: clearing the Supabase session');
     await _client.auth.signOut();
     await _secureStorage.deleteAccessToken();
-    await _secureStorage.deleteGithubToken();
   }
 
   AuthUser? _mapUser(sb.User? user, String? accessToken) {

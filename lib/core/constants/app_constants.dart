@@ -13,7 +13,7 @@ class AppConstants {
     'GITHUB_CLIENT_ID',
     defaultValue: 'Ov23liw4p0LMObMu8l9b',
   );
-  static const String githubScopes = 'read:user user:email repo read:org';
+  static const String githubScopes = 'read:user user:email';
 
   /// OAuth redirect used by the mobile (custom scheme) and web flows.
   static const String githubRedirectUri = 'sixdx://oauth/callback';
@@ -22,10 +22,6 @@ class AppConstants {
   static const int maxRetryCount = 3;
 
   static const String keyAccessToken = 'access_token';
-
-  /// GitHub access token issued by the OAuth provider during sign-in. It is a
-  /// different token from [keyAccessToken] (which is the 6DX/Supabase session).
-  static const String keyGithubToken = 'github_token';
   static const String keyUser = 'user';
   static const String keyOnboardingDone = 'onboarding_done';
   static const String keyLocale = 'locale';
