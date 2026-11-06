@@ -86,7 +86,7 @@ Conventions that matter for the backend:
 | `SUPABASE_REDIRECT_URL` | `--dart-define` | `io.supabase.flutter://login-callback` |
 | `GITHUB_CLIENT_ID` | `--dart-define` | `Ov23liw4p0LMObMu8l9b` (device-flow fallback only) |
 | GitHub scopes | `AppConfig.githubScopes` | `read:user user:email` — **identity only**; repositories are granted through a GitHub App (§6.3) |
-| `API_BASE_URL` | `--dart-define` | `https://api.6dx.app/v1` — **dead host**, only the legacy email path uses it |
+
 
 Supabase auth activates whenever both `SUPABASE_URL` and
 `SUPABASE_PUBLISHABLE_KEY` are non-empty (`AppConfig.useSupabaseAuth`).
@@ -261,17 +261,24 @@ workspaces(owner_id)        workspaces(slug)
 
 ### 5.4 Functions
 
-All five are `SECURITY DEFINER` with a pinned `search_path = public`. Only
-`authenticated` may execute them (functions are the only objects `anon` cannot
-reach).
+All seven are `SECURITY DEFINER` with a pinned `search_path = public`. Only
+`authenticated` may execute them — `EXECUTE` is revoked from `anon` **and**
+`public` explicitly, because the platform grants `anon` by default.
 
 | Function | Returns | Purpose |
 |---|---|---|
 | `is_workspace_member(target uuid)` | bool | caller is any member of the workspace |
+| `is_workspace_editor(target uuid)` | bool | caller is a member and not a `viewer` (write gate) |
 | `is_workspace_admin(target uuid)` | bool | caller is `owner` or `admin` |
 | `is_workspace_owner(target uuid)` | bool | caller is `owner` |
 | `get_workspace_snapshot(target uuid)` | jsonb | the whole UI projection (§5.5) |
 | `ensure_my_workspace(workspace_name text default 'مساحة عملي')` | uuid | returns the caller's first workspace, creating one on first sign-in |
+| `transfer_ownership(target uuid, new_owner uuid)` | void | the current owner hands the workspace over (old owner becomes `admin`) |
+| `submit_client_decision(target uuid, option_index integer)` | text | records the client decision on the report (one per workspace): validates the index, stores the choice, logs activity attributed to the caller; an owner/admin may overwrite |
+| `current_email()` | text | the caller's e-mail, falling back to the identity e-mail (GitHub users) |
+| `sync_my_invites()` | integer | (re)creates the notifications for invites that predate the account — idempotent |
+| `my_pending_invites()` | table | pending invites addressed to the caller (accept screen) |
+| `accept_invite(target uuid default null)` | uuid | turns a pending invite into a membership; returns the joined workspace |
 
 `ensure_my_workspace` is the only way a workspace can come into existence:
 RLS has no INSERT policy on `workspaces` (a member must already exist to see
@@ -330,20 +337,20 @@ Names and expressions mirror the hosted project exactly.
 | | `invites_insert` | INSERT | `is_workspace_admin(ws)` ∧ `role<>'owner'` ∧ `invited_by=auth.uid()` |
 | | `invites_update` | UPDATE | `is_workspace_admin(ws)`; check also `role<>'owner'` |
 | | `invites_delete` | DELETE | `is_workspace_admin(ws)` |
-| `projects` | `projects_write` | ALL | `is_workspace_member(workspace_id)` |
+| `projects` | `projects_write` | ALL | `is_workspace_editor(workspace_id)` |
 | `repositories` | `repositories_write` | ALL | project belongs to a workspace the caller belongs to |
 | `project_labels` | `labels_write` | ALL | same as repositories (via `project_id`) |
-| `integrations` | `integrations_write` | ALL | `is_workspace_member(workspace_id)` |
-| `sprints` | `sprints_write` | ALL | `is_workspace_member(workspace_id)` |
-| `tasks` | `tasks_write` | ALL | `is_workspace_member(workspace_id)` |
+| `integrations` | `integrations_write` | ALL | `is_workspace_editor(workspace_id)` |
+| `sprints` | `sprints_write` | ALL | `is_workspace_editor(workspace_id)` |
+| `tasks` | `tasks_write` | ALL | `is_workspace_editor(workspace_id)` |
 | `task_comments` | `comments_write` | ALL | parent task in a member workspace |
 | `task_subtasks` | `subtasks_write` | ALL | parent task in a member workspace |
 | `task_dependencies` | `dependencies_write` | ALL | parent task in a member workspace |
-| `pull_requests` | `prs_write` | ALL | `is_workspace_member(workspace_id)` |
+| `pull_requests` | `prs_write` | ALL | `is_workspace_editor(workspace_id)` |
 | `sprint_items` | `sprint_items_write` | ALL | parent sprint in a member workspace |
 | `notifications` | `notifications_write` | ALL | `user_id = auth.uid()` ∧ `is_workspace_member(workspace_id)` |
 | `activity_events` | `activity_read` | SELECT | `is_workspace_member(workspace_id)` |
-| | `activity_insert` | INSERT | `is_workspace_member(workspace_id)` ∧ (`actor_id is null` ∨ `actor_id = auth.uid()`) |
+| | `activity_insert` | INSERT | `is_workspace_editor(workspace_id)` ∧ `actor_id = auth.uid()` |
 | `client_reports` | `client_reports_read` | SELECT | `is_workspace_member(workspace_id)` |
 | `time_entries` | `time_entries_read` | SELECT | `user_id = auth.uid()` ∧ `is_workspace_member(workspace_id)` |
 | `digest_entries` | `digest_write` | ALL | `user_id = auth.uid()` ∧ `is_workspace_member(workspace_id)` |
@@ -456,8 +463,28 @@ Plus two GitHub-facing routes that carry no Supabase JWT:
 * `POST /webhook` — `x-hub-signature-256` verified with `GITHUB_WEBHOOK_SECRET`;
   `pull_request` events are upserted into `pull_requests`.
 
-Because those two routes must work for GitHub, the function is deployed with
-`--no-verify-jwt` (it authenticates everything itself).
+Because the GitHub-facing routes carry no Supabase JWT, the function is deployed
+with `--no-verify-jwt` (it authenticates everything itself).
+
+**Ownership proof (fail closed).** `installation_id` on the Setup URL is
+user-controllable, so the function does *not* store anything there. It answers
+with a 302 to `github.com/login/oauth/authorize` (keeping the signed `state`),
+and only after the code exchange does it verify:
+
+* **the same person**: the GitHub `user.id` from the token must equal
+  `auth.identities.provider_id` (provider `github`) of the 6DX user named in the
+  signed state — otherwise a crafted install link could attach a victim's
+  installation to the attacker's workspace (CSRF)
+* personal account → `account.id === user.id`
+* organization → `GET /user/memberships/orgs/{org}` returns `role: admin`
+
+The user token is revoked right after (`DELETE /applications/{client_id}/token`)
+and is never stored.
+
+Without `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` the install is refused —
+there is no weak fallback. Do **not** enable "Request user authorization (OAuth)
+during installation": GitHub then redirects to the callback URL without our
+`state`, so the workspace can no longer be identified.
 
 **GitHub App permissions** (least privilege for what the UI does):
 
@@ -467,6 +494,7 @@ Because those two routes must work for GitHub, the function is deployed with
 | Contents | read | repository list and branch names |
 | Issues | read & write | task ↔ issue sync |
 | Pull requests | read & write | PR list, review state |
+| Members (organization) | read | `GET /user/memberships/orgs/{org}` to prove the caller administers the org |
 
 `Administration: write` is **not** requested: it is needed to create
 repositories and is only available for organization-owned repos, not personal
@@ -507,14 +535,16 @@ the only one that ships inside the app.
 ### 7.2 Apply the schema
 
 `supabase/migrations/` must run in order — `0001_init.sql`, then
-`0002_workspace_bootstrap.sql`, then `0003_github_app.sql`. Either:
+`0002_workspace_bootstrap.sql`, then `0003_github_app.sql`, then
+`0004_roles_and_ownership.sql`, then
+`0005_ownership_invariants.sql`, `0006_client_decisions.sql`, `0007_client_decision_rules.sql`, then `0008_invitations.sql`. Either:
 
 ```bash
 supabase link --project-ref <ref>     # or --db-url for self-host
 supabase db push
 ```
 
-or paste both files into the SQL editor in that order.
+or paste all five files into the SQL editor, in order.
 
 A database that was migrated halfway (tables present, functions/grants missing)
 must be reset first — `create type` is not idempotent:
@@ -525,8 +555,8 @@ create schema public;
 grant usage on schema public to anon, authenticated, service_role;
 ```
 
-Then apply the files. All three together produce 20 tables, 6 enums,
-31 policies and 5 functions.
+Then apply the files in order. All eight together produce 20 tables, 6 enums,
+31 policies and 14 functions.
 
 ### 7.3 Deploy the GitHub App function
 
@@ -544,9 +574,11 @@ endpoint. The equivalent manual steps:
    GitHub App*), owned by your personal account or by an organization:
 
    * **Homepage URL**: any real URL (e.g. `https://6dx.app`).
-   * **Callback URL**: `https://<host>/auth/v1/callback` — only needed if you
-     also use the App for user authorization (the design keeps Supabase's OAuth
-     App for identity, so this can stay empty).
+   * **User authorization callback URL**: add `https://<host>/functions/v1/github-app`.
+     GitHub allows up to 10 callback URLs: **add** the function URL, never
+     remove an existing one (e.g. `/auth/v1/callback` if Supabase Auth signs in
+     with the same client). The function always passes `redirect_uri`, so GitHub
+     picks the right one.
    * **Setup URL**: `https://<host>/functions/v1/github-app` (leave *Redirect on
      update* off).
    * **Webhook URL**: `https://<host>/functions/v1/github-app/webhook`
@@ -571,7 +603,9 @@ endpoint. The equivalent manual steps:
      GITHUB_APP_ID=<app id> \
      GITHUB_APP_SLUG=<app slug> \
      GITHUB_PRIVATE_KEY="$(cat app-private-key.pem)" \
-     GITHUB_WEBHOOK_SECRET=<random 32+ chars>
+     GITHUB_WEBHOOK_SECRET=<random 32+ chars> \
+     GITHUB_CLIENT_ID=<App OAuth client id> \
+     GITHUB_CLIENT_SECRET=<App OAuth client secret>
 
    supabase functions deploy github-app --no-verify-jwt
    ```
@@ -666,11 +700,19 @@ Never logged: tokens, e-mails, personal data.
   secret in Supabase Auth.
 * The app ships only the publishable/anon key. `service_role` and
   `sb_secret_…` must never reach a client.
-* All five functions are `SECURITY DEFINER`; keep `search_path` pinned and
+* All seven helper functions are `SECURITY DEFINER`; keep `search_path` pinned and
   restrict `execute` to `authenticated` (as the migration does). The dashboard
   linter flags them — that is expected and required for RLS helpers.
 * RLS is enabled on every table. If you add a table, enable RLS *and* write
   policies in the same migration, and add it to the grants block.
+* Ownership is protected twice: policies (`members_update`/`members_delete` filter
+  `role <> 'owner'`) plus a partial unique index
+  (`workspace_members_single_owner_idx`). `workspaces.owner_id` is
+  `on delete restrict`, so deleting the owner's account fails until
+  `transfer_ownership()` has run.
+* The RLS/role matrix is covered by pgTAP in `supabase/tests/` — run it on a
+  local database (`supabase start && supabase test db`), never against
+  production.
 * Consider enabling Auth → Password Security (leaked password protection) if
   you ever enable e-mail sign-in.
 
@@ -680,11 +722,11 @@ Never logged: tokens, e-mails, personal data.
 
 | Area | State |
 |---|---|
-| E-mail/password sign-in + OTP | still calls the retired REST API (`api.6dx.app`, DNS does not resolve). GitHub sign-in is fully on Supabase. To finish: move to `signInWithPassword` / `signUp` / `verifyOTP(signup)`. |
+| E-mail/password sign-in + OTP | **implemented on Supabase** (`signInWithPassword` / `signUp` / `verifyOTP(signup)`). The confirmation e-mail must contain `{{ .Token }}` for the in-app 6-digit step — otherwise rely on the confirmation link. Needs working SMTP. |
 | Snapshot sections without SQL | `workload`, `workload_suggestions`, `rate_limit`, `agents`, `commits`, `releases`, `code_platforms`, `project_reports`, `sprint_retros`, `billing` — the mapper accepts them, nothing produces them. |
 | GitHub sync | `pull_request` webhooks upsert into `pull_requests`, but nothing imports issues, branches or commit history yet. |
 | Creating a repository | not supported: a GitHub App token cannot create repositories on a personal account (`Administration` only covers organizations). The app links existing repositories. |
 | One workspace per account | `ensure_my_workspace` and `CurrentWorkspace` use the first membership; the “switch workspace” screen exists in the design but is not wired. |
-| Invites | rows are written to `workspace_invites`; nothing sends the e-mail and no accept flow exists. |
+| Invites | implemented end to end (invite → notification → accept → membership). Nothing sends an **e-mail** yet, and the invite link is not shareable outside the app. |
 | Realtime | not used; screens refresh manually. |
 | `updated_at` | no trigger maintains it. |

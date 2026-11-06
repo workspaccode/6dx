@@ -205,6 +205,19 @@ in the client.
 * `0002_workspace_bootstrap.sql` — `ensure_my_workspace()`, which creates the
   first workspace for a new account, because RLS has no insert policy on
   `workspaces` (a member has to exist first)
+* `0003_github_app.sql` — `github_installations` + `repositories.installation_id`
+  for the GitHub App broker
+* `0004_roles_and_ownership.sql` — `is_workspace_editor()` (viewers are
+  read-only), attributed activity, and `transfer_ownership()`
+* `0005_ownership_invariants.sql` — one owner per workspace (partial unique
+  index) and `workspaces.owner_id` on `delete restrict`
+* `0006_client_decisions.sql` — `submit_client_decision()` so a `viewer` (an
+  external client) can record a decision without write access to activity
+* `0007_client_decision_rules.sql` — one client report per workspace, the
+  decision stored on the report (validated index, recorded once)
+* `0008_invitations.sql` — invite → notification → accept: a trigger notifies an
+  existing account, `sync_my_invites()` covers invites that predate it, and
+  `accept_invite()` turns the invite into a membership
 
 Apply them with the Supabase MCP (`execute_sql`) or the CLI:
 
@@ -247,7 +260,7 @@ Two backends live behind `AuthBackend`; the app picks one at start-up:
 | Backend | Used when | Flow |
 |---------|-----------|------|
 | `SupabaseAuthBackend` | `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY` are set (the default) | browser OAuth, the session comes back through the `io.supabase.flutter://login-callback` deep link |
-| `DeviceFlowAuthBackend` | Supabase is not configured | GitHub OAuth **device flow**, no redirect URI and no secret |
+| `DeviceFlowAuthBackend` | Supabase is not configured | GitHub OAuth **device flow**, no redirect URI and no secret (no e-mail sign-in) |
 
 The GitHub OAuth **client secret** must live only in the Supabase dashboard
 (Authentication → Providers → GitHub). It is never read by the app.
@@ -269,6 +282,18 @@ Both URLs have to be registered in the Supabase dashboard:
 * `android/app/src/main/AndroidManifest.xml` already declares the
   `io.supabase.flutter://login-callback` intent filter, and `ios/Runner/Info.plist`
   the matching URL scheme.
+
+### E-mail + password
+
+`SupabaseAuthBackend` uses `signInWithPassword`, `signUp` (with
+`data: {full_name}`) and `verifyOTP(type: signup)`. The legacy `api.6dx.app`
+REST client is gone — the app has no REST API of its own any more.
+
+With `mailer_autoconfirm = false` a new account has **no session** until the
+code is confirmed; the app moves to the 6-digit screen and only then becomes
+signed in. For the in-app code step the "Confirm signup" e-mail template must
+include `{{ .Token }}`; if it only contains `{{ .ConfirmationURL }}` the link
+signs the user in through the deep link instead.
 
 ### Device flow (fallback)
 
@@ -372,6 +397,10 @@ model, a route or an ARB file.
 ```bash
 flutter analyze
 flutter test
+
+# database: RLS / roles / ownership invariants (local only!)
+supabase start
+supabase test db
 ```
 
 ## Design tokens
