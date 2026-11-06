@@ -10,7 +10,6 @@ import '../../domain/entities/auth_user.dart';
 import '../../domain/entities/github_device_code.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_local_data_source.dart';
-import '../datasources/auth_remote_data_source.dart';
 import '../backends/auth_backend.dart';
 import '../backends/device_flow_auth_backend.dart';
 import '../datasources/github_auth_data_source.dart';
@@ -18,16 +17,13 @@ import '../models/user_model.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl({
-    required AuthRemoteDataSource remote,
     required AuthLocalDataSource local,
     required GithubAuthDataSource github,
     required AuthBackend backend,
-  })  : _remote = remote,
-        _local = local,
+  })  : _local = local,
         _github = github,
         _backend = backend;
 
-  final AuthRemoteDataSource _remote;
   final AuthLocalDataSource _local;
   final GithubAuthDataSource _github;
   final AuthBackend _backend;
@@ -96,11 +92,13 @@ class AuthRepositoryImpl implements AuthRepository {
   }) =>
       _guard(() async {
         AppLogger.action(_tag, 'sign-in with email: $email');
-        final model =
-            await _remote.loginWithEmail(email: email, password: password);
-        await _local.cacheSession(user: model);
+        final user = await _backend.signInWithEmail(
+          email: email,
+          password: password,
+        );
+        await _local.cacheSession(user: UserModel.fromEntity(user));
         AppLogger.action(_tag, 'sign-in with email: success');
-        return model.toEntity();
+        return user;
       });
 
   @override
@@ -111,24 +109,34 @@ class AuthRepositoryImpl implements AuthRepository {
   }) =>
       _guard(() async {
         AppLogger.action(_tag, 'sign-up: $email');
-        final model = await _remote.register(
+        final user = await _backend.registerWithEmail(
           email: email,
           password: password,
           displayName: displayName,
         );
-        await _local.cacheSession(user: model);
-        AppLogger.action(_tag, 'sign-up: success, the verification code was sent');
-        return model.toEntity();
+        // With e-mail confirmation enabled there is no session yet, so nothing
+        // is cached: the OTP step creates it.
+        if (user.accessToken != null) {
+          await _local.cacheSession(user: UserModel.fromEntity(user));
+        }
+        AppLogger.action(
+          _tag,
+          'sign-up: success, the verification code was sent',
+        );
+        return user;
       });
 
   @override
-  Future<Result<AuthUser>> verifyOtp({required String email, required String otp}) =>
+  Future<Result<AuthUser>> verifyOtp({
+    required String email,
+    required String otp,
+  }) =>
       _guard(() async {
         AppLogger.action(_tag, 'verify the OTP sent to $email');
-        final model = await _remote.verifyOtp(email: email, otp: otp);
-        await _local.cacheSession(user: model);
+        final user = await _backend.verifyOtp(email: email, otp: otp);
+        await _local.cacheSession(user: UserModel.fromEntity(user));
         AppLogger.action(_tag, 'verify the OTP: success');
-        return model.toEntity();
+        return user;
       });
 
   @override
@@ -146,11 +154,6 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<Result<void>> signOut() => _guard(() async {
-        try {
-          await _remote.logout();
-        } on DioException {
-          // The local session is cleared regardless of the server answer.
-        }
         // Supabase keeps its own copy of the session (and a refresh token),
         // it has to be ended as well or the user comes back signed in.
         await _backend.signOut();

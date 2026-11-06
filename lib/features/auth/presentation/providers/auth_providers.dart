@@ -1,9 +1,8 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_endpoints.dart';
 import '../../../../core/config/app_config.dart';
-import '../../../../core/network/dio_factory.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/result.dart';
@@ -11,7 +10,6 @@ import '../../data/backends/auth_backend.dart';
 import '../../data/backends/device_flow_auth_backend.dart';
 import '../../data/backends/supabase_auth_backend.dart';
 import '../../data/datasources/auth_local_data_source.dart';
-import '../../data/datasources/auth_remote_data_source.dart';
 import '../../data/datasources/github_auth_data_source.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../domain/entities/auth_user.dart';
@@ -22,10 +20,6 @@ import '../../domain/usecases/auth_usecases.dart';
 /// Infrastructure providers (composition root).
 final secureStorageProvider = Provider<SecureStorageService>(
   (ref) => SecureStorageService(),
-);
-
-final dioProvider = Provider<Dio>(
-  (ref) => DioFactory.create(secureStorage: ref.watch(secureStorageProvider)),
 );
 
 /// The OAuth endpoints live on github.com, not on api.github.com. They need
@@ -43,10 +37,6 @@ final githubOAuthDioProvider = Provider<Dio>(
       },
     ),
   ),
-);
-
-final authRemoteDataSourceProvider = Provider<AuthRemoteDataSource>(
-  (ref) => AuthRemoteDataSource(ref.watch(dioProvider)),
 );
 
 final authLocalDataSourceProvider = Provider<AuthLocalDataSource>(
@@ -72,7 +62,6 @@ final authBackendProvider = Provider<AuthBackend>((ref) {
 
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepositoryImpl(
-    remote: ref.watch(authRemoteDataSourceProvider),
     local: ref.watch(authLocalDataSourceProvider),
     github: ref.watch(githubAuthDataSourceProvider),
     backend: ref.watch(authBackendProvider),
@@ -193,7 +182,12 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
           password: password,
           displayName: displayName,
         );
-    return _apply(result);
+    final user = result.dataOrNull;
+    // A fresh sign-up has no session until the code is confirmed, so the state
+    // stays "signed out" and the screen moves on to the OTP step.
+    final signedIn = user != null && user.accessToken != null;
+    state = signedIn ? AsyncData(user) : const AsyncData(null);
+    return user != null;
   }
 
   Future<bool> verifyOtp({required String email, required String otp}) async {
@@ -218,6 +212,19 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
 
 final authNotifierProvider =
     AsyncNotifierProvider<AuthNotifier, AuthUser?>(AuthNotifier.new);
+
+/// The address a sign-up code was sent to, so the OTP screen can confirm it.
+class PendingSignupEmailNotifier extends Notifier<String> {
+  @override
+  String build() => '';
+
+  void set(String email) => state = email;
+}
+
+final pendingSignupEmailProvider =
+    NotifierProvider<PendingSignupEmailNotifier, String>(
+  PendingSignupEmailNotifier.new,
+);
 
 /// Convenience selector: `true` when a user session exists.
 final isSignedInProvider = Provider<bool>(

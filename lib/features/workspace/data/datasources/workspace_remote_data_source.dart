@@ -82,23 +82,54 @@ class WorkspaceRemoteDataSource {
       });
 
   /// Stores the chosen option of the client report as an activity event.
+  ///
+  /// Goes through `submit_client_decision()` so a `viewer` (an external client)
+  /// can record the decision: `activity_events` itself is editor-only.
   Future<void> submitClientDecision(int optionIndex) =>
       runSupabase('workspace.client_decision', () async {
-        final db = _client();
-        final workspaceId = await _workspace.resolve();
-        final rows = await db
-            .from('client_reports')
-            .select('decision_options')
-            .eq('workspace_id', workspaceId)
-            .limit(1);
-        final options = rows.isEmpty
-            ? const <dynamic>[]
-            : (rows.first['decision_options'] as List?) ?? const <dynamic>[];
-        final chosen = optionIndex >= 0 && optionIndex < options.length
-            ? '${options[optionIndex]}'
-            : 'الخيار ${optionIndex + 1}';
-        await _logActivity('client_decision', 'قرار العميل: $chosen');
+        await _client().rpc(
+          'submit_client_decision',
+          params: {
+            'target': await _workspace.resolve(),
+            'option_index': optionIndex,
+          },
+        );
       });
+
+  /// Turns the caller's pending invite into a membership.
+  ///
+  /// Returns the workspace that was joined. [inviteId] may be null: the server
+  /// then accepts the newest pending invite addressed to the caller's e-mail.
+  Future<String?> acceptInvite({String? inviteId}) =>
+      runSupabase('workspace.accept_invite', () async {
+        final result = await _client().rpc(
+          'accept_invite',
+          params: {'target': inviteId},
+        );
+        return result is String ? result : null;
+      });
+
+  /// Creates the notifications for invites that arrived before the account
+  /// existed. Idempotent, so calling it on every app start is fine.
+  Future<int> syncMyInvites() =>
+      runSupabase('workspace.sync_invites', () async {
+        final result = await _client().rpc('sync_my_invites');
+        return (result as num?)?.toInt() ?? 0;
+      });
+
+  /// Pending invites addressed to the caller, for the accept screen.
+  Future<List<Map<String, dynamic>>> myPendingInvites() =>
+      runSupabase('workspace.pending_invites', () async {
+        final rows = await _client().rpc('my_pending_invites');
+        if (rows is! List) return const <Map<String, dynamic>>[];
+        return rows
+            .whereType<Map>()
+            .map((row) => <String, dynamic>{
+                  for (final entry in row.entries) '${entry.key}': entry.value,
+                })
+            .toList(growable: false);
+      });
+
 
   Future<void> _logActivity(String type, String text) async {
     final db = _client();

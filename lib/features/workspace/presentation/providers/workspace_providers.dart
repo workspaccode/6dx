@@ -1,4 +1,4 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/current_workspace.dart';
 import '../../../../core/network/supabase_client.dart';
@@ -31,6 +31,25 @@ final sendInvitesProvider = Provider<SendInvites>(
   (ref) => SendInvites(ref.watch(workspaceRepositoryProvider)),
 );
 
+final acceptInviteProvider = Provider<AcceptInvite>(
+  (ref) => AcceptInvite(ref.watch(workspaceRepositoryProvider)),
+);
+
+final syncMyInvitesProvider = Provider<SyncMyInvites>(
+  (ref) => SyncMyInvites(ref.watch(workspaceRepositoryProvider)),
+);
+
+/// Pending invites for the signed-in account (powers the accept screen).
+final pendingInvitesProvider =
+    FutureProvider<List<WorkspaceInvite>>((ref) async {
+  ref.watch(authNotifierProvider.select((state) => state.value?.id));
+  return ref.watch(getPendingInvitesProvider).call();
+}, retry: (retryCount, error) => null);
+
+final getPendingInvitesProvider = Provider<GetPendingInvites>(
+  (ref) => GetPendingInvites(ref.watch(workspaceRepositoryProvider)),
+);
+
 /// The whole workspace projection.
 ///
 /// It never throws: when the API is unreachable the provider resolves to an
@@ -39,6 +58,15 @@ final sendInvitesProvider = Provider<SendInvites>(
 final workspaceSnapshotProvider = FutureProvider<WorkspaceSnapshot>((ref) async {
   // Reload whenever the signed-in account changes.
   ref.watch(authNotifierProvider.select((state) => state.value?.id));
+
+  // Deliver invites that were sent before this account existed. Best effort:
+  // a failure here must not hide the workspace itself.
+  try {
+    await ref.read(syncMyInvitesProvider).call();
+  } catch (error) {
+    AppLogger.action('Workspace', 'invite sync failed', error);
+  }
+
   try {
     final snapshot = await ref.watch(getWorkspaceSnapshotProvider).call();
     AppLogger.action(

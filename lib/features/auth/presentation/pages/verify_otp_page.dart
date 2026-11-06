@@ -33,8 +33,9 @@ class _VerifyOtpPageState extends ConsumerState<VerifyOtpPage> {
   String get _code => _controllers.map((c) => c.text).join();
 
   Future<void> _verify() async {
+    final email = ref.read(pendingSignupEmailProvider);
     final ok = await ref.read(authNotifierProvider.notifier).verifyOtp(
-          email: '',
+          email: email,
           otp: _code,
         );
     if (!mounted) return;
@@ -42,7 +43,7 @@ class _VerifyOtpPageState extends ConsumerState<VerifyOtpPage> {
       context.go(AppRoutes.home);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('الكود غير صحيح')),
+        const SnackBar(content: Text('الكود غير صحيح أو انتهت صلاحيته')),
       );
     }
   }

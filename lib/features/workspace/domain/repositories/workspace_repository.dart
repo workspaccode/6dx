@@ -19,4 +19,17 @@ abstract interface class WorkspaceRepository {
 
   /// Confirms a client decision (option index).
   Future<void> submitClientDecision(int optionIndex);
+
+  /// Accepts a pending invitation; returns the joined workspace id.
+  ///
+  /// With no [inviteId] the server accepts the newest pending invite addressed
+  /// to the caller's e-mail.
+  Future<String?> acceptInvite({String? inviteId});
+
+  /// Delivers notifications for invites that arrived before the account
+  /// existed. Returns how many were created.
+  Future<int> syncMyInvites();
+
+  /// Pending invites for the signed-in account.
+  Future<List<WorkspaceInvite>> pendingInvites();
 }

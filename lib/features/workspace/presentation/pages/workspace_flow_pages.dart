@@ -1,8 +1,11 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/logger.dart';
+import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -71,30 +74,106 @@ class WorkspaceSwitchPage extends ConsumerWidget {
 
 /// قبول الدعوة
 @RoutePage()
-class AcceptInvitePage extends ConsumerWidget {
+class AcceptInvitePage extends ConsumerStatefulWidget {
   const AcceptInvitePage({super.key, this.invite});
 
   final WorkspaceInvite? invite;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final data = invite;
-    if (data == null) {
-      return const AppScreen(
+  ConsumerState<AcceptInvitePage> createState() => _AcceptInvitePageState();
+}
+
+class _AcceptInvitePageState extends ConsumerState<AcceptInvitePage> {
+  bool _busy = false;
+
+  Future<void> _accept(String? inviteId) async {
+    setState(() => _busy = true);
+    AppLogger.action('AcceptInvite', 'accepting invite ${inviteId ?? "(newest)"}');
+    try {
+      final workspaceId =
+          await ref.read(acceptInviteProvider).call(inviteId: inviteId);
+      if (!mounted) return;
+      AppLogger.action('AcceptInvite', 'joined workspace $workspaceId');
+      ref.invalidate(workspaceSnapshotProvider);
+      ref.invalidate(pendingInvitesProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم الانضمام إلى مساحة العمل')),
+      );
+      if (context.mounted) context.go(AppRoutes.home);
+    } catch (error) {
+      if (!mounted) return;
+      AppLogger.action('AcceptInvite', 'accept failed', error);
+      final text = error.toString();
+      final message = text.contains('22023')
+          ? 'انتهت صلاحية الدعوة'
+          : text.contains('P0002')
+              ? 'لا توجد دعوة معلّقة لهذا الحساب'
+              : text.contains('42501')
+                  ? 'الدعوة مرتبطة ببريد إلكتروني آخر'
+                  : 'تعذّر قبول الدعوة';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final invite = widget.invite;
+    if (invite == null) {
+      // Opened from a notification: resolve the pending invite server-side.
+      final pending = ref.watch(pendingInvitesProvider);
+      final first = pending.value?.isNotEmpty == true ? pending.value!.first : null;
+
+      return AppScreen(
         title: 'قبول الدعوة',
         children: [
-          AppEmptyState(
-            icon: Icons.mail_outline_rounded,
-            title: 'لا توجد دعوة',
-            message: 'الرابط الذي فتحته غير صالح أو انتهت صلاحيته.',
-          ),
+          if (pending.isLoading)
+            const AppLoadingView()
+          else if (first == null)
+            const AppEmptyState(
+              icon: Icons.mail_outline_rounded,
+              title: 'لا توجد دعوة',
+              message: 'الرابط الذي فتحته غير صالح أو انتهت صلاحيته.',
+            )
+          else ...[
+            AppPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('الإيميل',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 4),
+                  Text(first.email,
+                      style: Theme.of(context).textTheme.titleMedium),
+                  if (first.invitedBy != null) ...[
+                    const SizedBox(height: 8),
+                    Text('مساحة العمل: ${first.invitedBy}',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: _busy ? null : () => _accept(first.id),
+              child: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('قبول الدعوة'),
+            ),
+          ],
         ],
       );
     }
 
     return AppScreen(
       title: 'انضم إلى مساحة العمل',
-      subtitle: 'دعوة ${data.role}',
+      subtitle: 'دعوة ${invite.role}',
       children: [
         AppPanel(
           child: Column(
@@ -102,23 +181,23 @@ class AcceptInvitePage extends ConsumerWidget {
             children: [
               Text('الإيميل', style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 4),
-              Text(data.email, style: Theme.of(context).textTheme.titleMedium),
+              Text(invite.email,
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               const HintBanner('الدعوة مرتبطة بهذا الإيميل ولا يمكن تغييره.'),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        const TextField(decoration: InputDecoration(labelText: 'اسمك')),
         const SizedBox(height: 24),
         FilledButton(
-          onPressed: () {},
-          child: const Text('قبول وإنشاء الحساب'),
-        ),
-        const SizedBox(height: 8),
-        OutlinedButton(
-          onPressed: () {},
-          child: const Text('رفض الدعوة'),
+          onPressed: _busy ? null : () => _accept(invite.id),
+          child: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('قبول الدعوة'),
         ),
       ],
     );

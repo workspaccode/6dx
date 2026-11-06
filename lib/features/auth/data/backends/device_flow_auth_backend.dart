@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../../core/errors/exceptions.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../domain/entities/auth_user.dart';
@@ -109,6 +110,35 @@ class DeviceFlowAuthBackend implements AuthBackend {
     AppLogger.action(_tag, 'sign-out');
     await _secureStorage.deleteAccessToken();
   }
+
+  // E-mail sign-in lives in Supabase Auth; this backend only knows GitHub.
+  @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async =>
+      throw const ServerException(
+        'تسجيل الدخول بالبريد يحتاج Supabase — اضبط SUPABASE_URL.',
+      );
+
+  @override
+  Future<AuthUser> registerWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async =>
+      throw const ServerException(
+        'إنشاء حساب بالبريد يحتاج Supabase — اضبط SUPABASE_URL.',
+      );
+
+  @override
+  Future<AuthUser> verifyOtp({
+    required String email,
+    required String otp,
+  }) async =>
+      throw const ServerException(
+        'تأكيد الكود يحتاج Supabase — اضبط SUPABASE_URL.',
+      );
 
   AuthUser _toUser(
     Map<String, dynamic> payload,

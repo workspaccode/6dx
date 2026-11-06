@@ -121,6 +121,117 @@ class SupabaseAuthBackend implements AuthBackend {
       'المحاولة: io.supabase.flutter://login-callback';
 
   @override
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    AppLogger.action('Auth', 'sign-in with password: $email');
+    try {
+      final response = await _client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      final session = response.session;
+      if (session == null) {
+        throw const sb.AuthException('لم تُنشأ جلسة — أكّد بريدك أولًا.');
+      }
+      await _secureStorage.writeAccessToken(session.accessToken);
+      AppLogger.action('Auth', 'sign-in with password: ok');
+      return _mapUser(session.user, session.accessToken)!;
+    } on sb.AuthException catch (error) {
+      AppLogger.action('Auth', 'sign-in with password: FAILED', error.message);
+      throw sb.AuthException(_describeAuth(error));
+    }
+  }
+
+  @override
+  Future<AuthUser> registerWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  }) async {
+    AppLogger.action('Auth', 'sign-up: $email');
+    try {
+      final response = await _client.auth.signUp(
+        email: email,
+        password: password,
+        data: {'full_name': displayName},
+      );
+      final user = response.user;
+      if (user == null) {
+        throw const sb.AuthException('تعذّر إنشاء الحساب.');
+      }
+      final session = response.session;
+      if (session != null) {
+        await _secureStorage.writeAccessToken(session.accessToken);
+      }
+      AppLogger.action(
+        'Auth',
+        'sign-up: ok (${session == null ? 'confirmation required' : 'signed in'})',
+      );
+      return _mapUser(user, session?.accessToken)!;
+    } on sb.AuthException catch (error) {
+      AppLogger.action('Auth', 'sign-up: FAILED', error.message);
+      throw sb.AuthException(_describeAuth(error));
+    }
+  }
+
+  @override
+  Future<AuthUser> verifyOtp({
+    required String email,
+    required String otp,
+  }) async {
+    AppLogger.action('Auth', 'verifying the code sent to $email');
+    try {
+      final response = await _client.auth.verifyOTP(
+        email: email,
+        token: otp,
+        type: sb.OtpType.signup,
+      );
+      final session = response.session;
+      if (session == null) {
+        throw const sb.AuthException('الكود صحيح لكن لم تُنشأ جلسة.');
+      }
+      await _secureStorage.writeAccessToken(session.accessToken);
+      AppLogger.action('Auth', 'verify code: ok');
+      return _mapUser(session.user, session.accessToken)!;
+    } on sb.AuthException catch (error) {
+      AppLogger.action('Auth', 'verify code: FAILED', error.message);
+      throw sb.AuthException(_describeAuth(error));
+    }
+  }
+
+  /// Supabase answers in English; the screens are Arabic.
+  static String _describeAuth(sb.AuthException error) {
+    final code = error.code;
+    final message = error.message.toLowerCase();
+    if (code == 'invalid_credentials' || message.contains('invalid login')) {
+      return 'البريد الإلكتروني أو كلمة المرور غير صحيحة.';
+    }
+    if (code == 'email_not_confirmed' || message.contains('not confirmed')) {
+      return 'أكّد بريدك الإلكتروني أولًا — تحقّق من رمز التأكيد.';
+    }
+    if (code == 'user_already_exists' || message.contains('already registered')) {
+      return 'هذا البريد مسجّل بالفعل — جرّب تسجيل الدخول.';
+    }
+    if (code == 'weak_password' || message.contains('password should be')) {
+      return 'كلمة المرور ضعيفة — استخدم 8 أحرف على الأقل.';
+    }
+    if (code == 'over_email_send_rate_limit' ||
+        message.contains('rate limit') ||
+        message.contains('too many')) {
+      return 'تم إرسال أكواد كثيرة — انتظر قليلًا ثم أعد المحاولة.';
+    }
+    if (code == 'otp_expired' || message.contains('expired')) {
+      return 'انتهت صلاحية الكود — اطلب كودًا جديدًا.';
+    }
+    if (code == 'signup_disabled') {
+      return 'إنشاء الحسابات غير مفعّل على هذا المشروع.';
+    }
+    return error.message;
+  }
+
+  @override
   Future<void> signOut() async {
     AppLogger.action('Auth', 'sign-out: clearing the Supabase session');
     await _client.auth.signOut();

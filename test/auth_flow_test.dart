@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sixdx/core/storage/secure_storage_service.dart';
 import 'package:sixdx/features/auth/data/backends/device_flow_auth_backend.dart';
 import 'package:sixdx/features/auth/data/datasources/auth_local_data_source.dart';
-import 'package:sixdx/features/auth/data/datasources/auth_remote_data_source.dart';
 import 'package:sixdx/features/auth/data/datasources/github_auth_data_source.dart';
 import 'package:sixdx/features/auth/data/repositories/auth_repository_impl.dart';
 
@@ -61,7 +60,6 @@ void main() {
       () async {
     final github = _FakeGithubDataSource();
     final repository = AuthRepositoryImpl(
-      remote: _unusedRemote(),
       local: _unusedLocal(),
       github: github,
       backend: DeviceFlowAuthBackend(
@@ -100,7 +98,6 @@ void main() {
     // real browser redirect code, which the app does not use.
     final github = _FakeGithubDataSource();
     final repository = AuthRepositoryImpl(
-      remote: _unusedRemote(),
       local: _unusedLocal(),
       github: github,
       backend: DeviceFlowAuthBackend(
@@ -113,8 +110,6 @@ void main() {
     expect(github.deviceCodeCalls, 1);
   });
 }
-
-AuthRemoteDataSource _unusedRemote() => AuthRemoteDataSource(Dio());
 
 AuthLocalDataSource _unusedLocal() =>
     AuthLocalDataSource(SecureStorageService());

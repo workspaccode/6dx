@@ -24,6 +24,28 @@ abstract interface class AuthBackend {
   /// Starts the GitHub sign-in flow and resolves once the user is signed in.
   Future<AuthUser> signInWithGithub();
 
+  /// E-mail + password sign-in.
+  ///
+  /// Only the Supabase backend supports it; the GitHub device-flow fallback has
+  /// no user database of its own.
+  Future<AuthUser> signInWithEmail({
+    required String email,
+    required String password,
+  });
+
+  /// Creates an account and sends the confirmation code.
+  ///
+  /// Returns the pending user: with e-mail confirmation enabled there is no
+  /// session until [verifyOtp] succeeds.
+  Future<AuthUser> registerWithEmail({
+    required String email,
+    required String password,
+    required String displayName,
+  });
+
+  /// Confirms a sign-up code.
+  Future<AuthUser> verifyOtp({required String email, required String otp});
+
   /// Ends the session.
   Future<void> signOut();
 

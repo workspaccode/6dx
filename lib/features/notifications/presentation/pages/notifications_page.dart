@@ -1,10 +1,12 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../shared/widgets/app_states.dart';
+import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 
@@ -89,7 +91,11 @@ class NotificationsPage extends ConsumerWidget {
                   trailing: item.actionLabel == null
                       ? null
                       : TextButton(
-                          onPressed: () {},
+                          // An invite is the only action the app can complete
+                          // today; everything else is informational.
+                          onPressed: item.kind == 'invite'
+                              ? () => context.push(AppRoutes.acceptInvite)
+                              : null,
                           child: Text(item.actionLabel!),
                         ),
                 );

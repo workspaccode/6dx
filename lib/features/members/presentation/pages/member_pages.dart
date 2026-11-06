@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../workspace/domain/entities/workspace_snapshot.dart';
@@ -201,12 +202,73 @@ class InvitePage extends ConsumerStatefulWidget {
 
 class _InvitePageState extends ConsumerState<InvitePage> {
   final _controller = TextEditingController();
+
+  /// UI label → `member_role`. `owner` cannot be handed out by an invite
+  /// (the RLS policy rejects it), so it is not offered.
+  static const Map<String, String> _roles = {
+    'مشاهد': 'viewer',
+    'مطوّر': 'developer',
+    'مراجِع': 'reviewer',
+    'مدير': 'admin',
+  };
+
   String _role = 'مطوّر';
+  bool _sending = false;
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  List<String> get _emails => _controller.text
+      .split(RegExp(r'[,\s\n]+'))
+      .map((value) => value.trim())
+      .where((value) => value.contains('@'))
+      .toSet()
+      .toList(growable: false);
+
+  Future<void> _send() async {
+    final emails = _emails;
+    if (emails.isEmpty) {
+      _showSnack('أدخل بريدًا إلكترونيًا صحيحًا');
+      return;
+    }
+
+    setState(() => _sending = true);
+    final role = _roles[_role]!;
+    AppLogger.action('InvitePage', 'inviting ${emails.length} address(es) as $role');
+    try {
+      await ref.read(sendInvitesProvider).call(emails: emails, role: role);
+      if (!mounted) return;
+      _controller.clear();
+      ref.invalidate(workspaceSnapshotProvider);
+      _showSnack('تم إرسال ${emails.length} دعوة');
+    } catch (error) {
+      if (!mounted) return;
+      AppLogger.action('InvitePage', 'invite failed', error);
+      _showSnack(_describe(error));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// The server raises Postgres errors; show the ones a user can act on.
+  String _describe(Object error) {
+    final text = error.toString();
+    if (text.contains('42501')) {
+      return 'إرسال الدعوات يحتاج صلاحية مدير في مساحة العمل';
+    }
+    if (text.contains('23503')) {
+      return 'بريد غير صالح';
+    }
+    return 'تعذّر إرسال الدعوات، حاول مرة أخرى';
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -233,7 +295,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
         Wrap(
           spacing: 8,
           children: [
-            for (final role in const ['مشاهد', 'مطوّر', 'مراجِع', 'مالك'])
+            for (final role in _roles.keys)
               ChoiceChip(
                 label: Text(role),
                 selected: _role == role,
@@ -245,7 +307,7 @@ class _InvitePageState extends ConsumerState<InvitePage> {
         ToggleRow(
           title: 'إضافتهم أيضًا للمستودع على GitHub',
           value: false,
-          onChanged: (v) {},
+          onChanged: (_) {},
         ),
         if (invites.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -283,8 +345,14 @@ class _InvitePageState extends ConsumerState<InvitePage> {
         ),
         const SizedBox(height: 12),
         FilledButton(
-          onPressed: _controller.text.trim().isEmpty ? null : () {},
-          child: const Text('إرسال الدعوات'),
+          onPressed: _sending || _emails.isEmpty ? null : _send,
+          child: _sending
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('إرسال الدعوات'),
         ),
       ],
     );

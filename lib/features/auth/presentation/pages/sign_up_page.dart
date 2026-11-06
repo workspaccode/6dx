@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../routes/app_router.dart';
+import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/logger.dart';
 import '../providers/auth_providers.dart';
 
@@ -19,30 +20,49 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _obscure = true;
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _sendCode() async {
     if (!_formKey.currentState!.validate()) return;
-    AppLogger.action('SignUpPage', 'tapped "send the verification code" for ${_emailController.text.trim()}');
+    final email = _emailController.text.trim();
+    AppLogger.action('SignUpPage', 'tapped "send the verification code" for $email');
     final ok = await ref.read(authNotifierProvider.notifier).register(
-          email: _emailController.text.trim(),
-          password: '',
+          email: email,
+          password: _passwordController.text,
           displayName: _nameController.text.trim(),
         );
     if (!mounted) return;
     if (ok) {
+      // The OTP screen needs the address the code was sent to.
+      ref.read(pendingSignupEmailProvider.notifier).set(email);
       context.push(AppRoutes.verifyOtp);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذّر إنشاء الحساب')),
       );
     }
+  }
+
+  Future<void> _continueWithGithub() async {
+    AppLogger.action('SignUpPage', 'tapped "continue with GitHub"');
+    final result = await ref.read(authNotifierProvider.notifier).signInWithGithub();
+    if (!mounted) return;
+    if (result.dataOrNull != null) {
+      context.go(AppRoutes.home);
+      return;
+    }
+    final reason = result.failureOrNull?.message ?? 'تعذّر الاتصال بـ GitHub';
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(reason)));
   }
 
   @override
@@ -94,6 +114,31 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                   'استخدم نفس الإيميل الذي وصلتك عليه الدعوة، حتى تنضم لفريقك مباشرة.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
                 ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: _obscure,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    labelText: 'كلمة المرور',
+                    helperText: '8 أحرف على الأقل',
+                    suffixIcon: IconButton(
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      icon: Icon(
+                        _obscure
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                      ),
+                    ),
+                  ),
+                  validator: (value) {
+                    final password = value ?? '';
+                    if (password.length < 8) {
+                      return 'كلمة المرور لا تقل عن 8 أحرف';
+                    }
+                    return null;
+                  },
+                ),
                 const SizedBox(height: 28),
                 FilledButton(
                   onPressed: isLoading ? null : _sendCode,
@@ -112,7 +157,7 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
                 ),
                 const SizedBox(height: 20),
                 OutlinedButton.icon(
-                  onPressed: isLoading ? null : _sendCode,
+                  onPressed: isLoading ? null : _continueWithGithub,
                   icon: const Icon(Icons.code, size: 20),
                   label: const Text('المتابعة باستخدام GitHub'),
                 ),

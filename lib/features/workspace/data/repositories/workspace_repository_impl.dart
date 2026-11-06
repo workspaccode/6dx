@@ -54,4 +54,28 @@ class WorkspaceRepositoryImpl implements WorkspaceRepository {
   Future<void> submitClientDecision(int optionIndex) async {
     await _remote.submitClientDecision(optionIndex);
   }
+
+  @override
+  Future<String?> acceptInvite({String? inviteId}) =>
+      _remote.acceptInvite(inviteId: inviteId);
+
+  @override
+  Future<int> syncMyInvites() => _remote.syncMyInvites();
+
+  @override
+  Future<List<WorkspaceInvite>> pendingInvites() async {
+    final rows = await _remote.myPendingInvites();
+    return rows
+        .map(
+          (row) => WorkspaceInvite(
+            id: '${row['invite_id'] ?? ''}',
+            email: '${row['email'] ?? ''}',
+            role: '${row['role'] ?? ''}',
+            status: 'pending',
+            sentAt: DateTime.tryParse('${row['sent_at']}'),
+            invitedBy: row['workspace_name'] as String?,
+          ),
+        )
+        .toList(growable: false);
+  }
 }
