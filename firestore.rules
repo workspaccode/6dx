@@ -1,0 +1,195 @@
+rules_version = '2';
+
+// 6DX — Firestore security rules.
+//
+// These mirror the Postgres RLS policies of the previous Supabase backend
+// (supabase/migrations/0001..0008) one by one:
+//
+//   member  — read everything inside a workspace they belong to
+//   editor  — role != viewer; writes projects/tasks/sprints/...
+//   admin   — owner|admin; manages members and invites
+//   owner   — deletes the workspace, transfers ownership
+//
+// What rules cannot express (unique owner, invite notifications, accepting
+// an invite, client decisions, the GitHub App legs) lives in Cloud Functions
+// under functions/src — the Admin SDK is not bound by these rules.
+
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // --- helpers ----------------------------------------------------------
+    // `exists()` guards every `get()`: rules evaluate `&&` lazily, so a
+    // missing member document can never throw the whole expression.
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function memberDoc(ws) {
+      return /databases/$(db)/documents/workspaces/$(ws)/members/$(request.auth.uid);
+    }
+
+    function isMember(ws) {
+      return isSignedIn() && exists(memberDoc(ws));
+    }
+
+    function role(ws) {
+      return get(memberDoc(ws)).data.role;
+    }
+
+    function isAdmin(ws) {
+      return isMember(ws) && role(ws) in ['owner', 'admin'];
+    }
+
+    function isOwner(ws) {
+      return isMember(ws) && role(ws) == 'owner';
+    }
+
+    // 0004: viewers are read-only.
+    function isEditor(ws) {
+      return isMember(ws) && role(ws) != 'viewer';
+    }
+
+    // --- workspace tree ---------------------------------------------------
+
+    match /workspaces/{wsId} {
+
+      // Member reads the workspace; admin renames it / edits settings.
+      allow get: if isMember(wsId);
+      allow update: if isAdmin(wsId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['name', 'settings', 'updatedAt']);
+      allow delete: if isOwner(wsId);
+      // Creation goes through the ensureMyWorkspace callable: a workspace
+      // must exist together with its owner membership.
+      allow create: if false;
+
+      // Members — layered like the RLS policies:
+      //   * an owner manages everyone but the other `owner` row,
+      //   * an admin manages developer/reviewer/viewer only,
+      //   * `owner` is never handed out through a direct write.
+      match /members/{uid} {
+        allow read: if isMember(wsId);
+        allow create: if false; // ensureMyWorkspace / acceptInvite callables
+        allow update, delete: if (
+            (isOwner(wsId) && resource.data.role != 'owner') ||
+            (isAdmin(wsId) && resource.data.role in ['developer', 'reviewer', 'viewer'])
+          )
+          && request.resource.data.role != 'owner';
+      }
+
+      // Invites are written by the sendInvites callable so the matching
+      // notification is created in the same transaction.
+      match /invites/{inviteId} {
+        allow read: if isMember(wsId);
+        allow write: if false;
+      }
+
+      // --- editor surfaces ------------------------------------------------
+
+      match /projects/{projectId} {
+        allow read: if isMember(wsId);
+        allow create, update, delete: if isEditor(wsId);
+
+        match /repositories/{repoId} {
+          allow read: if isMember(wsId);
+          allow create, update, delete: if isEditor(wsId);
+        }
+
+        match /labels/{labelId} {
+          allow read: if isMember(wsId);
+          allow create, update, delete: if isEditor(wsId);
+        }
+      }
+
+      match /sprints/{sprintId} {
+        allow read: if isMember(wsId);
+        allow create, update, delete: if isEditor(wsId);
+
+        match /items/{taskId} {
+          allow read: if isMember(wsId);
+          allow create, update, delete: if isEditor(wsId);
+        }
+      }
+
+      match /tasks/{taskId} {
+        allow read: if isMember(wsId);
+        allow create, update, delete: if isEditor(wsId);
+
+        match /comments/{commentId} {
+          allow read: if isMember(wsId);
+          allow create: if isEditor(wsId)
+            && request.resource.data.authorId == request.auth.uid;
+          allow update, delete: if false;
+        }
+
+        match /subtasks/{subtaskId} {
+          allow read: if isMember(wsId);
+          allow create, update, delete: if isEditor(wsId);
+        }
+
+        match /dependencies/{depId} {
+          allow read: if isMember(wsId);
+          allow create, update, delete: if isEditor(wsId);
+        }
+      }
+
+      match /integrations/{integrationId} {
+        allow read: if isMember(wsId);
+        allow create, update, delete: if isEditor(wsId);
+      }
+
+      // Pull requests arrive through the GitHub webhook (Cloud Function);
+      // an editor records the review verdict from the app.
+      match /pullRequests/{prId} {
+        allow read: if isMember(wsId);
+        allow create, delete: if false;
+        allow update: if isEditor(wsId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['state', 'reviewerId', 'updatedAt']);
+      }
+
+      // Activity: members read, editors append as themselves.
+      // 0004: an activity row must name its actor.
+      match /activity/{activityId} {
+        allow read: if isMember(wsId);
+        allow create: if isEditor(wsId)
+          && request.resource.data.actorId == request.auth.uid;
+        allow update, delete: if false;
+      }
+
+      // One client report per workspace — created/seeded by a Cloud
+      // Function, read by every member (viewers are the external clients).
+      // The decision is recorded through submitClientDecision.
+      match /clientReport/report {
+        allow read: if isMember(wsId);
+        allow write: if false;
+      }
+
+      // GitHub installations are written by the githubApp function only.
+      match /githubInstallations/{installationId} {
+        allow read: if isMember(wsId);
+        allow write: if false;
+      }
+    }
+
+    // --- per-user surfaces ------------------------------------------------
+
+    match /users/{uid}/notifications/{notificationId} {
+      allow read, update, delete: if isSignedIn() && request.auth.uid == uid
+        && isMember(resource.data.workspaceId);
+      allow create: if false; // invite notifications come from callables
+    }
+
+    match /users/{uid}/digest/{entryId} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid
+        && isMember(resource.data.workspaceId);
+    }
+
+    match /users/{uid}/timeEntries/{entryId} {
+      allow read: if isSignedIn() && request.auth.uid == uid
+        && isMember(resource.data.workspaceId);
+      allow write: if false;
+    }
+  }
+}
