@@ -8,7 +8,7 @@ import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/result.dart';
 import '../../data/backends/auth_backend.dart';
 import '../../data/backends/device_flow_auth_backend.dart';
-import '../../data/backends/supabase_auth_backend.dart';
+import '../../data/backends/firebase_auth_backend.dart';
 import '../../data/datasources/auth_local_data_source.dart';
 import '../../data/datasources/github_auth_data_source.dart';
 import '../../data/repositories/auth_repository_impl.dart';
@@ -47,12 +47,12 @@ final githubAuthDataSourceProvider = Provider<GithubAuthDataSource>(
   (ref) => GithubAuthDataSource(ref.watch(githubOAuthDioProvider)),
 );
 
-/// Supabase is preferred when it is configured, otherwise the app falls back
-/// to the GitHub OAuth device flow.
+/// Firebase Auth is the default; the GitHub OAuth device flow stays as a
+/// fallback for tester builds without a Firebase project.
 final authBackendProvider = Provider<AuthBackend>((ref) {
   final secureStorage = ref.watch(secureStorageProvider);
-  if (AppConfig.useSupabaseAuth) {
-    return SupabaseAuthBackend(secureStorage: secureStorage);
+  if (AppConfig.useFirebaseAuth && !AppConfig.useDeviceFlowFallback) {
+    return FirebaseAuthBackend(secureStorage: secureStorage);
   }
   return DeviceFlowAuthBackend(
     github: ref.watch(githubAuthDataSourceProvider),

@@ -1,33 +1,33 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../../../core/network/current_workspace.dart';
-import '../../../../core/network/supabase_client.dart';
+import '../../../../core/network/firebase_client.dart';
 import '../../domain/entities/task.dart';
 import '../models/task_model.dart';
 
-/// Tasks of the current workspace, stored in the `tasks` table.
+/// Tasks of the current workspace, stored under `workspaces/{id}/tasks`.
 class TaskRemoteDataSource {
-  TaskRemoteDataSource(this._client, this._workspace);
+  TaskRemoteDataSource(this._db, this._workspace);
 
-  final SupabaseClientResolver _client;
+  final FirebaseFirestoreResolver _db;
   final CurrentWorkspace _workspace;
 
-  static const String _columns =
-      'id, title, description, status, priority, project_id, label, branch, '
-      'pr_number, due_at, created_at, projects(name)';
-
   Future<List<TaskModel>> getTasks({String? projectId}) =>
-      runSupabase('tasks.list', () async {
-        final base = _client()
-            .from('tasks')
-            .select(_columns)
-            .eq('workspace_id', await _workspace.resolve());
-        final filtered =
-            projectId == null ? base : base.eq('project_id', projectId);
-        final rows = await filtered.order('created_at', ascending: false);
-        return rows.map(_toModel).toList(growable: false);
+      runFirestore('tasks.list', () async {
+        final db = _db();
+        final wsId = await _workspace.resolve();
+        var query = db
+            .collection('workspaces/$wsId/tasks')
+            .orderBy('createdAt', descending: true);
+        if (projectId != null) {
+          query = query.where('projectId', isEqualTo: projectId);
+        }
+        final rows = await query.get();
+        return rows.docs.map(_toModel).toList(growable: false);
       });
 
-  /// Creates a task. The assignee is not settable from the app yet: the schema
-  /// stores `assignee_id` (an `auth.users` id the client cannot resolve from a
+  /// Creates a task. The assignee is not settable from the app yet: the store
+  /// keeps `assigneeId` (an account id the client cannot resolve from a
   /// display name), so [assigneeName] is accepted for API compatibility only.
   Future<TaskModel> createTask({
     required String title,
@@ -36,64 +36,77 @@ class TaskRemoteDataSource {
     String? priority,
     String? assigneeName,
   }) =>
-      runSupabase('tasks.create', () async {
-        final inserted = await _client()
-            .from('tasks')
-            .insert({
-              'workspace_id': await _workspace.resolve(),
-              'title': title,
-              'description': description,
-              'project_id': projectId,
-              'priority': priority ?? TaskPriority.medium.name,
-            })
-            .select(_columns)
-            .single();
-        return _toModel(inserted);
+      runFirestore('tasks.create', () async {
+        final db = _db();
+        final wsId = await _workspace.resolve();
+        final now = FieldValue.serverTimestamp();
+        final ref = db.collection('workspaces/$wsId/tasks').doc();
+        await ref.set({
+          'projectId': projectId,
+          'sprintId': null,
+          'key': null,
+          'title': title,
+          'description': description,
+          'status': TaskStatus.todo.name,
+          'priority': priority ?? TaskPriority.medium.name,
+          'points': 0,
+          'assigneeId': null,
+          'label': null,
+          'branch': null,
+          'prNumber': null,
+          'dueAt': null,
+          'createdAt': now,
+          'updatedAt': now,
+        });
+        return _toModel(await ref.get());
       });
 
   Future<TaskModel> updateStatus(String id, String status) =>
-      runSupabase('tasks.update_status', () async {
-        final updated = await _client()
-            .from('tasks')
-            .update({'status': status})
-            .eq('id', id)
-            .eq('workspace_id', await _workspace.resolve())
-            .select(_columns)
-            .single();
-        return _toModel(updated);
+      runFirestore('tasks.update_status', () async {
+        final db = _db();
+        final ref = db.doc('workspaces/${await _workspace.resolve()}/tasks/$id');
+        await ref.update({
+          'status': statusToDb(statusFromDb(status)),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return _toModel(await ref.get());
       });
 
   Future<void> deleteTask(String id) =>
-      runSupabase('tasks.delete', () async {
-        await _client()
-            .from('tasks')
-            .delete()
-            .eq('id', id)
-            .eq('workspace_id', await _workspace.resolve());
+      runFirestore('tasks.delete', () async {
+        await _db()
+            .doc('workspaces/${await _workspace.resolve()}/tasks/$id')
+            .delete();
       });
 
-  TaskModel _toModel(Map<String, dynamic> row) {
-    final project = row['projects'];
+  TaskModel _toModel(DocumentSnapshot row) {
+    final projectId = row.get('projectId') as String?;
     return TaskModel(
-      id: row['id'] as String,
-      title: row['title'] as String,
-      description: row['description'] as String?,
-      status: statusFromDb(row['status']),
+      id: row.id,
+      title: row.get('title') as String? ?? '',
+      description: row.get('description') as String?,
+      status: statusFromDb(row.get('status')),
       priority: TaskPriority.values.firstWhere(
-        (value) => value.name == row['priority'],
+        (value) => value.name == row.get('priority'),
         orElse: () => TaskPriority.medium,
       ),
-      projectId: row['project_id'] as String?,
-      projectName: project is Map ? project['name'] as String? : null,
-      label: row['label'] as String?,
-      branchName: row['branch'] as String?,
-      prNumber: row['pr_number']?.toString(),
-      dueDate: DateTime.tryParse('${row['due_at']}'),
-      createdAt: DateTime.tryParse('${row['created_at']}'),
+      projectId: projectId,
+      projectName: null, // the workspace snapshot carries the join
+      label: row.get('label') as String?,
+      branchName: row.get('branch') as String?,
+      prNumber: row.get('prNumber')?.toString(),
+      dueDate: _toDateTime(row.get('dueAt')),
+      createdAt: _toDateTime(row.get('createdAt')) ?? DateTime.now(),
     );
   }
 
-  /// The Postgres enum uses snake_case, the Dart enum does not.
+  static DateTime? _toDateTime(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  /// The store keeps snake_case statuses, the Dart enum does not.
   static TaskStatus statusFromDb(Object? value) => switch (value) {
         'in_progress' => TaskStatus.inProgress,
         'review' => TaskStatus.review,

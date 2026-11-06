@@ -56,3 +56,10 @@ app-private-key.pem
 scripts/github-app.local.json
 
 supabase/.temp/
+
+# Firebase
+functions/node_modules/
+functions/lib/
+functions/.env
+.firebase/
+firebase-debug.log

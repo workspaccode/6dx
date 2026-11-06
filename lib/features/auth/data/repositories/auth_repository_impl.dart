@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:dio/dio.dart';
 
@@ -47,7 +47,7 @@ class AuthRepositoryImpl implements AuthRepository {
         AppLogger.action(_tag, 'sign-in with GitHub: requesting a device code');
         if (!_backend.usesDeviceCode) {
           throw const ServerException(
-            'تسجيل الدخول عبر Supabase يستخدم المتصفح، لا كود جهاز.',
+            'تسجيل الدخول عبر Firebase يستخدم المتصفح، لا كود جهاز.',
           );
         }
         final code = await _github.requestDeviceCode();
@@ -73,7 +73,7 @@ class AuthRepositoryImpl implements AuthRepository {
         final backend = _backend;
         if (backend is! DeviceFlowAuthBackend) {
           throw const ServerException(
-            'تسجيل الدخول عبر Supabase يستخدم المتصفح، لا كود جهاز.',
+            'تسجيل الدخول عبر Firebase يستخدم المتصفح، لا كود جهاز.',
           );
         }
 

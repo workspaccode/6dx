@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/network/current_workspace.dart';
-import '../../../../core/network/supabase_client.dart';
+import '../../../../core/network/firebase_client.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/workspace_remote_data_source.dart';
@@ -12,7 +12,7 @@ import '../../domain/usecases/workspace_usecases.dart';
 
 final workspaceRemoteDataSourceProvider = Provider<WorkspaceRemoteDataSource>(
   (ref) => WorkspaceRemoteDataSource(
-    ref.watch(supabaseClientResolverProvider),
+    ref.watch(firebaseClientResolverProvider),
     ref.watch(currentWorkspaceProvider),
   ),
 );

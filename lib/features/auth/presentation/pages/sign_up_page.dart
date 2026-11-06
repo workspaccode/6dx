@@ -42,9 +42,10 @@ class _SignUpPageState extends ConsumerState<SignUpPage> {
         );
     if (!mounted) return;
     if (ok) {
-      // The OTP screen needs the address the code was sent to.
-      ref.read(pendingSignupEmailProvider.notifier).set(email);
-      context.push(AppRoutes.verifyOtp);
+      // Firebase signs the new account in immediately — there is no OTP step
+      // (the optional verification e-mail is a link, never a typed code), so
+      // the app goes straight to the home screen.
+      context.go(AppRoutes.home);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('تعذّر إنشاء الحساب')),

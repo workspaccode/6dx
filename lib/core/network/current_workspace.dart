@@ -1,47 +1,56 @@
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../errors/exceptions.dart';
-import 'supabase_client.dart';
+import 'firebase_client.dart';
 
 /// The workspace the signed-in user belongs to.
 ///
-/// A brand-new account has no membership yet, and RLS has no insert policy on
-/// `workspaces` (a member has to exist before anything can be read), so the
-/// first workspace is created by the `ensure_my_workspace()` SECURITY DEFINER
-/// function — see `supabase/migrations/0002_workspace_bootstrap.sql`.
+/// A brand-new account has no membership yet, and the Firestore rules refuse
+/// a direct `create` on /workspaces (a workspace must appear together with
+/// its owner membership), so the first workspace is created by the
+/// `ensureMyWorkspace` Cloud Function — the twin of the old
+/// `ensure_my_workspace()` SECURITY DEFINER function.
 class CurrentWorkspace {
-  CurrentWorkspace(this._client);
+  CurrentWorkspace(this._db);
 
-  final SupabaseClientResolver _client;
+  final FirebaseFirestoreResolver _db;
 
   String? _id;
   String? _userId;
 
   Future<String> resolve() async {
-    final db = _client();
-    final user = db.auth.currentUser;
+    final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw const UnauthorizedException();
     }
     // The cache is scoped to the account: signing out and back in as somebody
     // else must not reuse the previous workspace.
-    if (_id != null && _userId == user.id) return _id!;
+    if (_id != null && _userId == user.uid) return _id!;
 
-    final resolved = await runSupabase('workspace.resolve', () async {
-      final rows = await db
-          .from('workspace_members')
-          .select('workspace_id')
-          .eq('user_id', user.id)
-          .limit(1);
-      if (rows.isNotEmpty) {
-        return rows.first['workspace_id'] as String;
+    final resolved = await runFirestore('workspace.resolve', () async {
+      final db = _db();
+
+      // 1. The per-user pointer written by the last resolve / invite accept.
+      final pointer = await db.doc('users/${user.uid}').get();
+      final cached = pointer.data()?['defaultWorkspaceId'] as String?;
+      if (cached != null && cached.isNotEmpty) {
+        final member =
+            await db.doc('workspaces/$cached/members/${user.uid}').get();
+        if (member.exists) return cached;
       }
-      final created = await db.rpc('ensure_my_workspace');
-      if (created is String && created.isNotEmpty) return created;
-      throw const ServerException('تعذّر إنشاء مساحة عمل لهذا الحساب.');
+
+      // 2. The Cloud Function: finds a membership or bootstraps the first
+      //    workspace, then refreshes the pointer.
+      final result = await callFunction('ensureMyWorkspace', const {});
+      final workspaceId = result['workspaceId'] as String?;
+      if (workspaceId == null || workspaceId.isEmpty) {
+        throw const ServerException('تعذّر إنشاء مساحة عمل لهذا الحساب.');
+      }
+      return workspaceId;
     });
 
-    _userId = user.id;
+    _userId = user.uid;
     return _id = resolved;
   }
 
@@ -53,5 +62,5 @@ class CurrentWorkspace {
 }
 
 final currentWorkspaceProvider = Provider<CurrentWorkspace>(
-  (ref) => CurrentWorkspace(ref.watch(supabaseClientResolverProvider)),
+  (ref) => CurrentWorkspace(ref.watch(firebaseClientResolverProvider)),
 );

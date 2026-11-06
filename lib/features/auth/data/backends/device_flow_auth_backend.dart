@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/storage/secure_storage_service.dart';
@@ -118,7 +118,7 @@ class DeviceFlowAuthBackend implements AuthBackend {
     required String password,
   }) async =>
       throw const ServerException(
-        'تسجيل الدخول بالبريد يحتاج Supabase — اضبط SUPABASE_URL.',
+        'تسجيل الدخول بالبريد يحتاج Firebase — اضبط مشروع Firebase أولاً.',
       );
 
   @override
@@ -128,7 +128,7 @@ class DeviceFlowAuthBackend implements AuthBackend {
     required String displayName,
   }) async =>
       throw const ServerException(
-        'إنشاء حساب بالبريد يحتاج Supabase — اضبط SUPABASE_URL.',
+        'إنشاء حساب بالبريد يحتاج Firebase — اضبط مشروع Firebase أولاً.',
       );
 
   @override
@@ -137,7 +137,7 @@ class DeviceFlowAuthBackend implements AuthBackend {
     required String otp,
   }) async =>
       throw const ServerException(
-        'تأكيد الكود يحتاج Supabase — اضبط SUPABASE_URL.',
+        'تأكيد الكود يحتاج Firebase — اضبط مشروع Firebase أولاً.',
       );
 
   AuthUser _toUser(

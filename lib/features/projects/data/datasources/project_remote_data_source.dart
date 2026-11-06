@@ -1,28 +1,51 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
+
 import '../../../../core/network/current_workspace.dart';
-import '../../../../core/network/supabase_client.dart';
+import '../../../../core/network/firebase_client.dart';
 import '../models/project_model.dart';
 
-/// Projects of the current workspace, stored in the `projects` table.
+/// Projects of the current workspace, stored under
+/// `workspaces/{id}/projects` with their repositories as subcollections.
 class ProjectRemoteDataSource {
-  ProjectRemoteDataSource(this._client, this._workspace);
+  ProjectRemoteDataSource(this._db, this._workspace);
 
-  final SupabaseClientResolver _client;
+  final FirebaseFirestoreResolver _db;
   final CurrentWorkspace _workspace;
 
-  /// Columns the model needs, with the linked repository and the task statuses
-  /// embedded so one request feeds the whole projects screen.
-  static const String _columns =
-      'id, name, description, icon, color, is_archived, updated_at, '
-      'repositories(full_name), tasks(status)';
-
   Future<List<ProjectModel>> getProjects() =>
-      runSupabase('projects.list', () async {
-        final rows = await _client()
-            .from('projects')
-            .select(_columns)
-            .eq('workspace_id', await _workspace.resolve())
-            .order('updated_at', ascending: false);
-        return rows.map(_toModel).toList(growable: false);
+      runFirestore('projects.list', () async {
+        final db = _db();
+        final wsId = await _workspace.resolve();
+        final snapshot = await db
+            .collection('workspaces/$wsId/projects')
+            .orderBy('updatedAt', descending: true)
+            .get();
+
+        // The model needs the linked repository and the task statuses, so
+        // one round of parallel reads feeds the whole projects screen.
+        // Tasks live at the workspace level with a `projectId`, mirroring the
+        // SQL schema, so the count is a filtered query, not a subcollection.
+        final repositories = await Future.wait([
+          for (final project in snapshot.docs)
+            project.reference.collection('repositories').limit(1).get(),
+        ]);
+        final taskCounts = await Future.wait([
+          for (final project in snapshot.docs)
+            db
+                .collection('workspaces/$wsId/tasks')
+                .where('projectId', isEqualTo: project.id)
+                .get(),
+        ]);
+
+        return [
+          for (var i = 0; i < snapshot.docs.length; i++)
+            _toModel(
+              snapshot.docs[i],
+              repositories[i].docs,
+              taskCounts[i].docs,
+            ),
+        ];
       });
 
   Future<ProjectModel> createProject({
@@ -30,52 +53,67 @@ class ProjectRemoteDataSource {
     String? description,
     String? repositoryFullName,
   }) =>
-      runSupabase('projects.create', () async {
-        final db = _client();
-        final workspaceId = await _workspace.resolve();
-        final inserted = await db
-            .from('projects')
-            .insert({
-              'workspace_id': workspaceId,
-              'name': name,
-              'description': description,
-              'created_by': db.auth.currentUser?.id,
-            })
-            .select(_columns)
-            .single();
+      runFirestore('projects.create', () async {
+        final db = _db();
+        final wsId = await _workspace.resolve();
+        final now = FieldValue.serverTimestamp();
+        final ref = db.collection('workspaces/$wsId/projects').doc();
+        final hasRepository = repositoryFullName != null && repositoryFullName.isNotEmpty;
 
-        final hasRepository =
-            repositoryFullName != null && repositoryFullName.isNotEmpty;
+        await ref.set({
+          'name': name,
+          'description': description,
+          'icon': null,
+          'color': null,
+          'isArchived': false,
+          'createdBy': FirebaseAuth.instance.currentUser?.uid,
+          'createdAt': now,
+          'updatedAt': now,
+        });
         if (hasRepository) {
-          await db.from('repositories').insert({
-            'project_id': inserted['id'],
-            'full_name': repositoryFullName,
+          await ref.collection('repositories').add({
+            'provider': 'github',
+            'fullName': repositoryFullName,
+            'branch': 'main',
           });
-          inserted['repositories'] = [
-            {'full_name': repositoryFullName},
-          ];
         }
-        return _toModel(inserted);
+
+        return ProjectModel(
+          id: ref.id,
+          name: name,
+          description: description,
+          icon: null,
+          colorHex: null,
+          openTasks: 0,
+          doneTasks: 0,
+          repositoryFullName:
+              hasRepository ? repositoryFullName : null,
+          isArchived: false,
+          updatedAt: DateTime.now(),
+        );
       });
 
   /// Projects are archived, never deleted: the `archived` filter reads the flag.
   Future<void> archiveProject(String id) =>
-      runSupabase('projects.archive', () async {
-        await _client()
-            .from('projects')
-            .update({'is_archived': true})
-            .eq('id', id)
-            .eq('workspace_id', await _workspace.resolve());
+      runFirestore('projects.archive', () async {
+        final db = _db();
+        await db
+            .doc('workspaces/${await _workspace.resolve()}/projects/$id')
+            .update({
+          'isArchived': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
       });
 
-  ProjectModel _toModel(Map<String, dynamic> row) {
-    final repositories =
-        (row['repositories'] as List?)?.whereType<Map>() ?? const <Map>[];
-    final tasks = (row['tasks'] as List?)?.whereType<Map>() ?? const <Map>[];
+  ProjectModel _toModel(
+    DocumentSnapshot project,
+    List<QueryDocumentSnapshot> repositories,
+    List<QueryDocumentSnapshot> tasks,
+  ) {
     var openTasks = 0;
     var doneTasks = 0;
     for (final task in tasks) {
-      if (task['status'] == 'done') {
+      if (task.get('status') == 'done') {
         doneTasks++;
       } else {
         openTasks++;
@@ -83,18 +121,24 @@ class ProjectRemoteDataSource {
     }
 
     return ProjectModel(
-      id: row['id'] as String,
-      name: row['name'] as String,
-      description: row['description'] as String?,
-      icon: row['icon'] as String?,
-      colorHex: row['color'] as String?,
+      id: project.id,
+      name: project.get('name') as String? ?? '',
+      description: project.get('description') as String?,
+      icon: project.get('icon') as String?,
+      colorHex: project.get('color') as String?,
       openTasks: openTasks,
       doneTasks: doneTasks,
       repositoryFullName: repositories.isEmpty
           ? null
-          : repositories.first['full_name'] as String?,
-      isArchived: row['is_archived'] == true,
-      updatedAt: DateTime.tryParse('${row['updated_at']}'),
+          : repositories.first.get('fullName') as String?,
+      isArchived: project.get('isArchived') == true,
+      updatedAt: _toDateTime(project.get('updatedAt')) ?? DateTime.now(),
     );
+  }
+
+  static DateTime? _toDateTime(Object? value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    return null;
   }
 }

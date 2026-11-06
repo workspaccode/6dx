@@ -175,21 +175,34 @@ service cloud.firestore {
 
     // --- per-user surfaces ------------------------------------------------
 
-    match /users/{uid}/notifications/{notificationId} {
-      allow read, update, delete: if isSignedIn() && request.auth.uid == uid
-        && isMember(resource.data.workspaceId);
-      allow create: if false; // invite notifications come from callables
-    }
+    // The public profile (name, e-mail, avatar) that other members read.
+    // Firestore has no readable auth user directory, so the app mirrors its
+    // own identity here on every launch. `defaultWorkspaceId` is written by
+    // the ensureMyWorkspace / acceptInvite callables (Admin SDK), which these
+    // rules do not constrain — the client may only touch its profile keys.
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['displayName', 'email', 'photoURL']);
+      allow delete: if false;
 
-    match /users/{uid}/digest/{entryId} {
-      allow read, write: if isSignedIn() && request.auth.uid == uid
-        && isMember(resource.data.workspaceId);
-    }
+      match /notifications/{notificationId} {
+        allow read, update, delete: if isSignedIn() && request.auth.uid == uid
+          && isMember(resource.data.workspaceId);
+        allow create: if false; // invite notifications come from callables
+      }
 
-    match /users/{uid}/timeEntries/{entryId} {
-      allow read: if isSignedIn() && request.auth.uid == uid
-        && isMember(resource.data.workspaceId);
-      allow write: if false;
+      match /digest/{entryId} {
+        allow read, write: if isSignedIn() && request.auth.uid == uid
+          && isMember(resource.data.workspaceId);
+      }
+
+      match /timeEntries/{entryId} {
+        allow read: if isSignedIn() && request.auth.uid == uid
+          && isMember(resource.data.workspaceId);
+        allow write: if false;
+      }
     }
   }
 }

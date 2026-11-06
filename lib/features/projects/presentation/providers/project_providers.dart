@@ -2,7 +2,7 @@
 
 import '../../../../core/errors/failures.dart';
 import '../../../../core/network/current_workspace.dart';
-import '../../../../core/network/supabase_client.dart';
+import '../../../../core/network/firebase_client.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/result.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
@@ -14,7 +14,7 @@ import '../../domain/usecases/project_usecases.dart';
 
 final projectRemoteDataSourceProvider = Provider<ProjectRemoteDataSource>(
   (ref) => ProjectRemoteDataSource(
-    ref.watch(supabaseClientResolverProvider),
+    ref.watch(firebaseClientResolverProvider),
     ref.watch(currentWorkspaceProvider),
   ),
 );
