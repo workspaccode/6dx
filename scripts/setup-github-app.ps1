@@ -14,7 +14,8 @@
     Nothing is written to disk: the .pem stays where it is and is only read.
 
 .PARAMETER ConfigPath
-    JSON file with { projectRef, appId, appSlug, privateKeyPath, webhookSecret }.
+    JSON file with { projectRef, appId, appSlug, privateKeyPath, webhookSecret,
+    clientId, clientSecret }.
 
 .PARAMETER DryRun
     Print the commands instead of running them (no secrets are sent).
@@ -27,6 +28,9 @@ param(
     [string] $AppSlug = '',
     [string] $PrivateKeyPath = '',
     [string] $WebhookSecret = '',
+    [string] $ClientId = '',
+    [string] $ClientSecret = '',
+    [switch] $Yes,
     [switch] $DryRun
 )
 
@@ -64,6 +68,8 @@ if (Test-Path $ConfigPath) {
     if (-not $AppSlug) { $AppSlug = & $fromConfig $config.appSlug }
     if (-not $PrivateKeyPath) { $PrivateKeyPath = & $fromConfig $config.privateKeyPath }
     if (-not $WebhookSecret) { $WebhookSecret = & $fromConfig $config.webhookSecret }
+    if (-not $ClientId) { $ClientId = & $fromConfig $config.clientId }
+    if (-not $ClientSecret) { $ClientSecret = & $fromConfig $config.clientSecret }
     Write-Ok "config: $ConfigPath"
 } else {
     Write-Warn "no config file at $ConfigPath (copy github-app.local.example.json)"
@@ -76,14 +82,20 @@ Write-Step 'GitHub App - values to paste in the browser'
 Write-Host @"
   GitHub App name ......... 6DX (must be unique; the slug is used in the install URL)
   Homepage URL ............ https://6dx.app   (any URL you own)
-  Callback URL ............ $host_/auth/v1/callback
+  Callback URL ............ $host_/functions/v1/github-app   (ADD it - do not remove an existing one)
+  Supabase auth callback .. $host_/auth/v1/callback           (the separate identity OAuth app)
   Setup URL ............... $host_/functions/v1/github-app      (Redirect on update: OFF)
   Webhook URL ............. $host_/functions/v1/github-app/webhook
   Webhook secret .......... the value in webhookSecret below (32+ random chars)
   Permissions ............. Metadata: Read | Contents: Read | Issues: Read & write |
                             Pull requests: Read & write
+  Organization permissions  Members: Read   (proves org-admin ownership)
   Subscribe to events ..... Pull request
   Install scope ........... Only on this account (switch to Any account later)
+  Request user auth during installation: LEAVE OFF. With it on, GitHub redirects
+  straight to the callback URL and drops our signed `state`, so the function can
+  no longer tell which workspace the installation belongs to. The function runs
+  the OAuth step itself (setup URL -> authorize -> callback) and keeps the state.
 "@
 
 if (-not $PrivateKeyPath) {
@@ -140,6 +152,12 @@ if (-not $WebhookSecret) {
 
 if (-not $AppId) { throw 'appId is required (see https://github.com/settings/apps/<slug>).' }
 
+if (-not $ClientId) { $ClientId = Read-Value 'OAuth client id of the App (App settings page)' }
+if (-not $ClientSecret) { $ClientSecret = Read-Value 'OAuth client secret (App settings -> Generate a new client secret)' }
+if (-not $ClientId -or -not $ClientSecret) {
+    throw 'clientId and clientSecret are required: the install flow refuses to store an installation it cannot verify.'
+}
+
 Write-Step 'Where each value comes from'
 Write-Host @"
   App ID ........... https://github.com/settings/apps/$AppSlug   -> "App ID" at the top
@@ -186,36 +204,47 @@ if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
 Write-Ok 'npx available'
 
 $supabase = @('--yes', 'supabase@latest')
+# `--yes` tells the Supabase CLI to apply the hosted change without prompting;
+# required for agent-driven runs.
+$consent = if ($Yes) { @('--yes') } else { @() }
 $secretsArgs = @(
     'secrets', 'set',
     "GITHUB_APP_ID=$AppId",
     "GITHUB_APP_SLUG=$AppSlug",
     "GITHUB_PRIVATE_KEY=$pemEscaped",
     "GITHUB_WEBHOOK_SECRET=$WebhookSecret",
-    '--project-ref', $ProjectRef
-)
+    "GITHUB_CLIENT_ID=$ClientId",
+    "GITHUB_CLIENT_SECRET=$ClientSecret",
+    "--remote=$ProjectRef"
+) + $consent
 $deployArgs = @(
     'functions', 'deploy', 'github-app',
     '--no-verify-jwt',
-    '--project-ref', $ProjectRef
-)
+    "--remote=$ProjectRef"
+) + $consent
 
 if ($DryRun) {
     Write-Warn 'dry run - nothing is sent'
-    Write-Host "  npx supabase secrets set GITHUB_APP_ID=$AppId GITHUB_APP_SLUG=$AppSlug GITHUB_PRIVATE_KEY=<pem> GITHUB_WEBHOOK_SECRET=<secret> --project-ref $ProjectRef"
-    Write-Host "  npx supabase functions deploy github-app --no-verify-jwt --project-ref $ProjectRef"
+    Write-Host "  npx supabase secrets set GITHUB_APP_ID=$AppId GITHUB_APP_SLUG=$AppSlug GITHUB_PRIVATE_KEY=<pem> GITHUB_WEBHOOK_SECRET=<secret> GITHUB_CLIENT_ID=<id> GITHUB_CLIENT_SECRET=<secret> --remote=$ProjectRef"
+    Write-Host "  npx supabase functions deploy github-app --no-verify-jwt --remote=$ProjectRef"
     return
 }
 
 Write-Step 'Storing secrets'
+# Native tools write warnings to stderr; with ErrorActionPreference=Stop that
+# would abort the script. Judge by the exit code instead.
+$ErrorActionPreference = 'Continue'
 & npx @supabase @secretsArgs
 if ($LASTEXITCODE -ne 0) { throw 'supabase secrets set failed - run "npx supabase login" first.' }
 Write-Ok 'secrets stored'
+$ErrorActionPreference = 'Stop'
 
 Write-Step 'Deploying github-app (--no-verify-jwt)'
+$ErrorActionPreference = 'Continue'
 & npx @supabase @deployArgs
 if ($LASTEXITCODE -ne 0) { throw 'supabase functions deploy failed - read the output above.' }
 Write-Ok 'deployed'
+$ErrorActionPreference = 'Stop'
 
 Write-Step 'Verifying the endpoint'
 $probe = "$host_/functions/v1/github-app"

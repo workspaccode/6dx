@@ -1,7 +1,9 @@
 {
   "projectRef": "ifrpswaclrrsshspdmzd",
-  "appId": "5611624",
-  "appSlug": "hafez-code",
-  "privateKeyPath": "hafez-code.2026-11-05.private-key.pem",
-  "webhookSecret": ""
+  "appId": "<App ID, e.g. 5611624>",
+  "appSlug": "<slug, e.g. hafez-code>",
+  "privateKeyPath": "github-app.pem",
+  "webhookSecret": "",
+  "clientId": "<App Client ID - different from the App ID>",
+  "clientSecret": "<App client secret>"
 }

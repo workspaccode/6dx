@@ -54,3 +54,5 @@ app-private-key.pem
 
 # Local run configuration (contains the App id and webhook secret)
 scripts/github-app.local.json
+
+supabase/.temp/
