@@ -1,0 +1,60 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Dart: analyzer + widget/unit tests
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.x'
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  # Edge Function: real type checking (no bundling, just types)
+  edge-function:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type check the GitHub App broker
+        run: deno check supabase/functions/github-app/index.ts
+
+  # Database: migrations + RLS/role pgTAP suite on a throwaway local stack.
+  # This is the only place the security policies are exercised automatically.
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start the local stack
+        run: supabase start
+
+      - name: Apply migrations
+        run: supabase db reset   # runs every file in supabase/migrations
+
+      - name: Run the pgTAP suite
+        run: supabase test db
+
+      - name: Stop the stack
+        if: always()
+        run: supabase stop --no-backup
