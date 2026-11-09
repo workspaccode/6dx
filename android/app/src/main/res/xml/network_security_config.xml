@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  6DX network policy.
+
+  Android 9+ blocks cleartext HTTP by default. A beta build talks to the Go
+  backend over the local network (http://<lan-ip>:8080), so cleartext is
+  allowed for those hosts only — everything else stays HTTPS-only.
+
+  When the backend moves behind HTTPS, delete the domain-config block below
+  (and the API_BASE_URL dart-define); nothing else has to change.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Android emulator: the host machine. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- Local development. -->
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!--
+          The machine running `go run ./cmd/api` on the LAN.
+          Update this line when the router hands out a different address.
+        -->
+        <domain includeSubdomains="false">192.168.1.11</domain>
+    </domain-config>
+</network-security-config>
