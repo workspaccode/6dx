@@ -2,8 +2,8 @@ import '../../domain/entities/auth_user.dart';
 
 /// A pluggable authentication backend.
 ///
-/// 6DX talks to Supabase Auth by default (GitHub OAuth, PKCE, no client
-/// secret in the app). When Supabase is not configured the app falls back to
+/// 6DX signs in with Firebase Auth (GitHub OAuth in the browser, or
+/// e-mail + password). When Firebase is not configured the app falls back to
 /// the GitHub OAuth device flow, so the tester build still works with nothing
 /// but a GitHub client id.
 abstract interface class AuthBackend {
@@ -26,7 +26,7 @@ abstract interface class AuthBackend {
 
   /// E-mail + password sign-in.
   ///
-  /// Only the Supabase backend supports it; the GitHub device-flow fallback has
+  /// Only the Firebase backend supports it; the GitHub device-flow fallback has
   /// no user database of its own.
   Future<AuthUser> signInWithEmail({
     required String email,

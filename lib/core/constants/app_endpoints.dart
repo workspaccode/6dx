@@ -1,7 +1,7 @@
-/// Hosts the app talks to.
+﻿/// Hosts the app talks to.
 ///
-/// Everything except the GitHub endpoints now goes through Supabase, so there
-/// is no REST API of our own any more.
+/// Everything except the GitHub endpoints goes through the 6DX API
+/// (`AppConfig.apiBaseUrl`); these are the only absolute GitHub hosts left.
 class AppEndpoints {
   AppEndpoints._();
 

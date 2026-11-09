@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import '../../../../core/errors/exceptions.dart';
 import '../../../../core/storage/secure_storage_service.dart';
@@ -10,7 +10,7 @@ import 'auth_backend.dart';
 
 /// GitHub OAuth **device flow** backend.
 ///
-/// Used when Supabase is not configured. The user confirms a short code on
+/// Used when Firebase is not configured. The user confirms a short code on
 /// github.com and the app polls GitHub until the grant is approved.
 class DeviceFlowAuthBackend implements AuthBackend {
   DeviceFlowAuthBackend({
@@ -111,7 +111,7 @@ class DeviceFlowAuthBackend implements AuthBackend {
     await _secureStorage.deleteAccessToken();
   }
 
-  // E-mail sign-in lives in Supabase Auth; this backend only knows GitHub.
+  // E-mail sign-in lives in Firebase Auth; this backend only knows GitHub.
   @override
   Future<AuthUser> signInWithEmail({
     required String email,

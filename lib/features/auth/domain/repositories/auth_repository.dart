@@ -8,7 +8,7 @@ abstract interface class AuthRepository {
   bool get usesGithubDeviceCode;
 
   /// Opens the GitHub sign-in page in the browser and resolves once the user
-  /// is signed in. Used by the browser based backends (Supabase).
+  /// is signed in. Used by the browser based backend (Firebase).
   Future<Result<AuthUser>> signInWithGithub();
 
   /// Step 1 of the GitHub OAuth device flow: asks GitHub for a user code.

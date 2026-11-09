@@ -27,7 +27,7 @@ class _FakeAuthRepository implements AuthRepository {
   /// when GitHub "approves" the device.
   final Completer<bool>? approval;
 
-  /// `false` mimics the browser based backend (Supabase).
+  /// `false` mimics the browser based backend (Firebase).
   final bool usesDeviceCode;
 
   final bool browserSignInFails;
@@ -194,7 +194,7 @@ void main() {
         reason: 'the button must not stay disabled after a failure');
   });
 
-  testWidgets('the browser flow (Supabase) signs in without a device code',
+  testWidgets('the browser flow (Firebase) signs in without a device code',
       (tester) async {
     final repository = _FakeAuthRepository(usesDeviceCode: false);
     await _pumpLogin(tester, repository);

@@ -1,10 +1,11 @@
-class AppConstants {
+﻿class AppConstants {
   AppConstants._();
 
   static const String appName = '6DX';
   static const String appTag = '6DX';
 
-  /// GitHub OAuth app used by Supabase (https://github.com/settings/developers).
+  /// GitHub OAuth app used by the device-flow fallback
+  /// (https://github.com/settings/developers).
   ///
   /// Client **id** only: the device flow never needs the client secret, and a
   /// secret that ships inside an app is public anyway.

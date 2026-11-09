@@ -121,7 +121,7 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
   bool get usesDeviceCode =>
       ref.read(authRepositoryProvider).usesGithubDeviceCode;
 
-  /// Browser based sign-in (Supabase): opens GitHub in the browser and waits
+  /// Browser based sign-in (Firebase): opens GitHub in the browser and waits
   /// for the deep link that carries the session.
   Future<Result<AuthUser>> signInWithGithub() async {
     final previous = state;

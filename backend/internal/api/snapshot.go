@@ -12,7 +12,7 @@ import (
 
 // snapshot builds the one payload every screen reads.
 //
-// In the Supabase backend this was the `get_workspace_snapshot()` SQL function.
+// Previously this was the `get_workspace_snapshot()` SQL function.
 // SQLite has no plpgsql, so the projection is assembled here — and the JSON
 // shape is byte-for-byte the one `WorkspaceSnapshotMapper` already consumes, so
 // no screen changed.

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:dio/dio.dart';
 
@@ -142,7 +142,7 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<Result<AuthUser?>> currentUser() => _guard(() async {
         // The backend owns its session: GitHub validates the stored token,
-        // Supabase refreshes its own. Both return `null` once it is gone.
+        // Firebase refreshes its own. Both return `null` once it is gone.
         final restored = await _backend.restoreSession();
         if (restored == null) {
           await _local.clearSession();
@@ -154,7 +154,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<Result<void>> signOut() => _guard(() async {
-        // Supabase keeps its own copy of the session (and a refresh token),
+        // Firebase keeps its own copy of the session (and a refresh token),
         // it has to be ended as well or the user comes back signed in.
         await _backend.signOut();
         await _local.clearSession();

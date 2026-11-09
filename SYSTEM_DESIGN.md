@@ -1,88 +1,84 @@
-# 6DX — System Design (Firebase)
+# 6DX — System Design
 
-هذا المستند يحل محل نسخة Supabase السابقة. القرار المعماري: **Firebase
-Auth + Firestore + Cloud Functions** بدل Postgres/RLS، والقرار متخذ
-لتبسيط التشغيل. الهدف هنا أن يبقى نفس المستوى الأمني — كل سياسة من
-السياسات الثلاث والثلاثين موجودة ومترجمة أدناه.
-
-## 1. المعمارية
+**المعمارية الحالية:** Flutter (موبايل وويب) + Firebase **للهوية فقط** +
+Go backend + SQLite (ملف واحد). لا Supabase، لا Cloud Functions، لا Postgres.
 
 ```
-Flutter (Riverpod)
-  │  firebase_auth      ← تسجيل الدخول (GitHub / بريد)
-  │  cloud_firestore    ← القراءة والكتابة تحت قواعد firestore.rules
-  │  cloud_functions    ← الأوامر الحساسة (callables)
+Flutter
+  │  firebase_auth   → تسجيل الدخول (GitHub / بريد)
+  │  HTTP + Bearer   → كل البيانات
   ▼
-Firebase
-  ├── Auth
-  ├── Firestore + security rules
-  └── Cloud Functions (Admin SDK) ──► GitHub API (GitHub App)
+6DX API (Go)
+  │  يتحقق من Firebase ID token
+  │  يطبّق الأدوار بنفسه (internal/api/authz.go)
+  ▼
+SQLite  6dx.db
+  └── GitHub App broker ──► GitHub API
 ```
 
-## 2. الأمان — ترجمة RLS
+## 1. لماذا هذا الشكل
 
-| سياسة Postgres الأصلية | المكافئ في Firebase | ملاحظات |
-|---|---|---|
-| `is_workspace_member` | `exists(memberDoc(ws))` في القواعد | نفس الفحص، lazy `&&` |
-| `is_workspace_admin` | `role(ws) in ['owner','admin']` | |
-| `is_workspace_owner` | `role(ws) == 'owner'` | |
-| `is_workspace_editor` (0004) | `role(ws) != 'viewer'` | viewer للقراءة فقط |
-| projects/tasks/sprints/labels/repositories/integrations write | `isEditor` | |
-| members insert/update/delete (طبقي 0001) | قواعد على /members | لا يمكن منح `owner` بالكتابة المباشرة |
-| workspaces update (admin) / delete (owner) | قواعد على /workspaces | الإنشاء عبر callable فقط |
-| notifications (user_id = auth.uid) | `/users/{uid}/notifications` | الإنشاء من callables فقط |
-| activity insert (actor = caller) | `request.resource.data.actorId == request.auth.uid` | |
-| client_reports read (member) | `/clientReport/report` read member | الكتابة من callable |
-| pull_requests (member + webhook) | read member / update editor محدود | الإنشاء من webhook فقط |
-| time_entries read (own) | `/users/{uid}/timeEntries` | |
-| digest (own + member) | `/users/{uid}/digest` | |
-| invitations (trigger + accept) | `sendInvites`/`acceptInvite` callables | idempotent عبر id = `<wsId>_<inviteId>` |
-| unique owner (0005) | `transferOwnership` transaction | مضمون بالبناء |
-| one client report (0007) | doc واحد `clientReport/report` | |
-| submit_client_decision rules (0007) | `submitClientDecision` | تحقق index + مرة واحدة |
+| القرار | السبب |
+|---|---|
+| Firebase للهوية فقط | يوفّر GitHub + بريد بلا سيرفر، ولا يحتاج منّا تشغيل auth |
+| Go backend | الأوامر الحسّاسة (bootstrap، دعوات، قرارات، GitHub App) مستحيلة على العميل |
+| SQLite | ملف واحد، صفر تشغيل، نسخ احتياطي = نسخ ملف |
 
-### ما لا تستطيع القواعد فعله (ولذلك موجود كـ callable)
+## 2. الأمان
 
-- إنشاء مساحة مع عضوية مالكها في خطوة واحدة → `ensureMyWorkspace`
-- قبول دعوة (لا يمكن للعميل إضافة نفسه عضواً) → `acceptInvite`
-- إشعار المدعو عند إنشاء الدعوة → داخل `sendInvites`
-- نقل الملكية ذرياً → `transferOwnership`
-- قرار العميل لـ viewer → `submitClientDecision`
-- كل ربط GitHub App → `githubApp` / `githubAction`
+الـ API هو **العميل الوحيد** للقاعدة، فالأدوار مفروضة في Go لا في القاعدة.
+كل سياسة من سياسات RLS الأصلية موجودة كفحص صريح:
 
-## 3. تدفق GitHub App (كما هو من المراجعات الثلاثة)
+| الأصل (Postgres RLS) | المكافئ الآن |
+|---|---|
+| `is_workspace_member` | `store.requireMember` |
+| `is_workspace_admin` | `store.requireAdmin` |
+| `is_workspace_owner` | `store.requireOwner` |
+| `is_workspace_editor` (viewer للقراءة فقط) | `store.requireEditor` |
+| إدارة الأعضاء الطبقيّة | `handleChangeMemberRole` / `handleRemoveMember` |
+| activity insert بـ actor = caller | `logActivity` يمرّر uid التوكن |
+| notifications لصاحبها فقط | `where user_uid = ?` داخل الاستعلام |
+| مالك واحد · تقرير واحد · إشعار واحد/دعوة | partial unique indexes في السكيما |
 
-```
-Leg 1: التطبيق → githubAction(install-url) → رابط installations/new?state=<v1 موقّع>
-Leg 2: GitHub → GET githubApp?installation_id&state → 302 → /login/oauth/authorize
-        (لو state ضاع → توكن استرداد r1 موقّع يحمل installation_id فقط)
-Leg 3: GitHub → GET githubApp?code&state → exchange → /user → identity binding
-        → ownership (شخصي أو org admin) → حفظ → إلغاء توكن المستخدم
-Webhook: POST githubApp/webhook → HMAC على الـ raw body → upsert pullRequests
-```
+**قاعدة ثابتة:** هوية المستخدم تجي **من التوكن فقط** — لا `uid` ولا `role`
+ولا `workspace_id` مقبول من جسم الطلب.
 
-فشل مغلق (fail-closed) في كل خطوة. `identityMatches` يتحقق أن حساب GitHub
-مربوط بنفس حساب Firebase (`auth.getUserByProviderUid('github.com', id)`).
+## 3. تعدد مساحات العمل
+
+المستخدم ممكن يكون عضو في أكتر من مساحة:
+
+- `X-Workspace-Id` يحدد المساحة النشطة، والـ API يتحقق من العضوية فيها.
+- بدونه: أول عضوية؛ وأول دخول ينشئ مساحة + عضوية مالك في transaction.
+- بعد قبول دعوة، التطبيق يفعّل المساحة الجديدة.
+
+> ده كان ثغرة حقيقية كشفها اختبار التكامل: بدون التحديد الصريح كان الـ viewer
+> يفضل شغّال على مساحته الخاصة (اللي هو مالكها) بدل المساحة اللي اتدعى ليها.
 
 ## 4. الـ snapshot
 
-كان `get_workspace_snapshot()` SQL واحداً؛ في Firestore تُجمع نفس الحمولة
-من قراءات متوازية (members, invites, tasks + subcollections, activity,
-sprints + items, pullRequests, labels, integrations, repositories,
-notifications, digest, clientReport) — **نفس شكل الـ JSON**، فلم تتغير
-`WorkspaceSnapshotMapper` ولا الشاشات.
+الشاشات تقرأ حمولة واحدة (`GET /v1/workspace/snapshot`) تُبنى في
+`internal/api/snapshot.go`. الشكل مطابق لما كان يرجّعه
+`get_workspace_snapshot()`، فمافيش شاشة ولا mapper اتغيّر.
 
-## 5. ما تغير في التطبيق
+## 5. GitHub App
 
-- `firebase_client.dart` بدل `supabase_client.dart` — نفس `runX(label, …)`
-  والرسائل العربية.
-- التسجيل بالبريد يدخل مباشرة (بلا OTP — لم يعد موجوداً في Firebase).
-- `users/{uid}` يحمل الـ profile العام (displayName/email/photoURL) لأن
-  Firestore لا يملك auth directory قابل للقراءة.
+```
+Leg 1: التطبيق → POST /v1/github/install-url → installations/new?state=<v1 موقّع>
+Leg 2: GitHub → GET /github/setup → 302 إلى /login/oauth/authorize
+       (لو ضاع state → توكن استرداد r1 يحمل installation_id فقط)
+Leg 3: GitHub → GET /github/callback → exchange → /user
+       → identity binding → ownership → حفظ → إلغاء توكن المستخدم
+Hook : POST /github/webhook → HMAC على الـ raw body → upsert pull_requests
+```
 
-## 6. القرارات المفتوحة
+- **fail closed** بلا إعدادات.
+- **identity binding**: `users.github_id` مصدره توكن Firebase الموثّق فقط.
+- **ownership**: حساب شخصي = نفس المستخدم؛ org = عضوية `admin` نشطة.
+- **إلغاء التوكن** بعد إثبات الملكية.
 
-- **CI للقواعد**: التحقق يحتاج اعتماد Firebase، فالـ CI يفحص `tsc` و`flutter` فقط.
-- **حذف مشروع Supabase**: آخر خطوة بعد التحقق من Firebase — الترتيب المتفق عليه.
-- **pgTAP**: اختبارات Postgres لم تعد صالحة؛ لم تكتب بدائل بعد (rules unit
-  tests عبر emulator ممكنة كخطوة تالية).
+## 6. القيود المعروفة
+
+- **SQLite كاتب واحد** في اللحظة — كافي لعشرات الأعضاء، ويحتاج Postgres لمئات
+  المتزامنين (السكيما الأصلية في تاريخ git).
+- **لا يوجد JWT cache**: كل طلب يتحقق من Firebase. لو الحمل زاد، cache بـ TTL قصير.
+- **تقرير العميل يُزرع يدوياً** (لا endpoint لإنشائه).

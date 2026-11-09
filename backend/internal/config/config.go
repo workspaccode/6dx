@@ -1,4 +1,4 @@
-﻿// Package config reads the environment the API needs.
+// Package config reads the environment the API needs.
 package config
 
 import (
@@ -76,7 +76,7 @@ func Load() (*Config, error) {
 	if cfg.GitHubStateSecret == "" {
 		// The state secret must not drift between restarts: an in-flight
 		// install would break. Fall back to the webhook secret, like the
-		// Supabase version did.
+		// previous implementation did.
 		cfg.GitHubStateSecret = cfg.GitHubWebhookSecret
 	}
 	if cfg.GitHubOAuthRedirect == "" {

@@ -15,8 +15,8 @@ import 'auth_backend.dart';
 /// optional verification e-mail is a link, never a typed code), so
 /// [registerWithEmail] returns a user that already carries a session and the
 /// app goes straight to the home screen. The GitHub sign-in opens the browser
-/// and comes back through the platform deep link, like the Supabase PKCE
-/// flow before it.
+/// and comes back through the platform deep link that the Firebase Auth
+/// handler redirects to.
 class FirebaseAuthBackend implements AuthBackend {
   FirebaseAuthBackend({required SecureStorageService secureStorage})
       : _secureStorage = secureStorage;

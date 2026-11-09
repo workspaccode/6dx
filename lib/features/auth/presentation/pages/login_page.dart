@@ -55,7 +55,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  /// GitHub sign-in. Supabase runs the OAuth round trip in the browser and
+  /// GitHub sign-in. Firebase runs the OAuth round trip in the browser and
   /// answers through a deep link; the fallback backend shows a device code the
   /// user confirms on github.com and polls until it is approved.
   Future<void> _continueWithGithub() async {

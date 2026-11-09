@@ -52,17 +52,10 @@ app.*.map.json
 github-app*.pem
 app-private-key.pem
 
-# Local run configuration (contains the App id and webhook secret)
-scripts/github-app.local.json
 
-supabase/.temp/
 
-# Firebase
-functions/node_modules/
-functions/lib/
-functions/.env
+# Firebase CLI
 .firebase/
-firebase-debug.log
 firebase-debug.log*
 
 # Go backend
