@@ -64,3 +64,9 @@ functions/.env
 .firebase/
 firebase-debug.log
 firebase-debug.log*
+
+# Go backend
+backend/.env
+backend/secrets/
+backend/api
+backend/*.exe

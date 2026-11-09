@@ -1,0 +1,149 @@
+// Package api wires the HTTP surface: routing, middleware and the handlers.
+package api
+
+import (
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/workspaccode/6dx/backend/internal/config"
+	"github.com/workspaccode/6dx/backend/internal/httpx"
+)
+
+// Server holds everything the handlers need.
+type Server struct {
+	cfg      *config.Config
+	pool     *pgxpool.Pool
+	store    *store
+	verifier Verifier
+	github   *githubBroker
+}
+
+// Verifier is the dependency the middleware needs. It is an interface so a
+// test can inject a fake caller without Firebase.
+type Verifier interface {
+	Middleware(http.Handler) http.Handler
+}
+
+// New builds the server and the router.
+func New(cfg *config.Config, pool *pgxpool.Pool, verifier Verifier) *Server {
+	s := &Server{
+		cfg:      cfg,
+		pool:     pool,
+		store:    &store{pool: pool},
+		verifier: verifier,
+	}
+	if cfg.GitHubEnabled() {
+		broker, err := newGithubBroker(cfg)
+		if err != nil {
+			slog.Error("github broker disabled", "error", err)
+		} else {
+			s.github = broker
+		}
+	} else {
+		slog.Warn("github credentials incomplete — the GitHub endpoints fail closed")
+	}
+	return s
+}
+
+// Handler returns the fully wired http.Handler.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+
+	// --- public ------------------------------------------------------------
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// The GitHub App browser legs and the webhook are public by design: the
+	// signed state carries the binding and the webhook is HMAC verified.
+	mux.HandleFunc("GET /github/setup", s.handleGithubSetup)
+	mux.HandleFunc("GET /github/callback", s.handleGithubCallback)
+	mux.HandleFunc("POST /github/webhook", s.handleGithubWebhook)
+
+	// --- authenticated -----------------------------------------------------
+	private := http.NewServeMux()
+	private.HandleFunc("GET /v1/me", s.handleMe)
+	private.HandleFunc("GET /v1/workspace/snapshot", s.handleSnapshot)
+
+	private.HandleFunc("GET /v1/projects", s.handleListProjects)
+	private.HandleFunc("POST /v1/projects", s.handleCreateProject)
+	private.HandleFunc("POST /v1/projects/{id}/archive", s.handleArchiveProject)
+
+	private.HandleFunc("GET /v1/tasks", s.handleListTasks)
+	private.HandleFunc("POST /v1/tasks", s.handleCreateTask)
+	private.HandleFunc("PATCH /v1/tasks/{id}/status", s.handleUpdateTaskStatus)
+	private.HandleFunc("DELETE /v1/tasks/{id}", s.handleDeleteTask)
+	private.HandleFunc("POST /v1/pull-requests/{number}/review", s.handleReviewPullRequest)
+	private.HandleFunc("POST /v1/time-entries/approve", s.handleApproveTimeEntries)
+
+	private.HandleFunc("GET /v1/members", s.handleListMembers)
+	private.HandleFunc("PATCH /v1/members/{uid}", s.handleChangeMemberRole)
+	private.HandleFunc("DELETE /v1/members/{uid}", s.handleRemoveMember)
+
+	private.HandleFunc("POST /v1/invites", s.handleSendInvites)
+	private.HandleFunc("GET /v1/invites/pending", s.handlePendingInvites)
+	private.HandleFunc("POST /v1/invites/sync", s.handleSyncInvites)
+	private.HandleFunc("POST /v1/invites/accept", s.handleAcceptInvite)
+
+	private.HandleFunc("POST /v1/notifications/{id}/read", s.handleMarkNotificationRead)
+	private.HandleFunc("POST /v1/notifications/read-all", s.handleMarkAllNotificationsRead)
+
+	private.HandleFunc("POST /v1/client-report/decision", s.handleClientDecision)
+
+	private.HandleFunc("GET /v1/github/installation", s.handleGithubInstallation)
+	private.HandleFunc("GET /v1/github/repositories", s.handleGithubRepositories)
+	private.HandleFunc("POST /v1/github/install-url", s.handleGithubInstallURL)
+	private.HandleFunc("POST /v1/github/disconnect", s.handleGithubDisconnect)
+
+	mux.Handle("/v1/", s.verifier.Middleware(private))
+
+	return s.withCommon(mux)
+}
+
+// withCommon adds CORS, request logging and a panic guard.
+func (s *Server) withCommon(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+
+		if origin := r.Header.Get("Origin"); origin != "" && s.originAllowed(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("panic", "path", r.URL.Path, "recovered", recovered)
+				httpx.JSON(w, http.StatusInternalServerError, map[string]string{
+					"error": "internal", "message": "حدث خطأ غير متوقع.",
+				})
+			}
+			slog.Info("request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"duration_ms", time.Since(started).Milliseconds(),
+			)
+		}()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) originAllowed(origin string) bool {
+	for _, allowed := range s.cfg.CORSOrigins {
+		if allowed == "*" || strings.EqualFold(allowed, origin) {
+			return true
+		}
+	}
+	return false
+}

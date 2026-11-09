@@ -43,8 +43,6 @@ dependencies:
   # Firebase — Auth (GitHub + e-mail) and Firestore (data + security rules).
   firebase_core: ^3.8.0
   firebase_auth: ^5.3.3
-  cloud_firestore: ^5.5.0
-  cloud_functions: ^5.3.3
 
 dev_dependencies:
   flutter_test:

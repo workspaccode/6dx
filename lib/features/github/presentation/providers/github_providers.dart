@@ -1,6 +1,7 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/failures.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/network/current_workspace.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/github_api.dart';
@@ -10,7 +11,7 @@ import '../../domain/entities/github_repository.dart';
 import '../../domain/repositories/github_repository_repository.dart';
 
 final githubApiProvider = Provider<GithubApi>(
-  (ref) => GithubApi(ref.watch(currentWorkspaceProvider)),
+  (ref) => GithubApi(ref.watch(apiClientProvider), ref.watch(currentWorkspaceProvider)),
 );
 
 final githubRepositoryRepositoryProvider = Provider<GithubRepositoryRepository>(

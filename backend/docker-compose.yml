@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sixdx
+      POSTGRES_USER: sixdx
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sixdx_dev_password}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sixdx -d sixdx"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADDR: ":8080"
+      DATABASE_URL: postgres://sixdx:${POSTGRES_PASSWORD:-sixdx_dev_password}@db:5432/sixdx?sslmode=disable
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_CREDENTIALS_FILE: /run/secrets/firebase.json
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_OAUTH_REDIRECT: ${GITHUB_OAUTH_REDIRECT:-}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    secrets:
+      - firebase.json
+      - github-app.pem
+    restart: unless-stopped
+
+secrets:
+  firebase.json:
+    file: ./secrets/firebase-service-account.json
+  github-app.pem:
+    file: ./secrets/github-app.private-key.pem
+
+volumes:
+  db-data:

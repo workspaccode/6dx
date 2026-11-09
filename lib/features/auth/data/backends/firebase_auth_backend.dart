@@ -3,7 +3,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../../core/errors/exceptions.dart';
-import '../../../../core/network/firebase_client.dart';
+import 'auth_error_messages.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../domain/entities/auth_user.dart';
@@ -24,7 +24,11 @@ class FirebaseAuthBackend implements AuthBackend {
   static const String _tag = 'FirebaseAuth';
 
   final SecureStorageService _secureStorage;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  /// Resolved per use, not in the constructor: the data layer is also built in
+  /// tests where Firebase was never initialised, and touching the instance
+  /// eagerly would throw there.
+  FirebaseAuth get _auth => FirebaseAuth.instance;
 
   @override
   String get name => 'Firebase';
