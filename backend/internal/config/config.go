@@ -1,4 +1,4 @@
-// Package config reads the environment the API needs.
+﻿// Package config reads the environment the API needs.
 package config
 
 import (
@@ -15,7 +15,8 @@ type Config struct {
 	// Addr is the listen address, e.g. ":8080".
 	Addr string
 
-	// DatabaseURL is a libpq/pgx connection string.
+	// DatabaseURL is the SQLite file path (default `6dx.db`). SQLite is the
+	// default engine: one file, no server, no container.
 	DatabaseURL string
 
 	// FirebaseCredentialsFile is the path to the service account JSON that
@@ -50,7 +51,7 @@ type Config struct {
 func Load() (*Config, error) {
 	cfg := &Config{
 		Addr:                    env("ADDR", ":8080"),
-		DatabaseURL:             os.Getenv("DATABASE_URL"),
+		DatabaseURL:             env("DATABASE_FILE", "6dx.db"),
 		FirebaseCredentialsFile: os.Getenv("FIREBASE_CREDENTIALS_FILE"),
 		ProjectID:               os.Getenv("FIREBASE_PROJECT_ID"),
 		CORSOrigins:             splitList(env("CORS_ORIGINS", "*")),
@@ -68,9 +69,7 @@ func Load() (*Config, error) {
 		GracefulShutdownWait:    20 * time.Second,
 	}
 
-	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
-	}
+	
 	if cfg.ProjectID == "" {
 		return nil, fmt.Errorf("FIREBASE_PROJECT_ID is required")
 	}

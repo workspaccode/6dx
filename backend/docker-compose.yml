@@ -1,27 +1,11 @@
 services:
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: sixdx
-      POSTGRES_USER: sixdx
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sixdx_dev_password}
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sixdx -d sixdx"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-
   api:
     build: .
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
       ADDR: ":8080"
-      DATABASE_URL: postgres://sixdx:${POSTGRES_PASSWORD:-sixdx_dev_password}@db:5432/sixdx?sslmode=disable
+      # SQLite: one file inside the mounted volume. Nothing else to run.
+      DATABASE_FILE: /data/6dx.db
+      MIGRATE_ON_STARTUP: "true"
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       FIREBASE_CREDENTIALS_FILE: /run/secrets/firebase.json
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
@@ -33,6 +17,10 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_OAUTH_REDIRECT: ${GITHUB_OAUTH_REDIRECT:-}
+    volumes:
+      # The whole database is this directory — back it up and you have
+      # everything.
+      - 6dx-data:/data
     ports:
       - "${API_PORT:-8080}:8080"
     secrets:
@@ -47,4 +35,4 @@ secrets:
     file: ./secrets/github-app.private-key.pem
 
 volumes:
-  db-data:
+  6dx-data:

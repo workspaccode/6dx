@@ -1,25 +1,19 @@
 //go:build integration
 
 // Integration tests for the authorization layer — the Go port of the RLS
-// policies. They need a real Postgres:
+// policies. They need nothing but a temp file: SQLite is embedded.
 //
-//	docker run --rm -d -p 55432:5432 -e POSTGRES_PASSWORD=test \
-//	  -e POSTGRES_DB=sixdx postgres:17-alpine
-//	DATABASE_URL=postgres://postgres:test@localhost:55432/sixdx?sslmode=disable \
-//	  go test -tags=integration ./internal/api/ -v
+//	go test -tags=integration ./internal/api/ -v
 package api
 
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/workspaccode/6dx/backend/internal/auth"
 	"github.com/workspaccode/6dx/backend/internal/config"
@@ -43,61 +37,52 @@ func (fakeVerifier) Middleware(next http.Handler) http.Handler {
 }
 
 type harness struct {
-	server *httptest.Server
-	pool   *pgxpool.Pool
+	server   *httptest.Server
+	database *db.DB
 }
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		t.Skip("DATABASE_URL not set")
-	}
-
+	path := filepath.Join(t.TempDir(), "test.db")
 	ctx := context.Background()
-	pool, err := db.Connect(ctx, url)
+	database, err := db.Open(ctx, path)
 	if err != nil {
-		t.Fatalf("connect: %v", err)
+		t.Fatalf("open: %v", err)
 	}
-	if err := db.Migrate(ctx, pool); err != nil {
+	if err := db.Migrate(ctx, database); err != nil {
 		t.Fatalf("migrate: %v", err)
-	}
-	// A clean slate per run.
-	if _, err := pool.Exec(ctx, `
-		truncate github_installations, notifications, workspace_invites,
-		         client_reports, tasks, projects, workspace_members,
-		         workspaces, users cascade`); err != nil {
-		t.Fatalf("truncate: %v", err)
 	}
 
 	cfg := &config.Config{ProjectID: "test", CORSOrigins: []string{"*"}}
-	srv := New(cfg, pool, fakeVerifier{})
+	srv := New(cfg, database, fakeVerifier{})
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(func() {
 		ts.Close()
-		pool.Close()
+		database.Close()
 	})
-	return &harness{server: ts, pool: pool}
+	return &harness{server: ts, database: database}
 }
 
 func (h *harness) do(t *testing.T, method, path, uid string, body any) (int, map[string]any) {
 	return h.doWithWorkspace(t, method, path, uid, "", body)
 }
 
-func (h *harness) doWithWorkspace(t *testing.T, method, path, uid, workspaceID string, body any) (int, map[string]any) {
+func (h *harness) doWithWorkspace(
+	t *testing.T,
+	method, path, uid, workspaceID string,
+	body any,
+) (int, map[string]any) {
 	t.Helper()
-	var reader *strings.Reader
+	payload := ""
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
-		reader = strings.NewReader(string(encoded))
-	} else {
-		reader = strings.NewReader("")
+		payload = string(encoded)
 	}
-	request, err := http.NewRequest(method, h.server.URL+path, reader)
+	request, err := http.NewRequest(method, h.server.URL+path, strings.NewReader(payload))
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -114,9 +99,22 @@ func (h *harness) doWithWorkspace(t *testing.T, method, path, uid, workspaceID s
 	}
 	defer response.Body.Close()
 
-	var payload map[string]any
-	_ = json.NewDecoder(response.Body).Decode(&payload)
-	return response.StatusCode, payload
+	var decoded map[string]any
+	_ = json.NewDecoder(response.Body).Decode(&decoded)
+	return response.StatusCode, decoded
+}
+
+func workspaceOf(t *testing.T, body map[string]any) string {
+	t.Helper()
+	workspace, ok := body["workspace"].(map[string]any)
+	if !ok {
+		t.Fatalf("no workspace in response: %v", body)
+	}
+	id, _ := workspace["id"].(string)
+	if id == "" {
+		t.Fatalf("empty workspace id: %v", workspace)
+	}
+	return id
 }
 
 // TestUnauthenticatedIsRejected: no token, no access.
@@ -135,16 +133,25 @@ func TestFirstSignInCreatesWorkspace(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("expected 200, got %d (%v)", status, body)
 	}
-	workspace, _ := body["workspace"].(map[string]any)
+	workspace := body["workspace"].(map[string]any)
 	if workspace["role"] != "owner" {
 		t.Fatalf("expected role owner, got %v", workspace["role"])
 	}
+	first := workspaceOf(t, body)
 
 	// Second call must reuse the same workspace, not create another.
 	_, again := h.do(t, http.MethodGet, "/v1/me", "owner-1", nil)
-	second, _ := again["workspace"].(map[string]any)
-	if second["id"] != workspace["id"] {
-		t.Fatalf("workspace changed between calls: %v != %v", second["id"], workspace["id"])
+	if workspaceOf(t, again) != first {
+		t.Fatal("workspace changed between calls")
+	}
+
+	var count int
+	if err := h.database.QueryRowContext(context.Background(),
+		`select count(*) from workspaces`).Scan(&count); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one workspace, got %d", count)
 	}
 }
 
@@ -152,17 +159,15 @@ func TestFirstSignInCreatesWorkspace(t *testing.T) {
 func TestViewerCannotWrite(t *testing.T) {
 	h := newHarness(t)
 
-	// Owner bootstraps, then invites a viewer and accepts on their behalf.
 	_, me := h.do(t, http.MethodGet, "/v1/me", "owner-2", nil)
-	workspace := me["workspace"].(map[string]any)
-	wsID := workspace["id"].(string)
+	wsID := workspaceOf(t, me)
 
 	if status, body := h.do(t, http.MethodPost, "/v1/invites", "owner-2",
 		map[string]any{"emails": []string{"viewer-2@6dx.test"}, "role": "viewer"}); status != http.StatusCreated {
 		t.Fatalf("invite failed: %d %v", status, body)
 	}
 
-	// The viewer signs in, then accepts.
+	// The viewer signs in (getting their own workspace), then accepts.
 	h.do(t, http.MethodGet, "/v1/me", "viewer-2", nil)
 	if status, body := h.do(t, http.MethodPost, "/v1/invites/accept", "viewer-2", nil); status != http.StatusOK {
 		t.Fatalf("accept failed: %d %v", status, body)
@@ -186,15 +191,12 @@ func TestViewerCannotWrite(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("owner write failed: %d %v", status, body)
 	}
-
-	_ = wsID
 }
 
-// TestOwnerCannotBeGranted: only transferOwnership hands out owner.
+// TestOwnerCannotBeGranted: only a transfer hands out owner.
 func TestOwnerCannotBeGranted(t *testing.T) {
 	h := newHarness(t)
-	_, me := h.do(t, http.MethodGet, "/v1/me", "owner-3", nil)
-	_ = me
+	h.do(t, http.MethodGet, "/v1/me", "owner-3", nil)
 
 	h.do(t, http.MethodPost, "/v1/invites", "owner-3",
 		map[string]any{"emails": []string{"dev-3@6dx.test"}, "role": "developer"})
@@ -206,6 +208,9 @@ func TestOwnerCannotBeGranted(t *testing.T) {
 	if status != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d %v", status, body)
 	}
+	if body["error"] != "owner_not_assignable" {
+		t.Fatalf("expected owner_not_assignable, got %v", body["error"])
+	}
 }
 
 // TestClientDecisionValidation: 0007 rejects an out-of-range option and the
@@ -213,11 +218,14 @@ func TestOwnerCannotBeGranted(t *testing.T) {
 func TestClientDecisionValidation(t *testing.T) {
 	h := newHarness(t)
 	_, me := h.do(t, http.MethodGet, "/v1/me", "owner-4", nil)
-	wsID := me["workspace"].(map[string]any)["id"].(string)
+	wsID := workspaceOf(t, me)
 
-	if _, err := h.pool.Exec(context.Background(), `
-		insert into client_reports (workspace_id, client_name, project_name, decision_options)
-		values ($1::uuid, 'Client', 'Proj', array['A','B'])`, wsID); err != nil {
+	if _, err := h.database.ExecContext(context.Background(), `
+		insert into client_reports
+		  (id, workspace_id, client_name, project_name, decision_options,
+		   weekly_highlights, invoice_lines, delivered_items)
+		values (?, ?, 'Client', 'Proj', '["A","B"]', '[]', '[]', '[]')`,
+		newID(), wsID); err != nil {
 		t.Fatalf("seed report: %v", err)
 	}
 
@@ -250,32 +258,90 @@ func TestSnapshotShape(t *testing.T) {
 		"workspace_id", "name", "members", "invites", "tasks", "comments",
 		"subtasks", "dependencies", "activity", "sprints", "pull_requests",
 		"labels", "integrations", "repositories", "notifications", "digest",
+		"client_report",
 	} {
 		if _, ok := body[key]; !ok {
 			t.Errorf("snapshot is missing %q", key)
 		}
 	}
+	if body["workspace_id"] == "" {
+		t.Error("snapshot has an empty workspace_id")
+	}
 }
 
-// TestNonMemberCannotReadAnotherWorkspace: the snapshot is scoped to the
-// caller's membership.
-func TestNonMemberCannotReadAnotherWorkspace(t *testing.T) {
+// TestTasksRoundTrip: create, list, change status, delete.
+func TestTasksRoundTrip(t *testing.T) {
 	h := newHarness(t)
-	h.do(t, http.MethodGet, "/v1/me", "owner-6", nil)
-	// A second account gets its own workspace, never the first one.
-	_, other := h.do(t, http.MethodGet, "/v1/me", "owner-7", nil)
-	if other["workspace"].(map[string]any)["id"] == "" {
-		t.Fatal("expected a workspace")
+	_, me := h.do(t, http.MethodGet, "/v1/me", "owner-6", nil)
+	wsID := workspaceOf(t, me)
+
+	status, body := h.do(t, http.MethodPost, "/v1/tasks", "owner-6",
+		map[string]any{"title": "First task"})
+	if status != http.StatusCreated {
+		t.Fatalf("create failed: %d %v", status, body)
+	}
+	task := body["task"].(map[string]any)
+	taskID := task["id"].(string)
+
+	_, list := h.do(t, http.MethodGet, "/v1/tasks", "owner-6", nil)
+	tasks, _ := list["tasks"].([]any)
+	if len(tasks) != 1 {
+		t.Fatalf("expected one task, got %d", len(tasks))
 	}
 
-	var count int
-	err := h.pool.QueryRow(context.Background(),
-		`select count(*) from workspace_members where user_uid = 'owner-7'`).Scan(&count)
-	if err != nil {
-		t.Fatalf("count: %v", err)
+	status, body = h.do(t, http.MethodPatch, "/v1/tasks/"+taskID+"/status", "owner-6",
+		map[string]any{"status": "done"})
+	if status != http.StatusOK {
+		t.Fatalf("status change failed: %d %v", status, body)
 	}
-	if count != 1 {
-		t.Fatalf("expected exactly one membership, got %d", count)
+	if body["task"].(map[string]any)["status"] != "done" {
+		t.Fatalf("expected done, got %v", body["task"])
 	}
-	_ = fmt.Sprint(count)
+
+	if status, body := h.do(t, http.MethodDelete, "/v1/tasks/"+taskID, "owner-6", nil); status != http.StatusOK {
+		t.Fatalf("delete failed: %d %v", status, body)
+	}
+	_ = wsID
+}
+
+// TestTwoAccountsGetSeparateWorkspaces: a second account never lands in the
+// first one's workspace.
+func TestTwoAccountsGetSeparateWorkspaces(t *testing.T) {
+	h := newHarness(t)
+	_, first := h.do(t, http.MethodGet, "/v1/me", "owner-7", nil)
+	_, second := h.do(t, http.MethodGet, "/v1/me", "owner-8", nil)
+
+	if workspaceOf(t, first) == workspaceOf(t, second) {
+		t.Fatal("two accounts share a workspace")
+	}
+
+	// And an unknown workspace id in the header is refused, not silently
+	// redirected to the caller's own workspace.
+	status, body := h.doWithWorkspace(t, http.MethodGet, "/v1/tasks",
+		"owner-8", workspaceOf(t, first), nil)
+	if status != http.StatusForbidden {
+		t.Fatalf("expected 403 for a foreign workspace, got %d %v", status, body)
+	}
+}
+
+// TestMarkAllNotificationsRead covers the "تعليم الكل كمقروء" action.
+func TestMarkAllNotificationsRead(t *testing.T) {
+	h := newHarness(t)
+	_, me := h.do(t, http.MethodGet, "/v1/me", "owner-9", nil)
+	wsID := workspaceOf(t, me)
+
+	if _, err := h.database.ExecContext(context.Background(), `
+		insert into notifications (id, workspace_id, user_uid, kind, title, body, is_read, created_at)
+		values (?, ?, 'owner-9', 'review', 't', 'b', 0, ?)`,
+		newID(), wsID, nowString()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	status, body := h.do(t, http.MethodPost, "/v1/notifications/read-all", "owner-9", nil)
+	if status != http.StatusOK {
+		t.Fatalf("expected 200, got %d %v", status, body)
+	}
+	if updated, _ := body["updated"].(float64); updated != 1 {
+		t.Fatalf("expected one notification updated, got %v", body["updated"])
+	}
 }

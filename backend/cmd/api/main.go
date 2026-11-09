@@ -1,4 +1,4 @@
-// Command api runs the 6DX backend.
+﻿// Command api runs the 6DX backend.
 package main
 
 import (
@@ -31,15 +31,15 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	database, err := db.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("database", "error", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	defer database.Close()
 
 	if cfg.MigrationsOnStartup {
-		if err := db.Migrate(ctx, pool); err != nil {
+		if err := db.Migrate(ctx, database); err != nil {
 			slog.Error("migrations", "error", err)
 			os.Exit(1)
 		}
@@ -52,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := api.New(cfg, pool, verifier)
+	server := api.New(cfg, database, verifier)
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           server.Handler(),

@@ -22,21 +22,18 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
 
-	"github.com/workspaccode/6dx/backend/internal/auth"
 	"github.com/workspaccode/6dx/backend/internal/config"
-	"github.com/workspaccode/6dx/backend/internal/httpx"
 )
 
-// githubBroker is the port of the `githubApp` Cloud Function / edge function.
-// The three-leg design and every security check are preserved:
+// githubBroker is the GitHub App broker. The three-leg design and every
+// security check of the Cloud Function / edge function are preserved:
 //
 //	leg 1  the app asks for a signed install URL
 //	leg 2  GitHub's Setup URL — the state names the workspace; when GitHub
 //	       drops it (it documents only installation_id/setup_action) a
-//	       recovery token names the installation and the workspace is derived
-//	       from the GitHub identity instead
+//	       recovery token names the installation and the workspace comes from
+//	       the GitHub identity instead
 //	leg 3  the OAuth callback — the user token proves who is in the browser,
 //	       the account must belong to them (personal) or be administered by
 //	       them (org), and only then is anything stored
@@ -110,12 +107,15 @@ func (b *githubBroker) verifyState(state string) (*statePayload, bool) {
 	if err != nil {
 		return nil, false
 	}
-	age := time.Since(time.UnixMilli(issuedAt))
-	if age < 0 || age > stateTTL {
+	if age := time.Since(time.UnixMilli(issuedAt)); age < 0 || age > stateTTL {
 		return nil, false
 	}
 	installationID, _ := strconv.ParseInt(parts[3], 10, 64)
-	return &statePayload{WorkspaceID: parts[1], UserID: parts[2], InstallationID: installationID}, true
+	return &statePayload{
+		WorkspaceID:    parts[1],
+		UserID:         parts[2],
+		InstallationID: installationID,
+	}, true
 }
 
 func (b *githubBroker) signRecovery(installationID int64) string {
@@ -152,8 +152,7 @@ func (b *githubBroker) appJWT() (string, error) {
 		"exp": now.Add(9 * time.Minute).Unix(),
 		"iss": b.cfg.GitHubAppID,
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	return token.SignedString(b.privateKey)
+	return jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(b.privateKey)
 }
 
 func (b *githubBroker) installationToken(installationID int64) (string, error) {
@@ -212,8 +211,7 @@ func (b *githubBroker) getJSON(token, path string, dst any) error {
 	return json.NewDecoder(response.Body).Decode(dst)
 }
 
-// revokeUserToken drops the user token once ownership is proven — it is not
-// needed afterwards.
+// revokeUserToken drops the user token once ownership is proven.
 func (b *githubBroker) revokeUserToken(userToken string) {
 	body := strings.NewReader(`{"access_token":"` + userToken + `"}`)
 	request, err := http.NewRequest(http.MethodDelete,
@@ -337,21 +335,24 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if message, allowed := s.checkOwnership(r, userToken, user.ID, installation.Account.Type, installation.Account.Login, installation.Account.ID); !allowed {
+	if message, allowed := s.checkOwnership(r, userToken, user.ID,
+		installation.Account.Type, installation.Account.Login, installation.Account.ID); !allowed {
 		s.github.revokeUserToken(userToken)
 		githubHTML(w, message)
 		return
 	}
 
-	if _, err := s.pool.Exec(r.Context(), `
+	now := nowString()
+	if _, err := s.store.db.ExecContext(r.Context(), `
 		insert into github_installations
-		  (workspace_id, installation_id, account_login, account_type, created_by)
-		values ($1::uuid, $2, $3, $4, $5)
-		on conflict (workspace_id, installation_id) do update
-		  set account_login = excluded.account_login,
-		      account_type  = excluded.account_type`,
-		workspaceID, installationID,
-		installation.Account.Login, installation.Account.Type, callerUID,
+		  (id, workspace_id, installation_id, account_login, account_type,
+		   created_by, created_at)
+		values (?, ?, ?, ?, ?, ?, ?)
+		on conflict (workspace_id, installation_id) do update set
+		  account_login = excluded.account_login,
+		  account_type  = excluded.account_type`,
+		newID(), workspaceID, installationID, installation.Account.Login,
+		installation.Account.Type, callerUID, now,
 	); err != nil {
 		slog.Error("store installation", "error", err)
 		githubHTML(w, "تعذّر حفظ التثبيت.")
@@ -402,45 +403,54 @@ func (s *Server) exchangeCode(r *http.Request, code string) (string, error) {
 // resolveGithubTarget maps the browser's GitHub identity to a 6DX workspace.
 //
 // With a signed state that is the state itself; on the recovery path the
-// workspace comes from the identity, which is no weaker — a victim's install
-// can only ever land in the victim's own workspace.
-func (s *Server) resolveGithubTarget(r *http.Request, state *statePayload, stateOK bool, githubUserID int64) (string, string, bool) {
+// workspace comes from the identity stored in `users.github_id`, which is fed
+// only by the verified Firebase token — never by the request.
+func (s *Server) resolveGithubTarget(
+	r *http.Request,
+	state *statePayload,
+	stateOK bool,
+	githubUserID int64,
+) (string, string, bool) {
 	if stateOK {
 		var uid string
-		err := s.pool.QueryRow(r.Context(),
-			`select uid from users where uid = $1`, state.UserID).Scan(&uid)
-		if err != nil {
+		if err := s.store.db.QueryRowContext(r.Context(),
+			`select uid from users where uid = ?`, state.UserID,
+		).Scan(&uid); err != nil {
 			return "", "", false
 		}
 		return state.WorkspaceID, state.UserID, true
 	}
 
-	// Recovery: find the 6DX user linked to this GitHub id, then their
-	// workspace (prefer the one they own). The link comes from the Firebase
-	// token's `github.com` identity, never from the request.
 	var uid string
-	err := s.pool.QueryRow(r.Context(),
-		`select uid from users where github_id = $1 limit 1`, githubUserID).Scan(&uid)
-	if err != nil {
+	if err := s.store.db.QueryRowContext(r.Context(),
+		`select uid from users where github_id = ? limit 1`, githubUserID,
+	).Scan(&uid); err != nil {
 		return "", "", false
 	}
 
 	var workspaceID string
-	if err := s.pool.QueryRow(r.Context(), `
-		select m.workspace_id::text
+	if err := s.store.db.QueryRowContext(r.Context(), `
+		select m.workspace_id
 		from workspace_members m
-		where m.user_uid = $1
+		where m.user_uid = ?
 		order by (m.role = 'owner') desc, m.created_at
-		limit 1`, uid).Scan(&workspaceID); err != nil {
+		limit 1`, uid,
+	).Scan(&workspaceID); err != nil {
 		return "", "", false
 	}
 	return workspaceID, uid, true
 }
 
-// checkOwnership: `/user/installations` is too broad — a plain org member
-// could attach the whole installation. The installer must own the account, or
+// checkOwnership: `/user/installations` is too broad — a plain org member could
+// attach the whole installation. The installer must own the account, or
 // administer the organisation.
-func (s *Server) checkOwnership(r *http.Request, userToken string, userID int64, accountType, accountLogin string, accountID int64) (string, bool) {
+func (s *Server) checkOwnership(
+	r *http.Request,
+	userToken string,
+	userID int64,
+	accountType, accountLogin string,
+	accountID int64,
+) (string, bool) {
 	switch accountType {
 	case "User":
 		if accountID != userID {
@@ -469,27 +479,26 @@ func (s *Server) checkOwnership(r *http.Request, userToken string, userID int64,
 // POST /github/webhook
 func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 	if s.github == nil {
-		httpx.JSON(w, http.StatusInternalServerError,
+		writeJSON(w, http.StatusInternalServerError,
 			map[string]string{"error": "webhook_not_configured"})
 		return
 	}
 
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 	if err != nil {
-		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "unreadable_body"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unreadable_body"})
 		return
 	}
-	expected := "sha256=" + s.github.hmac(string(raw))
-	// hmac.Equal on hex strings: compare the raw bytes.
-	provided := r.Header.Get("X-Hub-Signature-256")
-	if !hmac.Equal(hexBytes(expected), hexBytes(provided)) {
-		httpx.JSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_signature"})
+	expected := bhex(s.github.hmac(string(raw)))
+	provided := bhex(strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256="))
+	if !hmac.Equal(expected, provided) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_signature"})
 		return
 	}
 
 	event := r.Header.Get("X-GitHub-Event")
 	if event != "pull_request" {
-		httpx.JSON(w, http.StatusOK, map[string]string{"ignored": event})
+		writeJSON(w, http.StatusOK, map[string]string{"ignored": event})
 		return
 	}
 
@@ -499,14 +508,14 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 		Repository   struct{ FullName string `json:"full_name"` } `json:"repository"`
 		Installation struct{ ID int64 `json:"id"` } `json:"installation"`
 		PullRequest  struct {
-			Number int    `json:"number"`
-			Title  string `json:"title"`
-			State  string `json:"state"`
-			Merged bool   `json:"merged"`
-			Additions int `json:"additions"`
-			Deletions int `json:"deletions"`
-			User   struct{ Login string `json:"login"` } `json:"user"`
-			Head   struct {
+			Number    int    `json:"number"`
+			Title     string `json:"title"`
+			State     string `json:"state"`
+			Merged    bool   `json:"merged"`
+			Additions int    `json:"additions"`
+			Deletions int    `json:"deletions"`
+			User      struct{ Login string `json:"login"` } `json:"user"`
+			Head      struct {
 				Ref string `json:"ref"`
 				SHA string `json:"sha"`
 			} `json:"head"`
@@ -514,24 +523,20 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 		} `json:"pull_request"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		httpx.JSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payload"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payload"})
 		return
 	}
 	if payload.Installation.ID == 0 {
-		httpx.JSON(w, http.StatusOK, map[string]bool{"ignored": true})
+		writeJSON(w, http.StatusOK, map[string]bool{"ignored": true})
 		return
 	}
 
 	var workspaceID string
-	err = s.pool.QueryRow(r.Context(),
-		`select workspace_id::text from github_installations where installation_id = $1 limit 1`,
+	err = s.store.db.QueryRowContext(r.Context(),
+		`select workspace_id from github_installations where installation_id = ? limit 1`,
 		payload.Installation.ID).Scan(&workspaceID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		httpx.JSON(w, http.StatusOK, map[string]string{"ignored": "unknown_installation"})
-		return
-	}
 	if err != nil {
-		httpx.JSON(w, http.StatusInternalServerError, map[string]string{"error": "lookup_failed"})
+		writeJSON(w, http.StatusOK, map[string]string{"ignored": "unknown_installation"})
 		return
 	}
 
@@ -544,33 +549,38 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 		number = payload.Number
 	}
 
-	if _, err := s.pool.Exec(r.Context(), `
+	now := nowString()
+	if _, err := s.store.db.ExecContext(r.Context(), `
 		insert into pull_requests
-		  (workspace_id, number, title, author, branch, base_branch, state,
-		   additions, deletions, last_commit)
-		values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		on conflict (workspace_id, number) do update
-		  set title = excluded.title, author = excluded.author,
-		      branch = excluded.branch, base_branch = excluded.base_branch,
-		      state = excluded.state, additions = excluded.additions,
-		      deletions = excluded.deletions, last_commit = excluded.last_commit`,
-		workspaceID, number, payload.PullRequest.Title, payload.PullRequest.User.Login,
-		payload.PullRequest.Head.Ref, payload.PullRequest.Base.Ref, state,
-		payload.PullRequest.Additions, payload.PullRequest.Deletions,
-		payload.PullRequest.Head.SHA,
+		  (id, workspace_id, number, title, author, branch, base_branch, state,
+		   additions, deletions, last_commit, created_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		on conflict (workspace_id, number) do update set
+		  title      = excluded.title,
+		  author     = excluded.author,
+		  branch     = excluded.branch,
+		  base_branch = excluded.base_branch,
+		  state      = excluded.state,
+		  additions  = excluded.additions,
+		  deletions  = excluded.deletions,
+		  last_commit = excluded.last_commit`,
+		newID(), workspaceID, number, payload.PullRequest.Title,
+		payload.PullRequest.User.Login, payload.PullRequest.Head.Ref,
+		payload.PullRequest.Base.Ref, state, payload.PullRequest.Additions,
+		payload.PullRequest.Deletions, payload.PullRequest.Head.SHA, now,
 	); err != nil {
 		slog.Error("upsert pull request", "error", err)
-		httpx.JSON(w, http.StatusInternalServerError, map[string]string{"error": "sync_failed"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "sync_failed"})
 		return
 	}
 
-	httpx.JSON(w, http.StatusOK, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"synced": number, "repository": payload.Repository.FullName,
 	})
 }
 
-func hexBytes(value string) []byte {
-	decoded, err := hex.DecodeString(strings.TrimPrefix(value, "sha256="))
+func bhex(value string) []byte {
+	decoded, err := hex.DecodeString(value)
 	if err != nil {
 		return nil
 	}
@@ -583,58 +593,54 @@ func hexBytes(value string) []byte {
 func (s *Server) handleGithubInstallation(w http.ResponseWriter, r *http.Request) {
 	_, ws, err := s.callerAndWorkspace(r)
 	if err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
-	var installation struct {
-		InstallationID int64  `json:"installation_id"`
-		AccountLogin   string `json:"account_login"`
-		AccountType    string `json:"account_type"`
-	}
-	err = s.pool.QueryRow(r.Context(), `
+
+	var installationID int64
+	var accountLogin, accountType string
+	err = s.store.db.QueryRowContext(r.Context(), `
 		select installation_id, account_login, account_type
-		from github_installations where workspace_id = $1::uuid
+		from github_installations where workspace_id = ?
 		order by created_at limit 1`, ws.ID,
-	).Scan(&installation.InstallationID, &installation.AccountLogin, &installation.AccountType)
-	if errors.Is(err, pgx.ErrNoRows) {
-		httpx.JSON(w, http.StatusOK, map[string]any{"installation": nil})
-		return
-	}
+	).Scan(&installationID, &accountLogin, &accountType)
 	if err != nil {
-		httpx.Write(w, err)
+		writeJSON(w, http.StatusOK, map[string]any{"installation": nil})
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{"installation": installation})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"installation": map[string]any{
+			"installation_id": installationID,
+			"account_login":   accountLogin,
+			"account_type":    accountType,
+		},
+	})
 }
 
 // GET /v1/github/repositories
 func (s *Server) handleGithubRepositories(w http.ResponseWriter, r *http.Request) {
 	_, ws, err := s.callerAndWorkspace(r)
 	if err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
 	if s.github == nil {
-		httpx.Write(w, httpx.Conflict("github_not_configured", "تطبيق GitHub غير مُهيّأ."))
+		writeError(w, conflict("github_not_configured", "تطبيق GitHub غير مُهيّأ."))
 		return
 	}
 
 	var installationID int64
-	err = s.pool.QueryRow(r.Context(), `
+	err = s.store.db.QueryRowContext(r.Context(), `
 		select installation_id from github_installations
-		where workspace_id = $1::uuid order by created_at limit 1`, ws.ID).Scan(&installationID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		httpx.Write(w, httpx.Conflict("no_installation", "لم يتم تثبيت تطبيق GitHub بعد."))
-		return
-	}
+		where workspace_id = ? order by created_at limit 1`, ws.ID).Scan(&installationID)
 	if err != nil {
-		httpx.Write(w, err)
+		writeError(w, conflict("no_installation", "لم يتم تثبيت تطبيق GitHub بعد."))
 		return
 	}
 
 	token, err := s.github.installationToken(installationID)
 	if err != nil {
-		httpx.Write(w, httpx.Conflict("github_token_failed", "تعذّر قراءة مستودعات GitHub."))
+		writeError(w, conflict("github_token_failed", "تعذّر قراءة مستودعات GitHub."))
 		return
 	}
 	var payload struct {
@@ -642,11 +648,11 @@ func (s *Server) handleGithubRepositories(w http.ResponseWriter, r *http.Request
 		Repositories []json.RawMessage `json:"repositories"`
 	}
 	if err := s.github.getJSON(token, "/installation/repositories?per_page=100", &payload); err != nil {
-		httpx.Write(w, httpx.Conflict("github_error", "تعذّر قراءة مستودعات GitHub."))
+		writeError(w, conflict("github_error", "تعذّر قراءة مستودعات GitHub."))
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]any{
-		"total_count": payload.TotalCount,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total_count":  payload.TotalCount,
 		"repositories": payload.Repositories,
 	})
 }
@@ -655,20 +661,20 @@ func (s *Server) handleGithubRepositories(w http.ResponseWriter, r *http.Request
 func (s *Server) handleGithubInstallURL(w http.ResponseWriter, r *http.Request) {
 	caller, ws, err := s.callerAndWorkspace(r)
 	if err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
 	if _, err := s.store.requireAdmin(r.Context(), ws.ID, caller.UID); err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
 	if s.github == nil {
-		httpx.Write(w, httpx.Conflict("github_not_configured", "تطبيق GitHub غير مُهيّأ."))
+		writeError(w, conflict("github_not_configured", "تطبيق GitHub غير مُهيّأ."))
 		return
 	}
 
 	state := s.github.signState(ws.ID, caller.UID, 0)
-	httpx.JSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"url": fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s",
 			s.cfg.GitHubAppSlug, url.QueryEscape(state)),
 	})
@@ -678,23 +684,23 @@ func (s *Server) handleGithubInstallURL(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleGithubDisconnect(w http.ResponseWriter, r *http.Request) {
 	caller, ws, err := s.callerAndWorkspace(r)
 	if err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
 	if _, err := s.store.requireAdmin(r.Context(), ws.ID, caller.UID); err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
-	if _, err := s.pool.Exec(r.Context(),
-		`delete from github_installations where workspace_id = $1::uuid`, ws.ID,
+	if _, err := s.store.db.ExecContext(r.Context(),
+		`delete from github_installations where workspace_id = ?`, ws.ID,
 	); err != nil {
-		httpx.Write(w, err)
+		writeError(w, err)
 		return
 	}
-	httpx.JSON(w, http.StatusOK, map[string]bool{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// nonce is used for the slug on first sign-in.
+// nonce is unused today but kept for a future signed-upload flow.
 func nonce(size int) string {
 	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
@@ -705,5 +711,5 @@ func nonce(size int) string {
 
 var (
 	_ = crypto.SHA256
-	_ = auth.FromContext
+	_ = nonce
 )

@@ -16,31 +16,36 @@ import (
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, nil)))
 
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		slog.Error("DATABASE_URL is required")
-		os.Exit(1)
+	// DATABASE_FILE is the SQLite path; DATABASE_URL is accepted for a
+	// deployment that still exports the old name.
+	path := os.Getenv("DATABASE_FILE")
+	if path == "" {
+		path = os.Getenv("DATABASE_URL")
+	}
+	if path == "" {
+		path = "6dx.db"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	pool, err := db.Connect(ctx, url)
+	database, err := db.Open(ctx, path)
 	if err != nil {
-		slog.Error("connect", "error", err)
+		slog.Error("open", "error", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	defer database.Close()
 
-	if err := db.Migrate(ctx, pool); err != nil {
+	if err := db.Migrate(ctx, database); err != nil {
 		slog.Error("migrate", "error", err)
 		os.Exit(1)
 	}
 
 	var applied int
-	if err := pool.QueryRow(ctx, `select count(*) from schema_migrations`).Scan(&applied); err != nil {
+	if err := database.QueryRowContext(ctx,
+		`select count(*) from schema_migrations`).Scan(&applied); err != nil {
 		slog.Error("count", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("migrations up to date", "applied", applied)
+	slog.Info("migrations up to date", "database", path, "applied", applied)
 }

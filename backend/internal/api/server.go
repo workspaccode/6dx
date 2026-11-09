@@ -7,33 +7,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/workspaccode/6dx/backend/internal/config"
-	"github.com/workspaccode/6dx/backend/internal/httpx"
+	"github.com/workspaccode/6dx/backend/internal/db"
 )
+
+// Verifier is the dependency the middleware needs. It is an interface so a test
+// can inject a fake caller without Firebase.
+type Verifier interface {
+	Middleware(http.Handler) http.Handler
+}
 
 // Server holds everything the handlers need.
 type Server struct {
 	cfg      *config.Config
-	pool     *pgxpool.Pool
 	store    *store
 	verifier Verifier
 	github   *githubBroker
 }
 
-// Verifier is the dependency the middleware needs. It is an interface so a
-// test can inject a fake caller without Firebase.
-type Verifier interface {
-	Middleware(http.Handler) http.Handler
-}
-
 // New builds the server and the router.
-func New(cfg *config.Config, pool *pgxpool.Pool, verifier Verifier) *Server {
+func New(cfg *config.Config, database *db.DB, verifier Verifier) *Server {
 	s := &Server{
 		cfg:      cfg,
-		pool:     pool,
-		store:    &store{pool: pool},
+		store:    &store{db: database},
 		verifier: verifier,
 	}
 	if cfg.GitHubEnabled() {
@@ -55,7 +51,7 @@ func (s *Server) Handler() http.Handler {
 
 	// --- public ------------------------------------------------------------
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
-		httpx.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
 	// The GitHub App browser legs and the webhook are public by design: the
@@ -112,7 +108,8 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); origin != "" && s.originAllowed(origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers",
+				"Authorization, Content-Type, X-Workspace-Id")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 		}
@@ -124,7 +121,7 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				slog.Error("panic", "path", r.URL.Path, "recovered", recovered)
-				httpx.JSON(w, http.StatusInternalServerError, map[string]string{
+				writeJSON(w, http.StatusInternalServerError, map[string]string{
 					"error": "internal", "message": "حدث خطأ غير متوقع.",
 				})
 			}

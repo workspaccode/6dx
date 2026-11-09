@@ -2,17 +2,20 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
 	"errors"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"fmt"
+	"time"
 
 	"github.com/workspaccode/6dx/backend/internal/auth"
+	"github.com/workspaccode/6dx/backend/internal/db"
 	"github.com/workspaccode/6dx/backend/internal/httpx"
 )
 
-// Role mirrors the `member_role` enum. The values and their capabilities are
-// the ones the Postgres RLS policies enforced:
+// Role mirrors the `member_role` values. The capabilities are the ones the
+// Postgres RLS policies enforced:
 //
 //	owner     — everything, including deleting the workspace and transfers
 //	admin     — writes + manages developer/reviewer/viewer, never `owner`
@@ -34,18 +37,17 @@ func (r Role) IsEditor() bool { return r != "" && r != RoleViewer }
 
 // store is the thin data-access layer every handler shares.
 type store struct {
-	pool *pgxpool.Pool
+	db *db.DB
 }
 
 // RoleIn returns the caller's role, or "" when they are not a member.
 func (s *store) RoleIn(ctx context.Context, workspaceID, uid string) (Role, error) {
 	var role string
-	err := s.pool.QueryRow(ctx,
-		`select role::text from workspace_members
-		  where workspace_id = $1 and user_uid = $2`,
+	err := s.db.QueryRowContext(ctx,
+		`select role from workspace_members where workspace_id = ? and user_uid = ?`,
 		workspaceID, uid,
 	).Scan(&role)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {
@@ -78,7 +80,7 @@ func (s *store) requireAdmin(ctx context.Context, workspaceID, uid string) (Role
 	return role, nil
 }
 
-// requireEditor is `is_workspace_editor()` (0004): viewers are read-only.
+// requireEditor is `is_workspace_editor()`: viewers are read-only.
 func (s *store) requireEditor(ctx context.Context, workspaceID, uid string) (Role, error) {
 	role, err := s.requireMember(ctx, workspaceID, uid)
 	if err != nil {
@@ -106,25 +108,56 @@ func (s *store) requireOwner(ctx context.Context, workspaceID, uid string) (Role
 // name, avatar and GitHub id come from the verified token, never from the
 // request body.
 func (s *store) upsertUser(ctx context.Context, caller *auth.Caller) error {
-	_, err := s.pool.Exec(ctx, `
-		insert into users (uid, email, display_name, photo_url, github_id)
-		values ($1, nullif($2, ''), nullif($3, ''), nullif($4, ''), $5)
-		on conflict (uid) do update
-		  set email        = coalesce(nullif(excluded.email, ''), users.email),
-		      display_name = coalesce(nullif(excluded.display_name, ''), users.display_name),
-		      photo_url    = coalesce(nullif(excluded.photo_url, ''), users.photo_url),
-		      github_id    = coalesce(excluded.github_id, users.github_id),
-		      updated_at   = now()`,
-		caller.UID, caller.Email, caller.DisplayName, caller.PhotoURL, caller.GitHubID)
+	now := nowString()
+	_, err := s.db.ExecContext(ctx, `
+		insert into users (uid, email, display_name, photo_url, github_id, created_at, updated_at)
+		values (?, nullif(?, ''), nullif(?, ''), nullif(?, ''), ?, ?, ?)
+		on conflict (uid) do update set
+			email        = coalesce(nullif(excluded.email, ''), users.email),
+			display_name = coalesce(nullif(excluded.display_name, ''), users.display_name),
+			photo_url    = coalesce(nullif(excluded.photo_url, ''), users.photo_url),
+			github_id    = coalesce(excluded.github_id, users.github_id),
+			updated_at   = excluded.updated_at`,
+		caller.UID, caller.Email, caller.DisplayName, caller.PhotoURL,
+		caller.GitHubID, now, now)
 	return err
 }
 
-// logActivity appends to activity_events. The actor is always the caller —
-// the old `activity_insert` policy allowed an anonymous row, this does not.
+// logActivity appends to activity_events. The actor is always the caller — the
+// old policy allowed an anonymous row, this does not.
 func (s *store) logActivity(ctx context.Context, workspaceID, actorUID, kind, text string, projectID *string) error {
-	_, err := s.pool.Exec(ctx,
-		`insert into activity_events (workspace_id, project_id, type, text, actor_uid)
-		 values ($1, $2, $3, $4, $5)`,
-		workspaceID, projectID, kind, text, actorUID)
+	_, err := s.db.ExecContext(ctx,
+		`insert into activity_events (id, workspace_id, project_id, type, text, actor_uid, created_at)
+		 values (?, ?, ?, ?, ?, ?, ?)`,
+		newID(), workspaceID, projectID, kind, text, actorUID, nowString())
 	return err
+}
+
+// --- small utilities --------------------------------------------------------
+
+// newID returns a UUID v4 string. SQLite has no uuid type, and generating the
+// id in Go keeps it identical on every engine.
+func newID() string {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
+	}
+	buf[6] = (buf[6] & 0x0f) | 0x40 // version 4
+	buf[8] = (buf[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%s-%s-%s-%s-%s",
+		hex.EncodeToString(buf[0:4]),
+		hex.EncodeToString(buf[4:6]),
+		hex.EncodeToString(buf[6:8]),
+		hex.EncodeToString(buf[8:10]),
+		hex.EncodeToString(buf[10:16]),
+	)
+}
+
+// nowString is the single timestamp format the schema stores: RFC3339 in UTC,
+// so string ordering and comparison are chronological.
+func nowString() string { return time.Now().UTC().Format(time.RFC3339Nano) }
+
+// timeAhead returns now+ttl in the same format.
+func timeAhead(ttl time.Duration) string {
+	return time.Now().UTC().Add(ttl).Format(time.RFC3339Nano)
 }
