@@ -43,6 +43,7 @@ dependencies:
   # Firebase — authentication only (GitHub + e-mail). Data lives in backend/.
   firebase_core: ^3.8.0
   firebase_auth: ^5.3.3
+  github: 9.26.0
 
 dev_dependencies:
   flutter_test:

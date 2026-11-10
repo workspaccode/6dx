@@ -92,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 
 	private.HandleFunc("GET /v1/github/installation", s.handleGithubInstallation)
 	private.HandleFunc("GET /v1/github/repositories", s.handleGithubRepositories)
+	private.HandleFunc("POST /v1/github/token", s.handleGithubToken)
 	private.HandleFunc("POST /v1/github/install-url", s.handleGithubInstallURL)
 	private.HandleFunc("POST /v1/github/disconnect", s.handleGithubDisconnect)
 

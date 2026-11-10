@@ -680,6 +680,68 @@ func (s *Server) handleGithubInstallURL(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// POST /v1/github/token
+//
+// Hands an editor a short-lived installation token so the Flutter `github`
+// package can talk to the GitHub API directly.
+//
+// This is deliberately NOT the user's OAuth token with a `repo` scope: an
+// installation token can only reach the repositories the App was granted, it
+// expires in an hour, and it is minted only after `requireEditor` — so the
+// workspace roles stay in force and nothing with broad access ever reaches the
+// device.
+func (s *Server) handleGithubToken(w http.ResponseWriter, r *http.Request) {
+	caller, ws, err := s.callerAndWorkspace(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.store.requireEditor(r.Context(), ws.ID, caller.UID); err != nil {
+		writeError(w, err)
+		return
+	}
+	if s.github == nil {
+		writeError(w, conflict("github_not_configured", "تطبيق GitHub غير مُهيّأ."))
+		return
+	}
+
+	var installationID int64
+	err = s.store.db.QueryRowContext(r.Context(), `
+		select installation_id from github_installations
+		where workspace_id = ? order by created_at limit 1`, ws.ID).Scan(&installationID)
+	if err != nil {
+		writeError(w, conflict("no_installation", "لم يتم تثبيت تطبيق GitHub بعد."))
+		return
+	}
+
+	token, err := s.github.installationToken(installationID)
+	if err != nil {
+		slog.Error("installation token", "error", err)
+		writeError(w, conflict("github_token_failed", "تعذّر إصدار توكن GitHub."))
+		return
+	}
+
+	// Installation tokens live for an hour; tell the client to refresh early.
+	expiresAt := time.Now().UTC().Add(55 * time.Minute).Format(time.RFC3339)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token":       token,
+		"expires_at":  expiresAt,
+		"account":     installationAccount(r, s, ws.ID),
+		"installation_id": installationID,
+	})
+}
+
+// installationAccount returns the login the installation belongs to, for the
+// UI to show ("connected as …").
+func installationAccount(r *http.Request, s *Server, workspaceID string) string {
+	var login string
+	_ = s.store.db.QueryRowContext(r.Context(), `
+		select account_login from github_installations
+		where workspace_id = ? order by created_at limit 1`, workspaceID).Scan(&login)
+	return login
+}
+
 // POST /v1/github/disconnect
 func (s *Server) handleGithubDisconnect(w http.ResponseWriter, r *http.Request) {
 	caller, ws, err := s.callerAndWorkspace(r)

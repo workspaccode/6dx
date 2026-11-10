@@ -1,10 +1,11 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/errors/failures.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/current_workspace.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/datasources/github_api.dart';
+import '../../data/datasources/github_sdk.dart';
 import '../../data/repositories/github_repository_repository_impl.dart';
 import '../../domain/entities/github_installation.dart';
 import '../../domain/entities/github_repository.dart';
@@ -12,6 +13,13 @@ import '../../domain/repositories/github_repository_repository.dart';
 
 final githubApiProvider = Provider<GithubApi>(
   (ref) => GithubApi(ref.watch(apiClientProvider), ref.watch(currentWorkspaceProvider)),
+);
+
+/// Short-lived installation-token client for the `github` package. Only
+/// editors can obtain a token (the API enforces it), so the GitHub App scoping
+/// and the workspace roles both stay in force.
+final githubSdkProvider = Provider<GithubSdk>(
+  (ref) => GithubSdk(ref.watch(apiClientProvider), ref.watch(currentWorkspaceProvider)),
 );
 
 final githubRepositoryRepositoryProvider = Provider<GithubRepositoryRepository>(
