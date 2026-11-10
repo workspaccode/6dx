@@ -257,11 +257,13 @@ func (s *Server) handleGithubSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A missing state is not fatal: GitHub does not promise to echo it back.
-	var next string
+	var next, stateKind string
 	if state, ok := s.github.verifyState(r.URL.Query().Get("state")); ok {
 		next = s.github.signState(state.WorkspaceID, state.UserID, installationID)
+		stateKind = "signed"
 	} else {
 		next = s.github.signRecovery(installationID)
+		stateKind = "recovery"
 	}
 
 	authorize := fmt.Sprintf("%s/authorize?client_id=%s&state=%s&redirect_uri=%s",
@@ -269,6 +271,14 @@ func (s *Server) handleGithubSetup(w http.ResponseWriter, r *http.Request) {
 		url.QueryEscape(s.cfg.GitHubClientID),
 		url.QueryEscape(next),
 		url.QueryEscape(s.cfg.GitHubOAuthRedirect))
+	// Logged because GitHub answers an unregistered redirect_uri with a generic
+	// "not associated with this application" page — the value is the only clue
+	// in the server log.
+	slog.Info("github setup redirect",
+		"installation_id", installationID,
+		"redirect_uri", s.cfg.GitHubOAuthRedirect,
+		"state_kind", stateKind,
+	)
 	http.Redirect(w, r, authorize, http.StatusFound)
 }
 
@@ -298,7 +308,10 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 
 	userToken, err := s.exchangeCode(r, code)
 	if err != nil {
-		slog.Error("github code exchange", "error", err)
+		slog.Error("github code exchange failed",
+			"error", err,
+			"redirect_uri", s.cfg.GitHubOAuthRedirect,
+		)
 		githubHTML(w, "تعذّر استبدال رمز التفويض.")
 		return
 	}
