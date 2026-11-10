@@ -27,8 +27,16 @@ String describeAuthError(Object error) {
       return 'هذا البريد مسجّل بطريقة دخول أخرى — استخدم نفس الطريقة السابقة.';
     case 'operation-not-allowed':
       return 'طريقة الدخول هذه غير مُفعّلة في مشروع Firebase.';
+    case 'internal-error':
+      return 'رفض Firebase العملية (internal-error) — غالباً إعداد مُزوّد GitHub غير مكتمل.';
+    case 'user-disabled':
+      return 'هذا الحساب معطّل.';
+    case 'requires-recent-login':
+      return 'سجّل الدخول من جديد لإتمام العملية.';
     default:
-      return 'تعذّر إتمام عملية الدخول.';
+      return code.isEmpty
+          ? 'تعذّر إتمام عملية الدخول.'
+          : 'تعذّر إتمام عملية الدخول ($code).';
   }
 }
 
