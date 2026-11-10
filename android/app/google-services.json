@@ -122,6 +122,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "353698640090-pahi1a3p6gb1fd94famhtddi4eurtp56.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sixdx.sixdx",
+            "certificate_hash": "95aad36d71e15a56e3b7669d9db6df4dfd8c4ec1"
+          }
+        },
+        {
           "client_id": "353698640090-2mln7saqea7g6hmir2jhvdaqnhkmgsvu.apps.googleusercontent.com",
           "client_type": 3
         }
