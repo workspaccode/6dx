@@ -50,7 +50,16 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080
 
 1. `console.firebase.google.com` → مشروعك → **Authentication**
 2. **Sign-in method** → فعّل **GitHub** و **Email/Password**
-3. GitHub OAuth App → Authorization callback URL:
+
+> **مهم — SHA-1:** أي APK يدخل بـ Firebase Auth لازم بصمة مفتاح التوقيع تكون
+> مسجّلة في المشروع، وإلا يفشل بـ `INVALID_CERT_HASH 400` قبل ما المتصفح يفتح
+> (المتصفح يفتح ويقفل في لحظة، وبلا رسالة مفيدة).
+>
+> المسجَّل حالياً (مفتاح الـ debug الذي يوقّع نسخة الـ beta):
+> `95:AA:D3:6D:71:E1:5A:56:E3:B7:66:9D:9D:B6:DF:4D:FD:8C:4E:C1`
+>
+> قبل نشر نسخة بمفتاح حقيقي، أضف بصمة مفتاحك: Firebase Console →
+> Project settings → Your apps → Android → **Add fingerprint**.3. GitHub OAuth App → Authorization callback URL:
    `https://<project>.firebaseapp.com/__/auth/handler`
 4. `dart run flutterfire configure` لتوليد `firebase_options.dart`
 

@@ -14,14 +14,24 @@ class AppLogger {
 
   /// User action or data operation (sign in, sign up, a query …).
   ///
-  /// These are always printed — including in release builds — because they are
+  /// These are always recorded — including in release builds — because they are
   /// what you look for when a tester reports "it does not work". Pass [error]
   /// to record why a step failed.
+  ///
+  /// `dart:developer` never reaches logcat in a release build, so the line is
+  /// mirrored to stdout there; that is the only copy of the event a beta tester
+  /// can hand back with `adb logcat | grep -i action`.
   ///
   /// They never contain tokens or personal data.
   static void action(String tag, String message, [Object? error]) {
     final suffix = error == null ? '' : ' — $error';
-    dev.log('[ACTION] $tag: $message$suffix', name: tag);
+    final line = '[ACTION] $tag: $message$suffix';
+    if (kReleaseMode) {
+      // ignore: avoid_print
+      print(line);
+      return;
+    }
+    dev.log(line, name: tag);
   }
 
   static void _log(
@@ -30,7 +40,16 @@ class AppLogger {
     String message, [
     Object? error,
   ]) {
-    if (kReleaseMode) return;
+    if (kReleaseMode) {
+      // Errors and warnings still matter in a release build; the rest stays in
+      // debug only so the log does not become noise.
+      if (level == 'ERROR' || level == 'WARN') {
+        final suffix = error == null ? '' : ' — $error';
+        // ignore: avoid_print
+        print('[$level] $tag: $message$suffix');
+      }
+      return;
+    }
     dev.log('[$level] $tag: $message', name: tag, error: error);
   }
 }
