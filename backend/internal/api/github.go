@@ -297,11 +297,24 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 	rawState := r.URL.Query().Get("state")
 	state, stateOK := s.github.verifyState(rawState)
 	var installationID int64
-	if stateOK && state.InstallationID != 0 {
+	switch {
+	case stateOK && state.InstallationID != 0:
 		installationID = state.InstallationID
-	} else if recovered, ok := s.github.verifyRecovery(rawState); ok {
-		installationID = recovered
-	} else {
+	default:
+		if recovered, ok := s.github.verifyRecovery(rawState); ok {
+			installationID = recovered
+			break
+		}
+		// "Request user authorization (OAuth) during installation" sends the
+		// browser straight here with the installation id and no state at all.
+		// Accepting that id turns a hard failure into the recovery path, which
+		// still proves ownership before storing anything.
+		if id, err := strconv.ParseInt(r.URL.Query().Get("installation_id"), 10, 64); err == nil && id != 0 {
+			installationID = id
+			slog.Info("github callback without state — using installation_id",
+				"installation_id", id)
+			break
+		}
 		githubHTML(w, "انتهت صلاحية الطلب — أعد المحاولة من التطبيق.")
 		return
 	}
