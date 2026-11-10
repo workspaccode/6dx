@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -48,7 +49,14 @@ type Config struct {
 
 // Load builds a Config from the environment, failing fast on anything the
 // server cannot run without.
+//
+// A `.env` file next to the binary (or in the working directory) is read first,
+// so `go run ./cmd/api` works without exporting anything by hand. Variables
+// already present in the real environment always win.
 func Load() (*Config, error) {
+	loadDotEnv(".env")
+	loadDotEnv(filepath.Join("..", ".env"))
+
 	cfg := &Config{
 		Addr:                    env("ADDR", ":8080"),
 		DatabaseURL:             env("DATABASE_FILE", "6dx.db"),
@@ -71,7 +79,17 @@ func Load() (*Config, error) {
 
 	
 	if cfg.ProjectID == "" {
-		return nil, fmt.Errorf("FIREBASE_PROJECT_ID is required")
+		return nil, fmt.Errorf(
+			"FIREBASE_PROJECT_ID is required — copy .env.example to .env and fill it in")
+	}
+	if cfg.FirebaseCredentialsFile != "" {
+		if _, err := os.Stat(cfg.FirebaseCredentialsFile); err != nil {
+			return nil, fmt.Errorf(
+				"FIREBASE_CREDENTIALS_FILE points at %q which does not exist — "+
+					"download it from Firebase console → Project settings → "+
+					"Service accounts → Generate new private key",
+				cfg.FirebaseCredentialsFile)
+		}
 	}
 	if cfg.GitHubStateSecret == "" {
 		// The state secret must not drift between restarts: an in-flight
@@ -92,6 +110,44 @@ func (c *Config) GitHubEnabled() bool {
 	return c.GitHubAppID != "" && c.GitHubPrivateKeyPEM != "" &&
 		c.GitHubWebhookSecret != "" && c.GitHubClientID != "" &&
 		c.GitHubClientSecret != "" && c.GitHubAppSlug != ""
+}
+
+// loadDotEnv reads a KEY=VALUE file and sets the variables that are not already
+// present. A missing file is not an error: a deployment usually injects the
+// environment directly.
+func loadDotEnv(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		// Strip one layer of surrounding quotes, keeping any \n escapes for
+		// privateKeyFromEnv to expand.
+		if len(value) >= 2 {
+			if (value[0] == '"' && value[len(value)-1] == '"') ||
+				(value[0] == '\'' && value[len(value)-1] == '\'') {
+				value = value[1 : len(value)-1]
+			}
+		}
+		if key == "" {
+			continue
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		_ = os.Setenv(key, value)
+	}
 }
 
 func env(key, fallback string) string {
