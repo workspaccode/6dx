@@ -1,8 +1,9 @@
 # 6DX
 
-تطبيق إدارة مشاريع (Flutter) للموبايل والويب.
+تطبيق إدارة مشاريع (Flutter) للموبايل والويب وسطح المكتب.
 
-- **الهوية:** Firebase Auth (GitHub + بريد/كلمة سر)
+- **الهوية:** GitHub فقط — OAuth Device Flow (نفس الطريقة على Android وiOS وmacOS
+  وWindows وLinux والويب)
 - **البيانات:** Go backend على سيرفرك + SQLite (ملف واحد)
 - **GitHub:** GitHub App يشتغل عبر الـ backend (المفاتيح لا تصل للجهاز أبداً)
 
@@ -14,15 +15,14 @@
 lib/
 ├── core/
 │   ├── config/          # AppConfig (API_BASE_URL)
-│   ├── network/          # api_client (توكن Firebase + X-Workspace-Id)
+│   ├── network/          # api_client (توكن GitHub + X-Workspace-Id)
 │   │                    # current_workspace
 │   ├── errors/          # ServerException / UnauthorizedException
 │   └── storage/          # secure storage + local storage
 ├── features/
-│   ├── auth/             # تسجيل الدخول (Firebase Auth / device flow)
+│   ├── auth/             # تسجيل الدخول (GitHub device flow)
 │   ├── workspace/        # المساحة + الدعوات + قرارات العميل
 │   ├── projects/  tasks/  members/  notifications/  github/
-├── firebase_options.dart # مولّد بـ flutterfire configure
 └── main.dart
 
 backend/                 # Go API + SQLite  (اقرأ backend/README.md)
@@ -33,35 +33,34 @@ backend/                 # Go API + SQLite  (اقرأ backend/README.md)
 ```bash
 # ١) الـ backend
 cd backend
-cp .env.example .env     # املأ FIREBASE_PROJECT_ID + ملف service account
+cp .env.example .env     # املأ GITHUB_CLIENT_ID (وفعّل Device Flow في التطبيق)
 go run ./cmd/api         # ينشئ 6dx.db تلقائياً
 
 # ٢) التطبيق
 cd ..
 flutter pub get
-dart run flutterfire configure     # يولّد lib/firebase_options.dart
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8080
 ```
 
 `10.0.2.2` هو عنوان الجهاز من محاكي Android. على جهاز حقيقي استخدم عنوان
-الـ LAN، أو رابط السيرفر في الإنتاج.
+الـ LAN، أو رابط السيرفر في الإنتاج. على سطح المكتب والويب استخدم
+`http://localhost:8080`.
 
-## إعداد Firebase
+## إعداد تسجيل الدخول
 
-1. `console.firebase.google.com` → مشروعك → **Authentication**
-2. **Sign-in method** → فعّل **GitHub** و **Email/Password**
+الدخول بـ **GitHub فقط** عبر Device Flow. الإعداد مرة واحدة:
 
-> **مهم — SHA-1:** أي APK يدخل بـ Firebase Auth لازم بصمة مفتاح التوقيع تكون
-> مسجّلة في المشروع، وإلا يفشل بـ `INVALID_CERT_HASH 400` قبل ما المتصفح يفتح
-> (المتصفح يفتح ويقفل في لحظة، وبلا رسالة مفيدة).
->
-> المسجَّل حالياً (مفتاح الـ debug الذي يوقّع نسخة الـ beta):
-> `95:AA:D3:6D:71:E1:5A:56:E3:B7:66:9D:9D:B6:DF:4D:FD:8C:4E:C1`
->
-> قبل نشر نسخة بمفتاح حقيقي، أضف بصمة مفتاحك: Firebase Console →
-> Project settings → Your apps → Android → **Add fingerprint**.3. GitHub OAuth App → Authorization callback URL:
-   `https://<project>.firebaseapp.com/__/auth/handler`
-4. `dart run flutterfire configure` لتوليد `firebase_options.dart`
+1. `github.com/settings/developers` → تطبيقك (OAuth App أو GitHub App)
+2. فعّل **Enable Device Flow** — بدونه GitHub يرد `device_flow_disabled`
+3. ضع الـ **Client ID** في `backend/.env` (`GITHUB_CLIENT_ID`)
+
+الـ client id يبقى على السيرفر: الـ backend يعمل proxy لنقطتي الجهاز
+(`/auth/github/device-code` و `/auth/github/device-token`) لأن `github.com`
+لا يرسل ترويسات CORS، وبكده نفس التسجيل يشتغل في بناء الويب.
+
+المستخدم بيدخل كود من 6 خانات على `github.com/login/device`، وبعد الموافقة
+التطبيق يحفظ الـ token في التخزين المشفّر ويرسله مع كل طلب. الـ API بيتحقق منه
+عبر GitHub ويحفظ النتيجة 5 دقائق.
 
 ## إعداد GitHub App
 
@@ -83,7 +82,6 @@ cd backend && go test -tags=integration ./internal/api/   # 9 اختبارات
 ```
 
 CI (`.github/workflows/checks.yml`) يشغّل الثلاثة على كل push.
-
 ## المستندات
 
 - [backend/README.md](backend/README.md) — الـ API، الأدوار، النشر، متغيرات البيئة

@@ -78,10 +78,9 @@ func Load() (*Config, error) {
 	}
 
 	
-	if cfg.ProjectID == "" {
-		return nil, fmt.Errorf(
-			"FIREBASE_PROJECT_ID is required — copy .env.example to .env and fill it in")
-	}
+	// FIREBASE_PROJECT_ID is optional: it only keeps ID tokens issued by the
+	// old Firebase sign-in valid. The app signs in with GitHub now, and that
+	// path is verified against the GitHub API instead.
 	if cfg.FirebaseCredentialsFile != "" {
 		if _, err := os.Stat(cfg.FirebaseCredentialsFile); err != nil {
 			return nil, fmt.Errorf(

@@ -6,8 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sixdx/app/app.dart';
 import 'package:sixdx/app/app_providers.dart';
 import 'package:sixdx/core/storage/local_storage_service.dart';
+import 'package:sixdx/core/storage/secure_storage_provider.dart';
 import 'package:sixdx/core/storage/secure_storage_service.dart';
-import 'package:sixdx/features/auth/presentation/providers/auth_providers.dart';
 
 /// In-memory replacement for the platform keychain so the test never touches
 /// a method channel.

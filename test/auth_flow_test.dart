@@ -1,7 +1,8 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sixdx/core/storage/secure_storage_service.dart';
-import 'package:sixdx/features/auth/data/backends/device_flow_auth_backend.dart';
+import 'package:sixdx/features/auth/data/backends/github_auth_backend.dart';
 import 'package:sixdx/features/auth/data/datasources/auth_local_data_source.dart';
 import 'package:sixdx/features/auth/data/datasources/github_auth_data_source.dart';
 import 'package:sixdx/features/auth/data/repositories/auth_repository_impl.dart';
@@ -55,17 +56,30 @@ class _FakeGithubDataSource extends GithubAuthDataSource {
   }
 }
 
+/// In-memory keychain so the test never touches a method channel.
+class _MemorySecureStorage extends SecureStorageService {
+  _MemorySecureStorage() : super(const FlutterSecureStorage());
+
+  String? _token;
+
+  @override
+  Future<String?> readAccessToken() async => _token;
+
+  @override
+  Future<void> writeAccessToken(String token) async => _token = token;
+
+  @override
+  Future<void> deleteAccessToken() async => _token = null;
+}
+
 void main() {
   test('github device flow: request code, poll until approved, then sign in',
       () async {
     final github = _FakeGithubDataSource();
+    final storage = _MemorySecureStorage();
     final repository = AuthRepositoryImpl(
-      local: _unusedLocal(),
-      github: github,
-      backend: DeviceFlowAuthBackend(
-        github: github,
-        secureStorage: SecureStorageService(),
-      ),
+      local: AuthLocalDataSource(storage),
+      backend: GithubAuthBackend(github: github, secureStorage: storage),
     );
 
     // Step 1 — the app asks GitHub for a code the user confirms.
@@ -78,8 +92,10 @@ void main() {
 
     // Step 2 — the app polls until the user approved the device.
     final pending = <bool>[];
-    final signedIn =
-        await repository.completeGithubDeviceFlow(deviceCode, onPending: pending.add);
+    final signedIn = await repository.completeGithubDeviceFlow(
+      deviceCode,
+      onPending: pending.add,
+    );
     final user = signedIn.dataOrNull;
 
     expect(user, isNotNull);
@@ -90,26 +106,37 @@ void main() {
     expect(github.pollCalls, 3);
     expect(pending, isNotEmpty);
     expect(github.userCalls, 1);
+    // The grant is what the API client sends as the bearer token.
+    expect(await storage.readAccessToken(), 'gho_test_token');
   });
 
-  test('the device code is never exchanged as an OAuth authorization code',
-      () async {
-    // The repository must never call `exchangeCode` — that endpoint expects a
-    // real browser redirect code, which the app does not use.
+  test('signing out drops the stored grant', () async {
     final github = _FakeGithubDataSource();
+    final storage = _MemorySecureStorage();
     final repository = AuthRepositoryImpl(
-      local: _unusedLocal(),
-      github: github,
-      backend: DeviceFlowAuthBackend(
-        github: github,
-        secureStorage: SecureStorageService(),
-      ),
+      local: AuthLocalDataSource(storage),
+      backend: GithubAuthBackend(github: github, secureStorage: storage),
     );
 
-    await repository.startGithubDeviceFlow();
-    expect(github.deviceCodeCalls, 1);
+    final started = await repository.startGithubDeviceFlow();
+    await repository.completeGithubDeviceFlow(started.dataOrNull!);
+    expect(await storage.readAccessToken(), isNotNull);
+
+    await repository.signOut();
+    expect(await storage.readAccessToken(), isNull);
+  });
+
+  test('a stored grant restores the session without a new sign-in', () async {
+    final github = _FakeGithubDataSource();
+    final storage = _MemorySecureStorage();
+    await storage.writeAccessToken('gho_existing');
+    final repository = AuthRepositoryImpl(
+      local: AuthLocalDataSource(storage),
+      backend: GithubAuthBackend(github: github, secureStorage: storage),
+    );
+
+    final restored = await repository.currentUser();
+    expect(restored.dataOrNull?.login, 'sami');
+    expect(github.userCalls, 1);
   });
 }
-
-AuthLocalDataSource _unusedLocal() =>
-    AuthLocalDataSource(SecureStorageService());

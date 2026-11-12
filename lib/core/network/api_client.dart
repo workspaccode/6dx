@@ -1,21 +1,22 @@
 import 'package:dio/dio.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
 import '../errors/exceptions.dart';
+import '../storage/secure_storage_provider.dart';
+import '../storage/secure_storage_service.dart';
 import '../utils/logger.dart';
 
 /// Talks to the 6DX Go backend.
 ///
-/// Firebase is the identity provider only: every request carries the Firebase
-/// ID token and the API verifies it before touching the database. The active
-/// workspace travels in `X-Workspace-Id` so an account that belongs to several
+/// Every request carries the GitHub grant the device flow stored; the API
+/// verifies it with GitHub before touching the database. The active workspace
+/// travels in `X-Workspace-Id` so an account that belongs to several
 /// workspaces acts on the one the UI is showing.
 class ApiClient {
-  ApiClient({Dio? dio, FirebaseAuth? auth})
+  ApiClient({Dio? dio, SecureStorageService? secureStorage})
       : _dio = dio ?? Dio(),
-        _authOverride = auth {
+        _secureStorage = secureStorage {
     _dio.options.baseUrl = AppConfig.apiBaseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 20);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
@@ -24,23 +25,11 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          final auth = _auth;
-          final user = auth?.currentUser;
-          if (user == null) {
+          final token = await _secureStorage?.readAccessToken();
+          if (token == null || token.isEmpty) {
             // Without a session there is nothing to authorise, so the request
             // is rejected locally: the API would answer 401 anyway, and the
             // screens must render their signed-out state, not a network error.
-            handler.reject(
-              DioException(
-                requestOptions: options,
-                error: const UnauthorizedException(),
-                type: DioExceptionType.cancel,
-              ),
-            );
-            return;
-          }
-          final token = await user.getIdToken();
-          if (token == null) {
             handler.reject(
               DioException(
                 requestOptions: options,
@@ -63,17 +52,8 @@ class ApiClient {
   }
 
   final Dio _dio;
-  final FirebaseAuth? _authOverride;
+  final SecureStorageService? _secureStorage;
 
-  /// Resolved per use so a unit test can build the client without Firebase.
-  FirebaseAuth? get _auth {
-    if (_authOverride != null) return _authOverride;
-    try {
-      return FirebaseAuth.instance;
-    } catch (_) {
-      return null;
-    }
-  }
 
   /// The workspace the UI is showing; sent as `X-Workspace-Id`.
   String? activeWorkspaceId;
@@ -167,4 +147,6 @@ class ApiClient {
       '${DateTime.now().difference(started).inMilliseconds}';
 }
 
-final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+final apiClientProvider = Provider<ApiClient>(
+  (ref) => ApiClient(secureStorage: ref.watch(secureStorageProvider)),
+);

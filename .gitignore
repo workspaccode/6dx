@@ -66,6 +66,7 @@ backend/*.exe
 backend/*.db
 backend/*.db-shm
 backend/*.db-wal
+backend/.run/
 
 # Build output
 *.apk

@@ -1,27 +1,19 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'app/app_providers.dart';
-import 'core/config/app_config.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/storage/local_storage_service.dart';
-import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (AppConfig.useFirebaseAuth && !AppConfig.useDeviceFlowFallback) {
-    // Firebase is the identity provider only — the data lives in the Go
-    // backend (see backend/), so nothing but Auth is initialised here.
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  }
-
+  // Identity is GitHub's: the device flow talks to github.com over HTTPS and
+  // the Go backend verifies the resulting grant, so nothing here depends on a
+  // platform specific auth plugin.
   final localStorage = await LocalStorageService.create();
 
   runApp(

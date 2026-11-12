@@ -14,12 +14,7 @@ import 'package:sixdx/features/auth/presentation/providers/auth_providers.dart';
 
 /// A repository that records what the login screen asks for.
 class _FakeAuthRepository implements AuthRepository {
-  _FakeAuthRepository({
-    this.failAtStart = false,
-    this.approval,
-    this.usesDeviceCode = true,
-    this.browserSignInFails = false,
-  });
+  _FakeAuthRepository({this.failAtStart = false, this.approval});
 
   final bool failAtStart;
 
@@ -27,28 +22,8 @@ class _FakeAuthRepository implements AuthRepository {
   /// when GitHub "approves" the device.
   final Completer<bool>? approval;
 
-  /// `false` mimics the browser based backend (Firebase).
-  final bool usesDeviceCode;
-
-  final bool browserSignInFails;
-
   int startCalls = 0;
   int completeCalls = 0;
-  int browserCalls = 0;
-
-  @override
-  bool get usesGithubDeviceCode => usesDeviceCode;
-
-  @override
-  Future<Result<AuthUser>> signInWithGithub() async {
-    browserCalls++;
-    if (browserSignInFails) {
-      return const Result.failure(Failure.network('تعذّر تسجيل الدخول'));
-    }
-    return const Result.success(
-      AuthUser(id: '42', login: 'sami', name: 'Sami'),
-    );
-  }
 
   @override
   Future<Result<GithubDeviceCode>> startGithubDeviceFlow() async {
@@ -82,28 +57,6 @@ class _FakeAuthRepository implements AuthRepository {
       AuthUser(id: '42', login: 'sami', name: 'Sami'),
     );
   }
-
-  @override
-  Future<Result<AuthUser>> signInWithEmail({
-    required String email,
-    required String password,
-  }) async =>
-      const Result.failure(Failure.unknown('not used'));
-
-  @override
-  Future<Result<AuthUser>> registerWithEmail({
-    required String email,
-    required String password,
-    required String displayName,
-  }) async =>
-      const Result.failure(Failure.unknown('not used'));
-
-  @override
-  Future<Result<AuthUser>> verifyOtp({
-    required String email,
-    required String otp,
-  }) async =>
-      const Result.failure(Failure.unknown('not used'));
 
   @override
   Future<Result<AuthUser?>> currentUser() async => const Result.success(null);
@@ -151,6 +104,18 @@ void main() {
     expect(find.text('فتح GitHub'), findsOneWidget);
   });
 
+  testWidgets('no e-mail or password fields remain on the sign-in screen',
+      (tester) async {
+    final repository = _FakeAuthRepository();
+    await _pumpLogin(tester, repository);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('الدخول بالبريد الإلكتروني'), findsNothing);
+    expect(find.text('إنشاء حساب جديد'), findsNothing);
+    expect(find.text('المتابعة باستخدام GitHub'), findsOneWidget);
+  });
+
   testWidgets('a successful sign-in navigates to the home screen',
       (tester) async {
     final approval = Completer<bool>();
@@ -186,53 +151,12 @@ void main() {
 
     expect(repository.startCalls, 1);
     expect(find.text('المتابعة باستخدام GitHub'), findsOneWidget);
+    expect(find.text('تعذّر الاتصال'), findsOneWidget);
 
     final button = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'المتابعة باستخدام GitHub'),
     );
     expect(button.onPressed, isNotNull,
         reason: 'the button must not stay disabled after a failure');
-  });
-
-  testWidgets('the browser flow (Firebase) signs in without a device code',
-      (tester) async {
-    final repository = _FakeAuthRepository(usesDeviceCode: false);
-    await _pumpLogin(tester, repository);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('المتابعة باستخدام GitHub'));
-    await tester.pump();
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 400));
-    }
-
-    expect(repository.browserCalls, 1);
-    // No device code sheet: the browser owns the flow.
-    expect(repository.startCalls, 0);
-    expect(find.text('فتح GitHub'), findsNothing);
-    expect(find.text('HOME_SCREEN'), findsOneWidget);
-  });
-
-  testWidgets('a browser sign-in failure shows the reason and stays usable',
-      (tester) async {
-    final repository = _FakeAuthRepository(
-      usesDeviceCode: false,
-      browserSignInFails: true,
-    );
-    await _pumpLogin(tester, repository);
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('المتابعة باستخدام GitHub'));
-    await tester.pump();
-    for (var i = 0; i < 6; i++) {
-      await tester.pump(const Duration(milliseconds: 400));
-    }
-
-    expect(repository.browserCalls, 1);
-    expect(find.text('تعذّر تسجيل الدخول'), findsOneWidget);
-    final button = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'المتابعة باستخدام GitHub'),
-    );
-    expect(button.onPressed, isNotNull);
   });
 }

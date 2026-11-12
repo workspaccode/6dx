@@ -17,8 +17,6 @@ class AppRouterConfig extends RootStackRouter {
         AutoRoute(page: SplashRoute.page, path: '/', initial: true),
         AutoRoute(page: OnboardingRoute.page, path: '/onboarding'),
         AutoRoute(page: LoginRoute.page, path: '/login'),
-        AutoRoute(page: SignUpRoute.page, path: '/signup'),
-        AutoRoute(page: VerifyOtpRoute.page, path: '/verify-otp'),
         AutoRoute(page: SetupChecklistRoute.page, path: '/setup'),
         AutoRoute(page: ProjectsRoute.page, path: '/home/projects'),
         AutoRoute(page: MyTasksRoute.page, path: '/home/my-tasks'),

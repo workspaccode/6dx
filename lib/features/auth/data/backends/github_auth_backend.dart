@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import '../../../../core/errors/exceptions.dart';
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../domain/entities/auth_user.dart';
@@ -10,10 +9,11 @@ import 'auth_backend.dart';
 
 /// GitHub OAuth **device flow** backend.
 ///
-/// Used when Firebase is not configured. The user confirms a short code on
-/// github.com and the app polls GitHub until the grant is approved.
-class DeviceFlowAuthBackend implements AuthBackend {
-  DeviceFlowAuthBackend({
+/// The user confirms a short code on github.com and the app polls GitHub until
+/// the grant is approved. The GitHub access token it stores is the credential
+/// every API request carries, which the Go backend verifies against GitHub.
+class GithubAuthBackend implements AuthBackend {
+  GithubAuthBackend({
     required GithubAuthDataSource github,
     required SecureStorageService secureStorage,
   })  : _github = github,
@@ -22,19 +22,10 @@ class DeviceFlowAuthBackend implements AuthBackend {
   final GithubAuthDataSource _github;
   final SecureStorageService _secureStorage;
 
-  static const String _tag = 'DeviceFlow';
+  static const String _tag = 'GitHubAuth';
 
   @override
   String get name => 'GitHub Device Flow';
-
-  @override
-  bool get isConfigured => true;
-
-  @override
-  bool get usesDeviceCode => true;
-
-  @override
-  Stream<AuthUser?> get authStateChanges => const Stream.empty();
 
   @override
   Future<AuthUser?> restoreSession() async {
@@ -54,21 +45,20 @@ class DeviceFlowAuthBackend implements AuthBackend {
   }
 
   @override
-  Future<AuthUser> signInWithGithub() async {
+  Future<GithubDeviceCode> requestDeviceCode() async {
     AppLogger.action(_tag, 'sign-in: requesting a device code');
     final code = await _github.requestDeviceCode();
     AppLogger.action(_tag, 'sign-in: device code received (${code.userCode})');
-    final deviceCode = GithubDeviceCode(
+    return GithubDeviceCode(
       deviceCode: code.deviceCode,
       userCode: code.userCode,
       verificationUri: code.verificationUri,
       interval: code.interval,
       expiresIn: code.expiresIn,
     );
-    return completeDeviceFlow(deviceCode);
   }
 
-  /// Polls GitHub until the user approved the device, then signs in.
+  @override
   Future<AuthUser> completeDeviceFlow(
     GithubDeviceCode deviceCode, {
     void Function(bool pending)? onPending,
@@ -88,7 +78,10 @@ class DeviceFlowAuthBackend implements AuthBackend {
       // GitHub answers `slow_down` when the app polls too often.
       if (poll.interval != null && poll.interval != interval) {
         interval = poll.interval!;
-        AppLogger.action(_tag, 'GitHub asked to slow down: polling every ${interval}s');
+        AppLogger.action(
+          _tag,
+          'GitHub asked to slow down: polling every ${interval}s',
+        );
       }
       onPending?.call(true);
       await Future<void>.delayed(Duration(seconds: interval));
@@ -108,37 +101,10 @@ class DeviceFlowAuthBackend implements AuthBackend {
   @override
   Future<void> signOut() async {
     AppLogger.action(_tag, 'sign-out');
+    // The grant is deleted locally only: revoking it on GitHub needs the OAuth
+    // app **client secret**, which by design never ships inside the app.
     await _secureStorage.deleteAccessToken();
   }
-
-  // E-mail sign-in lives in Firebase Auth; this backend only knows GitHub.
-  @override
-  Future<AuthUser> signInWithEmail({
-    required String email,
-    required String password,
-  }) async =>
-      throw const ServerException(
-        'تسجيل الدخول بالبريد يحتاج Firebase — اضبط مشروع Firebase أولاً.',
-      );
-
-  @override
-  Future<AuthUser> registerWithEmail({
-    required String email,
-    required String password,
-    required String displayName,
-  }) async =>
-      throw const ServerException(
-        'إنشاء حساب بالبريد يحتاج Firebase — اضبط مشروع Firebase أولاً.',
-      );
-
-  @override
-  Future<AuthUser> verifyOtp({
-    required String email,
-    required String otp,
-  }) async =>
-      throw const ServerException(
-        'تأكيد الكود يحتاج Firebase — اضبط مشروع Firebase أولاً.',
-      );
 
   AuthUser _toUser(
     Map<String, dynamic> payload,

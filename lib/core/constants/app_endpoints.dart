@@ -7,6 +7,8 @@ class AppEndpoints {
 
   static const String githubBaseUrl = 'https://api.github.com';
 
-  /// GitHub OAuth (device flow) lives here.
+  /// github.com itself is only reached by the backend now: the device-flow
+  /// endpoints are proxied (see `backend/internal/api/auth_flow.go`) because
+  /// they send no CORS headers.
   static const String githubOAuthBaseUrl = 'https://github.com';
 }

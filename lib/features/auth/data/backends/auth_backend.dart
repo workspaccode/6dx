@@ -1,54 +1,27 @@
 import '../../domain/entities/auth_user.dart';
+import '../../domain/entities/github_device_code.dart';
 
-/// A pluggable authentication backend.
+/// The single authentication backend: the GitHub OAuth device flow.
 ///
-/// 6DX signs in with Firebase Auth (GitHub OAuth in the browser, or
-/// e-mail + password). When Firebase is not configured the app falls back to
-/// the GitHub OAuth device flow, so the tester build still works with nothing
-/// but a GitHub client id.
+/// It is the same plain HTTPS round trip on every platform (Android, iOS,
+/// macOS, Windows, Linux and web): no deep links, no embedded browser and no
+/// per-platform OAuth client configuration to keep in sync.
 abstract interface class AuthBackend {
-  /// Human readable name, shown in the login screen.
+  /// Human readable name, shown in the logs.
   String get name;
-
-  /// Whether the backend is ready to be used.
-  bool get isConfigured;
-
-  /// Whether the GitHub sign-in needs a short code the user types on
-  /// github.com (the device flow), instead of a browser redirect that comes
-  /// back through a deep link.
-  bool get usesDeviceCode;
 
   /// Restores a previously stored session, if any.
   Future<AuthUser?> restoreSession();
 
-  /// Starts the GitHub sign-in flow and resolves once the user is signed in.
-  Future<AuthUser> signInWithGithub();
+  /// Step 1: asks GitHub for a code the user types on github.com.
+  Future<GithubDeviceCode> requestDeviceCode();
 
-  /// E-mail + password sign-in.
-  ///
-  /// Only the Firebase backend supports it; the GitHub device-flow fallback has
-  /// no user database of its own.
-  Future<AuthUser> signInWithEmail({
-    required String email,
-    required String password,
+  /// Step 2: polls GitHub until the device is approved, then stores the grant.
+  Future<AuthUser> completeDeviceFlow(
+    GithubDeviceCode deviceCode, {
+    void Function(bool pending)? onPending,
   });
-
-  /// Creates an account and sends the confirmation code.
-  ///
-  /// Returns the pending user: with e-mail confirmation enabled there is no
-  /// session until [verifyOtp] succeeds.
-  Future<AuthUser> registerWithEmail({
-    required String email,
-    required String password,
-    required String displayName,
-  });
-
-  /// Confirms a sign-up code.
-  Future<AuthUser> verifyOtp({required String email, required String otp});
 
   /// Ends the session.
   Future<void> signOut();
-
-  /// Emits whenever the session changes (sign-in, sign-out, token refresh).
-  Stream<AuthUser?> get authStateChanges;
 }

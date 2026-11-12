@@ -49,8 +49,6 @@ const List<WebRoute> webRoutes = [
   ),
   // الحساب والدخول
   WebRoute(path: 'login', title: 'تسجيل الدخول', section: 'الحساب والدخول'),
-  WebRoute(path: 'signup', title: 'إنشاء حساب', section: 'الحساب والدخول'),
-  WebRoute(path: 'verify', title: 'كود التحقق', section: 'الحساب والدخول'),
   WebRoute(path: 'onboarding', title: 'إعداد مساحة العمل', section: 'الحساب والدخول'),
   WebRoute(path: 'accept-invite', title: 'قبول الدعوة', section: 'الحساب والدخول'),
   WebRoute(path: 'invite-expired', title: 'دعوة منتهية', section: 'الحساب والدخول'),

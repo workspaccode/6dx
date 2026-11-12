@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,62 +24,13 @@ class LoginPage extends ConsumerStatefulWidget {
 }
 
 class _LoginPageState extends ConsumerState<LoginPage> {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _obscurePassword = true;
-  bool _showEmailForm = false;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _submitEmailSignIn() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-    AppLogger.action('LoginPage', 'tapped "sign in with email" for $email');
-    if (email.isEmpty || password.isEmpty) {
-      _showSnack('أدخل البريد الإلكتروني وكلمة المرور');
-      return;
-    }
-    final ok = await ref.read(authNotifierProvider.notifier).signInWithEmail(
-          email: email,
-          password: password,
-        );
-    if (!mounted) return;
-    if (ok) {
-      context.go(AppRoutes.home);
-    } else {
-      _showSnack('تعذّر تسجيل الدخول، حاول مرة أخرى');
-    }
-  }
-
-  /// GitHub sign-in. Firebase runs the OAuth round trip in the browser and
-  /// answers through a deep link; the fallback backend shows a device code the
-  /// user confirms on github.com and polls until it is approved.
+  /// GitHub sign-in: the same device flow on every platform. Firebase used to
+  /// own a browser round trip that only existed on some platforms and needed a
+  /// deep link back into the app; the device flow is plain HTTPS and behaves
+  /// identically on Android, iOS, macOS, Windows, Linux and web.
   Future<void> _continueWithGithub() async {
     AppLogger.action('LoginPage', 'tapped "continue with GitHub"');
     final notifier = ref.read(authNotifierProvider.notifier);
-
-    if (!notifier.usesDeviceCode) {
-      final result = await notifier.signInWithGithub();
-      if (!mounted) return;
-      final user = result.dataOrNull;
-      if (user != null) {
-        AppLogger.action(
-          'LoginPage',
-          'sign-in with GitHub finished, opening the app',
-        );
-        context.go(AppRoutes.home);
-        return;
-      }
-      final reason = result.failureOrNull?.message ?? 'تعذّر الاتصال بـ GitHub';
-      AppLogger.action('LoginPage', 'sign-in with GitHub failed: $reason');
-      _showSnack(reason);
-      return;
-    }
 
     final started = await notifier.startGithubDeviceFlow();
     final deviceCode = started.dataOrNull;
@@ -105,26 +57,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isDismissible: true,
+      isScrollControlled: true,
       builder: (sheetContext) => _DeviceCodeSheet(
         userCode: deviceCode.userCode,
         verificationUri: deviceCode.verificationUri,
-        startFlow: (onPending) =>
-            _pollForApproval(deviceCode, onPending),
+        startFlow: (onPending) => ref
+            .read(authNotifierProvider.notifier)
+            .completeGithubDeviceFlow(deviceCode, onPending: onPending),
         onOpenBrowser: () => _openBrowser(deviceCode.verificationUri),
       ),
     );
     return result == true;
-  }
-
-  /// Polls GitHub until the user approved the device and signs in.
-  Future<bool> _pollForApproval(
-    GithubDeviceCode deviceCode,
-    void Function(bool pending) onPending,
-  ) async {
-    final ok = await ref
-        .read(authNotifierProvider.notifier)
-        .completeGithubDeviceFlow(deviceCode, onPending: onPending);
-    return ok;
   }
 
   Future<void> _openBrowser(String uri) async {
@@ -199,48 +142,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ? 'جارٍ الاتصال بـ GitHub…'
                           : 'المتابعة باستخدام GitHub'),
                     ),
-                    const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: isLoading
-                          ? null
-                          : () => setState(() => _showEmailForm = true),
-                      child: const Text('الدخول بالبريد الإلكتروني'),
-                    ),
-                    if (_showEmailForm) ...[
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _emailController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: const InputDecoration(labelText: 'البريد الإلكتروني'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: _obscurePassword,
-                        decoration: InputDecoration(
-                          labelText: 'كلمة المرور',
-                          suffixIcon: IconButton(
-                            onPressed: () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
-                            icon: Icon(
-                              _obscurePassword
-                                  ? Icons.visibility_outlined
-                                  : Icons.visibility_off_outlined,
-                            ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'الدخول بحساب GitHub فقط — يشتغل بنفس الطريقة على الجوال '
+                      'وسطح المكتب والويب.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            fontSize: 11,
+                            color: AppColors.textDim,
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: isLoading ? null : _submitEmailSignIn,
-                        child: const Text('تسجيل الدخول'),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    TextButton(
-                      onPressed: isLoading ? null : () => context.push(AppRoutes.signUp),
-                      child: const Text('إنشاء حساب جديد'),
                     ),
                     const SizedBox(height: 24),
                     Row(
@@ -270,7 +180,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-/// Decorative card preview shown above the login form.
+/// Decorative card preview shown above the sign-in button.
 class _HeroCard extends StatelessWidget {
   const _HeroCard();
 
@@ -312,7 +222,7 @@ class _HeroCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'صفحة تسجيل الدخول بكود OTP',
+            'دخول بكود جهاز من GitHub',
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 12),
@@ -410,6 +320,14 @@ class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
     Navigator.of(context).pop(ok);
   }
 
+  Future<void> _copyCode() async {
+    await Clipboard.setData(ClipboardData(text: widget.userCode));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('تم نسخ الكود')));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -424,7 +342,7 @@ class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
           ),
           const SizedBox(height: 8),
           Text(
-            'افتح صفحة GitHub واكتب الكود التالي لتأكيد الدخول.',
+            'افتح صفحة GitHub واكتب الكود التالي لتأكيد الدخول من هذا الجهاز.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 20),
@@ -447,7 +365,13 @@ class _DeviceCodeSheetState extends State<_DeviceCodeSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _copyCode,
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('نسخ الكود'),
+          ),
+          const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: widget.onOpenBrowser,
             icon: const Icon(Icons.open_in_new_rounded),

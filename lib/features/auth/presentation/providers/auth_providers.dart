@@ -1,14 +1,12 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/constants/app_endpoints.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/storage/secure_storage_provider.dart';
 import '../../../../core/utils/logger.dart';
-import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/result.dart';
 import '../../data/backends/auth_backend.dart';
-import '../../data/backends/device_flow_auth_backend.dart';
-import '../../data/backends/firebase_auth_backend.dart';
+import '../../data/backends/github_auth_backend.dart';
 import '../../data/datasources/auth_local_data_source.dart';
 import '../../data/datasources/github_auth_data_source.dart';
 import '../../data/repositories/auth_repository_impl.dart';
@@ -17,24 +15,16 @@ import '../../domain/entities/github_device_code.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/usecases/auth_usecases.dart';
 
-/// Infrastructure providers (composition root).
-final secureStorageProvider = Provider<SecureStorageService>(
-  (ref) => SecureStorageService(),
-);
-
-/// The OAuth endpoints live on github.com, not on api.github.com. They need
-/// their own client: Dio prepends `baseUrl` to every path, so an absolute
-/// URL would end up as `https://api.github.com/https://github.com/...`.
+/// The OAuth host is reached through the 6DX API: github.com sends no CORS
+/// headers, so a browser build cannot call the device-flow endpoints directly.
+/// The API proxies them and answers with GitHub's payload unchanged.
 final githubOAuthDioProvider = Provider<Dio>(
   (ref) => Dio(
     BaseOptions(
-      baseUrl: AppEndpoints.githubOAuthBaseUrl,
+      baseUrl: AppConfig.apiBaseUrl,
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
-      headers: const {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
+      headers: const {'Accept': 'application/json'},
     ),
   ),
 );
@@ -47,50 +37,29 @@ final githubAuthDataSourceProvider = Provider<GithubAuthDataSource>(
   (ref) => GithubAuthDataSource(ref.watch(githubOAuthDioProvider)),
 );
 
-/// Firebase Auth is the default; the GitHub OAuth device flow stays as a
-/// fallback for tester builds without a Firebase project.
-final authBackendProvider = Provider<AuthBackend>((ref) {
-  final secureStorage = ref.watch(secureStorageProvider);
-  if (AppConfig.useFirebaseAuth && !AppConfig.useDeviceFlowFallback) {
-    return FirebaseAuthBackend(secureStorage: secureStorage);
-  }
-  return DeviceFlowAuthBackend(
+/// GitHub is the only identity provider, through the OAuth device flow, which
+/// behaves the same on every platform the app ships.
+final authBackendProvider = Provider<AuthBackend>(
+  (ref) => GithubAuthBackend(
     github: ref.watch(githubAuthDataSourceProvider),
-    secureStorage: secureStorage,
-  );
-});
+    secureStorage: ref.watch(secureStorageProvider),
+  ),
+);
 
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepositoryImpl(
     local: ref.watch(authLocalDataSourceProvider),
-    github: ref.watch(githubAuthDataSourceProvider),
     backend: ref.watch(authBackendProvider),
   ),
 );
 
 // Use cases
-final signInWithGithubProvider = Provider<SignInWithGithub>(
-  (ref) => SignInWithGithub(ref.watch(authRepositoryProvider)),
-);
-
 final startGithubDeviceFlowProvider = Provider<StartGithubDeviceFlow>(
   (ref) => StartGithubDeviceFlow(ref.watch(authRepositoryProvider)),
 );
 
 final completeGithubDeviceFlowProvider = Provider<CompleteGithubDeviceFlow>(
   (ref) => CompleteGithubDeviceFlow(ref.watch(authRepositoryProvider)),
-);
-
-final signInWithEmailProvider = Provider<SignInWithEmail>(
-  (ref) => SignInWithEmail(ref.watch(authRepositoryProvider)),
-);
-
-final registerWithEmailProvider = Provider<RegisterWithEmail>(
-  (ref) => RegisterWithEmail(ref.watch(authRepositoryProvider)),
-);
-
-final verifyOtpProvider = Provider<VerifyOtp>(
-  (ref) => VerifyOtp(ref.watch(authRepositoryProvider)),
 );
 
 final getCurrentUserProvider = Provider<GetCurrentUser>(
@@ -116,24 +85,6 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
     return user;
   }
 
-  /// `true` when GitHub sign-in needs a code typed on github.com, `false` when
-  /// it completes in the browser and comes back through a deep link.
-  bool get usesDeviceCode =>
-      ref.read(authRepositoryProvider).usesGithubDeviceCode;
-
-  /// Browser based sign-in (Firebase): opens GitHub in the browser and waits
-  /// for the deep link that carries the session.
-  Future<Result<AuthUser>> signInWithGithub() async {
-    final previous = state;
-    state = const AsyncLoading();
-    final result = await ref.read(signInWithGithubProvider).call();
-    final user = result.dataOrNull;
-    state = user != null
-        ? AsyncData(user)
-        : (previous.hasValue ? previous : const AsyncData(null));
-    return result;
-  }
-
   /// Step 1: ask GitHub for a device code the user confirms on the web.
   ///
   /// The state is restored afterwards so the sign-in button never stays
@@ -156,45 +107,9 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
           deviceCode,
           onPending: onPending,
         );
-    return _apply(result);
-  }
-
-  Future<bool> signInWithEmail({
-    required String email,
-    required String password,
-  }) async {
-    state = const AsyncLoading();
-    final result = await ref.read(signInWithEmailProvider).call(
-          email: email,
-          password: password,
-        );
-    return _apply(result);
-  }
-
-  Future<bool> register({
-    required String email,
-    required String password,
-    required String displayName,
-  }) async {
-    state = const AsyncLoading();
-    final result = await ref.read(registerWithEmailProvider).call(
-          email: email,
-          password: password,
-          displayName: displayName,
-        );
     final user = result.dataOrNull;
-    // A fresh sign-up has no session until the code is confirmed, so the state
-    // stays "signed out" and the screen moves on to the OTP step.
-    final signedIn = user != null && user.accessToken != null;
-    state = signedIn ? AsyncData(user) : const AsyncData(null);
+    state = AsyncData(user);
     return user != null;
-  }
-
-  Future<bool> verifyOtp({required String email, required String otp}) async {
-    state = const AsyncLoading();
-    final result =
-        await ref.read(verifyOtpProvider).call(email: email, otp: otp);
-    return _apply(result);
   }
 
   Future<void> signOut() async {
@@ -202,29 +117,10 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
     await ref.read(signOutProvider).call();
     state = const AsyncData(null);
   }
-
-  bool _apply(Result<AuthUser> result) {
-    final data = result.dataOrNull;
-    state = AsyncData(data);
-    return data != null;
-  }
 }
 
 final authNotifierProvider =
     AsyncNotifierProvider<AuthNotifier, AuthUser?>(AuthNotifier.new);
-
-/// The address a sign-up code was sent to, so the OTP screen can confirm it.
-class PendingSignupEmailNotifier extends Notifier<String> {
-  @override
-  String build() => '';
-
-  void set(String email) => state = email;
-}
-
-final pendingSignupEmailProvider =
-    NotifierProvider<PendingSignupEmailNotifier, String>(
-  PendingSignupEmailNotifier.new,
-);
 
 /// Convenience selector: `true` when a user session exists.
 final isSignedInProvider = Provider<bool>(

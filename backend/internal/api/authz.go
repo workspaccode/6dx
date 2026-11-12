@@ -104,9 +104,9 @@ func (s *store) requireOwner(ctx context.Context, workspaceID, uid string) (Role
 	return role, nil
 }
 
-// upsertUser keeps the local mirror of the Firebase identity fresh. The email,
-// name, avatar and GitHub id come from the verified token, never from the
-// request body.
+// upsertUser mirrors the caller into `users`. The uid is the identity the whole
+// schema keys on, so callers resolve it from `github_id` first (see
+// `withStoredIdentity`) instead of assuming one.
 func (s *store) upsertUser(ctx context.Context, caller *auth.Caller) error {
 	now := nowString()
 	_, err := s.db.ExecContext(ctx, `

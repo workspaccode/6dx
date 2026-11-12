@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 
-import '../../../../core/constants/app_constants.dart';
 import '../../../../core/constants/app_endpoints.dart';
 import '../../../../core/errors/exceptions.dart';
 
@@ -44,19 +43,14 @@ class GithubTokenPoll {
 class GithubAuthDataSource {
   GithubAuthDataSource(this._dio);
 
+  /// Points at the 6DX API: the device-flow calls are proxied there because
+  /// github.com sends no CORS headers, which would break the web build.
   final Dio _dio;
 
   /// Step 1 of the GitHub OAuth *device flow*: ask GitHub for a user code the
-  /// user can confirm in the browser. Works on mobile, desktop and web
-  /// without needing a redirect URI.
+  /// user can confirm in the browser.
   Future<GithubDeviceCodeResponse> requestDeviceCode() async {
-    final data = await _post(
-      '/login/device/code',
-      {
-        'client_id': AppConstants.githubClientId,
-        'scope': AppConstants.githubScopes,
-      },
-    );
+    final data = await _postDeviceFlow('/auth/github/device-code', const {});
     return GithubDeviceCodeResponse(
       deviceCode: data['device_code'] as String,
       userCode: data['user_code'] as String,
@@ -66,15 +60,11 @@ class GithubAuthDataSource {
     );
   }
 
-  /// Step 2: poll GitHub until the user approved the device.
+  /// Step 2: poll until the user approved the device.
   Future<GithubTokenPoll> pollAccessToken({required String deviceCode}) async {
-    final data = await _post(
-      '/login/oauth/access_token',
-      {
-        'client_id': AppConstants.githubClientId,
-        'device_code': deviceCode,
-        'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
-      },
+    final data = await _postDeviceFlow(
+      '/auth/github/device-token',
+      {'device_code': deviceCode},
       // `authorization_pending` and `slow_down` are normal answers of the
       // device flow, not failures: GitHub reports them in the body.
       tolerateOAuthError: true,
@@ -99,45 +89,49 @@ class GithubAuthDataSource {
   }
 
   /// Loads the authenticated GitHub user.
+  ///
+  /// api.github.com allows cross-origin reads, so this call goes straight to
+  /// GitHub from every platform, the browser included.
   Future<Map<String, dynamic>> fetchUser(String token) async {
     final response = await _dio.get<Map<String, dynamic>>(
       '${AppEndpoints.githubBaseUrl}/user',
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
+      options: Options(headers: _githubHeaders(token)),
     );
     return response.data ?? const <String, dynamic>{};
   }
 
   Future<Map<String, dynamic>> fetchPrimaryEmail(String token) async {
-    final response = await _dio.get<List<dynamic>>(
+    final response = await _dio.get<dynamic>(
       '${AppEndpoints.githubBaseUrl}/user/emails',
-      options: Options(headers: {'Authorization': 'Bearer $token'}),
+      options: Options(headers: _githubHeaders(token)),
     );
-    final emails = response.data ?? const <dynamic>[];
+    final emails = response.data;
+    if (emails is! List) return const <String, dynamic>{};
     for (final email in emails) {
-      if (email is Map<String, dynamic> && email['primary'] == true) {
-        return email;
+      if (email is Map && email['primary'] == true) {
+        return <String, dynamic>{
+          for (final entry in email.entries) '${entry.key}': entry.value,
+        };
       }
     }
     return const <String, dynamic>{};
   }
 
-  /// POSTs a form-encoded body to an endpoint of the OAuth host and returns
-  /// the decoded JSON body.
-  ///
-  /// GitHub expects the OAuth parameters in the request body; a query string
-  /// makes `/login/device/code` answer `404`.
-  Future<Map<String, dynamic>> _post(
+  Map<String, String> _githubHeaders(String token) => {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/vnd.github+json',
+      };
+
+  /// POSTs a JSON body to one of the API's device-flow endpoints and returns
+  /// the decoded answer.
+  Future<Map<String, dynamic>> _postDeviceFlow(
     String path,
     Map<String, String> fields, {
     bool tolerateOAuthError = false,
   }) async {
     final Response<dynamic> response;
     try {
-      response = await _dio.post<dynamic>(
-        path,
-        data: fields,
-        options: Options(contentType: Headers.formUrlEncodedContentType),
-      );
+      response = await _dio.post<dynamic>(path, data: fields);
     } on DioException catch (e) {
       throw ServerException(_describeDioError(e));
     }
@@ -165,13 +159,17 @@ class GithubAuthDataSource {
         status: error.response?.statusCode,
       );
     }
+    if (data is Map) {
+      final message = data['message'];
+      if (message is String && message.isNotEmpty) return message;
+    }
     return switch (error.type) {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.sendTimeout ||
       DioExceptionType.receiveTimeout =>
-        'انتهت مهلة الاتصال بـ GitHub.',
+        'انتهت مهلة الاتصال بالخادم.',
       DioExceptionType.connectionError => 'تعذّر الاتصال بالإنترنت.',
-      _ => 'تعذّر الاتصال بـ GitHub.',
+      _ => 'تعذّر الاتصال بالخادم.',
     };
   }
 
@@ -198,5 +196,5 @@ class GithubAuthDataSource {
   }
 
   static const String _badClientId =
-      'معرّف تطبيق GitHub غير صحيح — اضبط GITHUB_CLIENT_ID عبر --dart-define.';
+      'معرّف تطبيق GitHub غير صحيح — اضبط GITHUB_CLIENT_ID في إعدادات الـ backend.';
 }

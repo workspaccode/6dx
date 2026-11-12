@@ -1,15 +1,16 @@
 # 6DX — System Design
 
-**المعمارية الحالية:** Flutter (موبايل وويب) + Firebase **للهوية فقط** +
+**المعمارية الحالية:** Flutter (جوال، ويب، وسطح مكتب) + GitHub **للهوية فقط** +
 Go backend + SQLite (ملف واحد). لا Supabase، لا Cloud Functions، لا Postgres.
 
 ```
 Flutter
-  │  firebase_auth   → تسجيل الدخول (GitHub / بريد)
-  │  HTTP + Bearer   → كل البيانات
+  │  device flow     → كود على github.com، ثم GitHub grant
+  │  HTTP + Bearer   كل البيانات
   ▼
 6DX API (Go)
-  │  يتحقق من Firebase ID token
+  │  يتحقق من الـ GitHub grant عبر GitHub API (cache 5 دقائق)
+  │  يقبل Firebase ID token للجلسات القديمة فقط
   │  يطبّق الأدوار بنفسه (internal/api/authz.go)
   ▼
 SQLite  6dx.db
@@ -20,7 +21,8 @@ SQLite  6dx.db
 
 | القرار | السبب |
 |---|---|
-| Firebase للهوية فقط | يوفّر GitHub + بريد بلا سيرفر، ولا يحتاج منّا تشغيل auth |
+| GitHub Device Flow للهوية | الطريقة الوحيدة اللي تشتغل بنفس الكود على Android وiOS وmacOS وWindows وLinux والويب: HTTPS عادي، بلا روابط عميقة ولا متصفح مضمّن |
+| proxy لنقطتي الجهاز في الـ backend | `github.com` لا يرسل CORS، فبناء الويب ما يقدر يكلمها مباشرة؛ والـ client id يفضل على السيرفر |
 | Go backend | الأوامر الحسّاسة (bootstrap، دعوات، قرارات، GitHub App) مستحيلة على العميل |
 | SQLite | ملف واحد، صفر تشغيل، نسخ احتياطي = نسخ ملف |
 
@@ -72,7 +74,9 @@ Hook : POST /github/webhook → HMAC على الـ raw body → upsert pull_requ
 ```
 
 - **fail closed** بلا إعدادات.
-- **identity binding**: `users.github_id` مصدره توكن Firebase الموثّق فقط.
+- **identity binding**: `users.github_id` مصدره توكن GitHub الموثّق من الـ API فقط.
+- **ربط الدخول الجديد**: الـ API يحوّل رقم حساب GitHub لـ `uid` المحفوظ، فالحساب
+  القديم (uid عشوائي من Firebase) بيفضل بنفس المساحات والمشاريع.
 - **ownership**: حساب شخصي = نفس المستخدم؛ org = عضوية `admin` نشطة.
 - **إلغاء التوكن** بعد إثبات الملكية.
 
@@ -80,5 +84,5 @@ Hook : POST /github/webhook → HMAC على الـ raw body → upsert pull_requ
 
 - **SQLite كاتب واحد** في اللحظة — كافي لعشرات الأعضاء، ويحتاج Postgres لمئات
   المتزامنين (السكيما الأصلية في تاريخ git).
-- **لا يوجد JWT cache**: كل طلب يتحقق من Firebase. لو الحمل زاد، cache بـ TTL قصير.
+- **GitHub grant cache**: كل طلب جديد يتحقق عبر GitHub مرة واحدة، والنتيجة تتحفظ 5 دقائق لكل توكن.
 - **تقرير العميل يُزرع يدوياً** (لا endpoint لإنشائه).

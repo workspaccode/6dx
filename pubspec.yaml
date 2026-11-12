@@ -40,11 +40,9 @@ dependencies:
   app_links: ^7.2.2
   shimmer: ^3.0.0
 
-  # Firebase — authentication only (GitHub + e-mail). Data lives in backend/.
-  firebase_core: ^3.8.0
-  firebase_auth: ^5.3.3
+  # GitHub: the Dart client for the API calls, plus the OAuth device flow in
+  # the auth layer (plain HTTPS, works on every platform).
   github: 9.26.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

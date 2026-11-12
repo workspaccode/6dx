@@ -5,8 +5,6 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/presentation/pages/login_page.dart';
 import '../features/auth/presentation/pages/onboarding_page.dart';
-import '../features/auth/presentation/pages/sign_up_page.dart';
-import '../features/auth/presentation/pages/verify_otp_page.dart';
 import '../features/auth/presentation/providers/auth_providers.dart';
 import '../features/clients/presentation/pages/client_pages.dart';
 import '../features/github/presentation/pages/connect_repository_page.dart';
@@ -45,8 +43,6 @@ class AppRoutes {
   static const String splash = '/';
   static const String onboarding = '/onboarding';
   static const String login = '/login';
-  static const String signUp = '/signup';
-  static const String verifyOtp = '/verify-otp';
   static const String setup = '/setup';
 
   static const String home = '/home';
@@ -165,13 +161,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         AppRoutes.splash,
         AppRoutes.onboarding,
         AppRoutes.login,
-        AppRoutes.signUp,
-        AppRoutes.verifyOtp,
       }.contains(location);
 
       if (!isSignedIn && !isPublicRoute) return AppRoutes.login;
-      if (isSignedIn &&
-          (location == AppRoutes.login || location == AppRoutes.signUp)) {
+      if (isSignedIn && location == AppRoutes.login) {
         return AppRoutes.home;
       }
       // The bottom-navigation shell only exposes its branches, so `/home`
@@ -191,14 +184,6 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.login,
         builder: (_, __) => const LoginPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.signUp,
-        builder: (_, __) => const SignUpPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.verifyOtp,
-        builder: (_, __) => const VerifyOtpPage(),
       ),
       GoRoute(
         path: AppRoutes.setup,

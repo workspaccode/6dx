@@ -48,8 +48,11 @@ func main() {
 
 	verifier, err := auth.NewVerifier(ctx, cfg.ProjectID, cfg.FirebaseCredentialsFile)
 	if err != nil {
-		slog.Error("firebase", "error", err)
-		os.Exit(1)
+		// Firebase is only there for ID tokens issued by the old sign-in; the
+		// GitHub device flow the app uses now needs nothing but this API.
+		slog.Warn("firebase disabled — only GitHub sessions are accepted",
+			"error", err)
+		verifier = auth.NewGitHubVerifier()
 	}
 
 	server := api.New(cfg, database, verifier)

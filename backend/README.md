@@ -36,7 +36,7 @@ migration يدوي. `GET /health` للتأكد.
 |---|---|---|
 | `DATABASE_FILE` | `./6dx.db` | مسار ملف SQLite (أي مجلد قابل للكتابة) |
 | `ADDR` | `:8080` | عنوان الاستماع |
-| `FIREBASE_PROJECT_ID` | — | مشروع Firebase اللي بيصدر التوكنات (مطلوب) |
+| `FIREBASE_PROJECT_ID` | — | مشروع Firebase اللي بيصدر التوكنات القديمة (اختياري بعد تحويل الدخول لـ GitHub) |
 | `FIREBASE_CREDENTIALS_FILE` | — | مسار service account JSON (مطلوب محلياً) |
 | `PUBLIC_BASE_URL` | — | رابط الخدمة العام (لبناء GitHub redirect) |
 | `CORS_ORIGINS` | `*` | قائمة مفصولة بفواصل |
@@ -54,8 +54,7 @@ migration يدوي. `GET /health` للتأكد.
 
 | Method | Path | الدور |
 |---|---|---|
-| GET | `/v1/me` | أي مستخدم (ينشئ المساحة لو مش موجودة) |
-| GET | `/v1/workspace/snapshot` | عضو |
+| GET | `/v1/me` | أي مستخدم (ينشئ المساحة لو مش موجودة) || GET | `/v1/workspace/snapshot` | عضو |
 | GET/POST | `/v1/projects` | عضو / editor |
 | POST | `/v1/projects/{id}/archive` | editor |
 | GET/POST | `/v1/tasks` | عضو / editor |
@@ -70,8 +69,32 @@ migration يدوي. `GET /health` للتأكد.
 | POST | `/v1/client-report/decision` | عضو (viewer مسموح) |
 | GET/POST | `/v1/github/*` | عضو / مدير |
 
-**عامة (بلا توكن):** `GET /health` · `GET /github/setup` ·
+**عامة (بلا توكن):** `GET /health` · `POST /auth/github/device-code` ·
+`POST /auth/github/device-token` · `GET /github/setup` ·
 `GET /github/callback` · `POST /github/webhook`
+
+## تسجيل الدخول
+
+التطبيق يدخل بـ **GitHub فقط** عبر OAuth **Device Flow** — نفس الطريقة على
+الويب والجوال وسطح المكتب، بلا روابط عميقة ولا متصفح مضمّن:
+
+```
+POST /auth/github/device-code    → {device_code, user_code, verification_uri}
+POST /auth/github/device-token   → {access_token} أو {error: authorization_pending}
+```
+
+نقطتين الـ proxy موجودة لأن `github.com` لا يرسل ترويسات CORS، فبناء الويب مش
+قادر يكلمها مباشرة. بعد الموافقة، التطبيق يرسل `Authorization: Bearer <github token>`
+لكل طلب، والـ API يتحقق من التوكن عبر GitHub (`/user` + `/user/emails`) ويحفظ
+النتيجة خمس دقائق.
+
+**ربط الحساب القديم:** التوكن مابيحملش `uid`، فالـ API بيحول رقم حساب GitHub
+للمستخدم المحفوظ عبر `users.github_id` (`internal/api/identity.go`). الحسابات
+اللي أنشأها Firebase زمان ليها `uid` عشوائي، والربط ده بيخليها تحتفظ
+بمساحاتها ومشاريعها بدل ما تتعمل من جديد.
+
+`FIREBASE_PROJECT_ID` لم يعد مطلوباً لتسجيل الدخول: يُستخدم فقط للتحقق من توكنات
+Firebase القديمة. لو غاب، الـ API يقلع ويكمل بجلسات GitHub فقط.
 
 ## الأدوار
 

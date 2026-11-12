@@ -24,6 +24,18 @@ func BadRequest(code, message string) *Error {
 	return &Error{Status: http.StatusBadRequest, Code: code, Message: message}
 }
 
+func Unavailable(code, message string) *Error {
+	return &Error{Status: http.StatusServiceUnavailable, Code: code, Message: message}
+}
+
+func BadGateway(code, message string) *Error {
+	return &Error{Status: http.StatusBadGateway, Code: code, Message: message}
+}
+
+func Internal(code, message string) *Error {
+	return &Error{Status: http.StatusInternalServerError, Code: code, Message: message}
+}
+
 func Unauthorized(message string) *Error {
 	return &Error{Status: http.StatusUnauthorized, Code: "unauthorized", Message: message}
 }

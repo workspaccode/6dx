@@ -23,14 +23,21 @@ type Server struct {
 	store    *store
 	verifier Verifier
 	github   *githubBroker
+
+	// httpClient carries out the GitHub calls the device-flow proxy makes.
+	httpClient *http.Client
+	// githubOAuthBase is https://github.com; a test points it at httptest.
+	githubOAuthBase string
 }
 
 // New builds the server and the router.
 func New(cfg *config.Config, database *db.DB, verifier Verifier) *Server {
 	s := &Server{
-		cfg:      cfg,
-		store:    &store{db: database},
-		verifier: verifier,
+		cfg:             cfg,
+		store:           &store{db: database},
+		verifier:        verifier,
+		httpClient:      &http.Client{Timeout: 20 * time.Second},
+		githubOAuthBase: "https://github.com",
 	}
 	if cfg.GitHubEnabled() {
 		broker, err := newGithubBroker(cfg)
@@ -59,6 +66,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /github/setup", s.handleGithubSetup)
 	mux.HandleFunc("GET /github/callback", s.handleGithubCallback)
 	mux.HandleFunc("POST /github/webhook", s.handleGithubWebhook)
+
+	// Sign-in itself is public: the device flow runs before a session exists.
+	// It is proxied here because GitHub's OAuth endpoints send no CORS headers.
+	mux.HandleFunc("POST /auth/github/device-code", s.handleGithubDeviceCode)
+	mux.HandleFunc("POST /auth/github/device-token", s.handleGithubDeviceToken)
 
 	// --- authenticated -----------------------------------------------------
 	private := http.NewServeMux()
@@ -96,7 +108,7 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("POST /v1/github/install-url", s.handleGithubInstallURL)
 	private.HandleFunc("POST /v1/github/disconnect", s.handleGithubDisconnect)
 
-	mux.Handle("/v1/", s.verifier.Middleware(private))
+	mux.Handle("/v1/", s.verifier.Middleware(s.withStoredIdentity(private)))
 
 	return s.withCommon(mux)
 }
