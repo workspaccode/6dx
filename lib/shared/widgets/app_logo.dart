@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 
-/// The 6DX logo mark — a monospaced `{ }` badge.
+/// The 6DX logo mark and wordmark.
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 40, this.showWordmark = true});
 
@@ -23,14 +24,12 @@ class AppLogo extends StatelessWidget {
             color: AppColors.accent,
             borderRadius: BorderRadius.circular(size * 0.3),
           ),
-          child: Text(
-            '{ }',
-            style: TextStyle(
-              fontFamily: AppTheme.monoFontFamily,
-              fontSize: size * 0.4,
-              fontWeight: FontWeight.w500,
-              color: AppColors.background,
-            ),
+          child: SvgPicture.asset(
+            'assets/icons/6dx_mark.svg',
+            width: size * 0.82,
+            height: size * 0.82,
+            semanticsLabel: showWordmark ? null : '6DX',
+            fit: BoxFit.contain,
           ),
         ),
         if (showWordmark) ...[
