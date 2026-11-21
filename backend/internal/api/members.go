@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -206,6 +207,30 @@ func (s *Server) handleSendInvites(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	if len(body.Emails) > maxInvitesPerRequest {
+		writeError(w, badRequest("too_many_invites",
+			fmt.Sprintf("أقصى عدد للدعوات في المرة الواحدة %d.", maxInvitesPerRequest)))
+		return
+	}
+	// Validate and de-duplicate up front: one bad address rejects the whole
+	// request, so the admin sees exactly which one to fix.
+	emails := make([]string, 0, len(body.Emails))
+	seen := make(map[string]bool, len(body.Emails))
+	for _, raw := range body.Emails {
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		email := normalizeEmail(raw)
+		if email == "" {
+			writeError(w, badRequest("invalid_email", "بريد غير صالح: "+truncate(raw, 60)))
+			return
+		}
+		if !seen[email] {
+			seen[email] = true
+			emails = append(emails, email)
+		}
+	}
+	body.Emails = emails
 	if len(body.Emails) == 0 {
 		writeError(w, badRequest("no_emails", "لا يوجد بريد لدعوته."))
 		return
@@ -236,13 +261,22 @@ func (s *Server) handleSendInvites(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var pending int
+	if err := tx.QueryRowContext(r.Context(),
+		`select count(*) from workspace_invites where workspace_id = ? and status = 'pending'`,
+		ws.ID).Scan(&pending); err != nil {
+		writeError(w, err)
+		return
+	}
+	if pending+len(body.Emails) > maxPendingInvitesPerWS {
+		writeError(w, conflict("pending_invites_limit",
+			fmt.Sprintf("مساحة العمل وصلت للحد الأقصى للدعوات المعلّقة (%d). ألغِ أو انتظر انتهاء القديمة.", maxPendingInvitesPerWS)))
+		return
+	}
+
 	now := nowString()
 	created := 0
-	for _, raw := range body.Emails {
-		email := strings.ToLower(strings.TrimSpace(raw))
-		if email == "" {
-			continue
-		}
+	for _, email := range body.Emails {
 
 		// One pending invite per (workspace, e-mail): reuse the row if it
 		// exists so re-inviting updates the role instead of duplicating.

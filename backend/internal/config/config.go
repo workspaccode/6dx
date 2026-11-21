@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,8 +42,25 @@ type Config struct {
 	GitHubClientSecret   string
 	GitHubOAuthRedirect  string
 	GitHubStateSecret    string
-	GitHubStateTTL       time.Duration
 	MigrationsOnStartup  bool
+
+	// Environment is "development" (default) or "production". Production
+	// refuses to start with settings that are only safe on a laptop.
+	Environment string
+
+	// PublicBaseURL is where the API is reachable from the internet, e.g.
+	// https://api.example.com. Used for the GitHub callback URL.
+	PublicBaseURL string
+
+	// TrustedProxies are the reverse proxies (CIDRs) allowed to set
+	// X-Forwarded-For. Empty = the API is reached directly and the peer
+	// address is the client.
+	TrustedProxies []*net.IPNet
+
+	// Requests per minute per client IP.
+	RateLimitSignIn int
+	RateLimitAPI    int
+
 	ReadHeaderTimeout    time.Duration
 	GracefulShutdownWait time.Duration
 }
@@ -71,13 +89,24 @@ func Load() (*Config, error) {
 		GitHubClientSecret:      os.Getenv("GITHUB_CLIENT_SECRET"),
 		GitHubOAuthRedirect:     os.Getenv("GITHUB_OAUTH_REDIRECT"),
 		GitHubStateSecret:       os.Getenv("GITHUB_STATE_SECRET"),
-		GitHubStateTTL:          30 * time.Minute,
 		MigrationsOnStartup:     env("MIGRATE_ON_STARTUP", "true") == "true",
 		ReadHeaderTimeout:       15 * time.Second,
 		GracefulShutdownWait:    20 * time.Second,
+		Environment:             env("APP_ENV", "development"),
+		PublicBaseURL:           strings.TrimSuffix(env("PUBLIC_BASE_URL", ""), "/"),
 	}
 
-	
+	var err error
+	if cfg.TrustedProxies, err = parseCIDRs(os.Getenv("TRUSTED_PROXIES")); err != nil {
+		return nil, err
+	}
+	if cfg.RateLimitSignIn, err = envInt("RATE_LIMIT_SIGNIN_PER_MIN", 30); err != nil {
+		return nil, err
+	}
+	if cfg.RateLimitAPI, err = envInt("RATE_LIMIT_API_PER_MIN", 600); err != nil {
+		return nil, err
+	}
+
 	// FIREBASE_PROJECT_ID is optional: it only keeps ID tokens issued by the
 	// old Firebase sign-in valid. The app signs in with GitHub now, and that
 	// path is verified against the GitHub API instead.
@@ -97,10 +126,82 @@ func Load() (*Config, error) {
 		cfg.GitHubStateSecret = cfg.GitHubWebhookSecret
 	}
 	if cfg.GitHubOAuthRedirect == "" {
-		cfg.GitHubOAuthRedirect = strings.TrimSuffix(env("PUBLIC_BASE_URL", ""), "/") + "/github/callback"
+		cfg.GitHubOAuthRedirect = cfg.PublicBaseURL + "/github/callback"
 	}
 
+	if cfg.IsProduction() {
+		if err := cfg.validateProduction(); err != nil {
+			return nil, err
+		}
+	}
 	return cfg, nil
+}
+
+// IsProduction reports whether APP_ENV=production.
+func (c *Config) IsProduction() bool { return c.Environment == "production" }
+
+// validateProduction lists every setting that is fine locally but unsafe on a
+// public server, so a misconfigured deploy fails at start-up instead of
+// running open.
+func (c *Config) validateProduction() error {
+	var problems []string
+	for _, origin := range c.CORSOrigins {
+		if origin == "*" {
+			problems = append(problems, "CORS_ORIGINS must list the web origins, not *")
+		}
+	}
+	if !strings.HasPrefix(c.PublicBaseURL, "https://") {
+		problems = append(problems, "PUBLIC_BASE_URL must be an https:// URL")
+	}
+	if c.GitHubClientID == "" || c.GitHubClientSecret == "" {
+		problems = append(problems, "GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET are required")
+	}
+	if c.GitHubWebhookSecret != "" && c.GitHubStateSecret == c.GitHubWebhookSecret {
+		problems = append(problems, "GITHUB_STATE_SECRET must be set and differ from GITHUB_WEBHOOK_SECRET")
+	}
+	if !strings.HasPrefix(c.GitHubOAuthRedirect, "https://") {
+		problems = append(problems, "GITHUB_OAUTH_REDIRECT must be https://")
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("APP_ENV=production but: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func envInt(key string, fallback int) (int, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer, got %q", key, raw)
+	}
+	return value, nil
+}
+
+// parseCIDRs reads "10.0.0.0/8, 172.16.0.1" — a bare IP is a /32 (or /128).
+func parseCIDRs(raw string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, part := range splitList(raw) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if !strings.Contains(part, "/") {
+			if ip := net.ParseIP(part); ip != nil && ip.To4() != nil {
+				part += "/32"
+			} else {
+				part += "/128"
+			}
+		}
+		_, network, err := net.ParseCIDR(part)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not an IP or CIDR", part)
+		}
+		out = append(out, network)
+	}
+	return out, nil
 }
 
 // GitHubEnabled reports whether every credential the GitHub broker needs is

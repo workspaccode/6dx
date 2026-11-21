@@ -91,13 +91,13 @@
 
 **الملف:** [`android/app/src/main/res/xml/network_security_config.xml`](../../android/app/src/main/res/xml/network_security_config.xml)
 
-- [ ] `cleartextTrafficPermitted="true"` لـ `192.168.1.11` حتى في نسخة الـ release. يعني توكن GitHub بيتبعت **من غير تشفير** على الشبكة دي، وأي حد على نفس الـ Wi-Fi يقدر يشوفه.
-- [ ] الـ IP مكتوب ثابت؛ لو الراوتر غيّره التطبيق هيقف.
+- [x] `cleartextTrafficPermitted="true"` لـ `192.168.1.11` حتى في نسخة الـ release. يعني توكن GitHub بيتبعت **من غير تشفير** على الشبكة دي، وأي حد على نفس الـ Wi-Fi يقدر يشوفه.
+- [x] الـ IP مكتوب ثابت؛ لو الراوتر غيّره التطبيق هيقف.
 - **الحل:** حط الـ `domain-config` ده في `android/app/src/debug/res/xml/` بس، واستخدم HTTPS في الـ release.
 
 ## 🟡 9. `AppConfig.apiBaseUrl` الافتراضي localhost
 
-- [ ] [`lib/core/config/app_config.dart:19-25`](../../lib/core/config/app_config.dart#L19): لو اتعمل build للـ release من غير `--dart-define=API_BASE_URL`، التطبيق هيكلّم `http://10.0.2.2:8080` / `http://localhost:8080`.
+- [x] [`lib/core/config/app_config.dart:19-25`](../../lib/core/config/app_config.dart#L19): لو اتعمل build للـ release من غير `--dart-define=API_BASE_URL`، التطبيق هيكلّم `http://10.0.2.2:8080` / `http://localhost:8080`.
 - **الحل:** في الـ release اشترط وجود القيمة، واعمل `assert` أو اقفل التطبيق بشاشة واضحة لو مش موجودة.
 
 ## 🟡 10. التوكن جوه الـ entity وبيتطبع
@@ -110,7 +110,7 @@
 
 ## 🟡 11. CORS مفتوح
 
-- [ ] `CORS_ORIGINS` افتراضيًا `*` ([`config.go:65`](../../backend/internal/config/config.go#L65)) وبيرجّع أي Origin. الخطر قليل لأن المصادقة Bearer مش cookies، بس في الـ production حدّد دومين الويب بس.
+- [x] `CORS_ORIGINS` افتراضيًا `*` ([`config.go:65`](../../backend/internal/config/config.go#L65)) وبيرجّع أي Origin. الخطر قليل لأن المصادقة Bearer مش cookies، بس في الـ production حدّد دومين الويب بس.
 
 ## ⚪ 12. حاجات تانية
 
@@ -168,7 +168,7 @@
 
 **الملف:** [`members.go:204-297`](../../backend/internal/api/members.go#L204)
 
-- [ ] `emails[]` مالهاش حد أقصى ولا فحص للصيغة. طلب واحد 1MB فيه حوالي 50 ألف إيميل، كلهم بيتكتبوا في transaction واحدة على **الاتصال الوحيد** للـ DB (`SetMaxOpenConns(1)`).
+- [x] `emails[]` مالهاش حد أقصى ولا فحص للصيغة. طلب واحد 1MB فيه حوالي 50 ألف إيميل، كلهم بيتكتبوا في transaction واحدة على **الاتصال الوحيد** للـ DB (`SetMaxOpenConns(1)`).
 - **السيناريو:** أي مستخدم GitHub هو أدمن على الـ workspace اللي اتعمله تلقائي، فيقدر يوقف الـ API على **كل** الـ tenants، ويبعت إشعارات spam لأي مستخدم موجود بالإيميل.
 - **الحل:** حد أقصى ~50، `mail.ParseAddress`، و rate limit لكل workspace.
 

@@ -57,7 +57,7 @@ go test -tags=integration ./...   ✅  (internal/api و internal/auth)
 ## 🟠 منطق الصلاحيات والبيانات
 
 - [ ] **الأدمن يقدر ينزّل أدمن تاني** — [`members.go:98-116`](../../backend/internal/api/members.go#L98). صف الـ owner بس محمي. الـ README بيقول الأدمن يدير developer/reviewer/viewer بس، و `handleRemoveMember` (سطر 159) بيشترط owner لحذف أدمن، يعني تغيير الدور مش متسق مع الحذف.
-- [ ] **مهمة ممكن تتربط بمشروع في workspace تاني** — [`tasks.go:115-130`](../../backend/internal/api/tasks.go#L115).
+- [x] **مهمة ممكن تتربط بمشروع في workspace تاني** — [`tasks.go:115-130`](../../backend/internal/api/tasks.go#L115).
   - `project_id` مش بيتشيّك إنه تابع لـ `ws.ID`، والـ foreign key بيشاور على `projects(id)` بس.
   - **النتيجة:** اسم مشروع B بيظهر لـ A، وعدّادات B بتزيد (`projects.go:25-26` مش مقيّد بالـ workspace). ولو B حذف المشروع، مهمة A بتتحذف بالـ cascade.
   - **الحل:** `select 1 from projects where id = ? and workspace_id = ?` قبل الـ insert/update.
@@ -78,7 +78,7 @@ go test -tags=integration ./...   ✅  (internal/api و internal/auth)
 - [ ] **`requireOwner` مش مستخدم** ([`authz.go:96`](../../backend/internal/api/authz.go#L96))، ومفيش endpoint لنقل الملكية، مع إن `members.go:66` بيشاور على `transferOwnership`.
 - [ ] **ترتيب الوقت غلط:** `nowString()` بيستخدم `RFC3339Nano` ([`authz.go:158,162`](../../backend/internal/api/authz.go#L158)، [`db.go:138`](../../backend/internal/db/db.go#L138))، وده بيشيل الأصفار في الآخر، فمقارنة الـ strings مش بتبقى بالترتيب جوه نفس الثانية (`…:00.5Z` < `…:00Z`). ده بيأثر على انتهاء الدعوات وكل `order by created_at`. استخدم صيغة ثابتة الطول `2006-01-02T15:04:05.000000000Z`.
 - [ ] **مستخدم Firebase قديم ممكن يتقفل برا** ([`authz.go:110-123`](../../backend/internal/api/authz.go#L110)): لو صفه `github_id` فيه NULL، الدخول بالـ device flow بيعمل uid جديد بنفس الإيميل، فيصطدم بـ `users_email_idx` وكل `/v1` بترجع 500. اعمل fallback للمطابقة بالإيميل المُوثّق.
-- [ ] **مفيش حد لطول الحقول:** اسم ووصف المشروع، عنوان ووصف المهمة، `repository_full_name`، والإيميلات. حط max length لكل حقل.
+- [x] **مفيش حد لطول الحقول:** اسم ووصف المشروع، عنوان ووصف المهمة، `repository_full_name`، والإيميلات. حط max length لكل حقل.
 
 ### Migration `0002` المطلوبة
 

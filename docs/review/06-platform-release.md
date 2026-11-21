@@ -12,22 +12,23 @@
   - مفتاح الـ debug خاص بكل جهاز وكلمة سره معروفة (`android`). لو اتمسح، المستخدمين اللي سطّبوا التطبيق **مش هيقدروا يعملوا update**. وأي حد معاه المفتاح يقدر ينزّل "update" مزيف.
   - Google Play هيرفض النسخة.
 - **الحل:** اعمل release keystore واقراه من `key.properties` (موجود أصلًا في `.gitignore`)، واحفظ المفتاح في مكان آمن برا الجهاز.
+- **(اتجهّز):** الـ gradle بقى بيقرا `android/key.properties` لو موجود، ولو مش موجود بيطبع تحذير. فاضل إنك تعمل المفتاح نفسه، والخطوات في [docs/deploy.md](../deploy.md).
 
 ### scheme الـ Supabase القديم لسه متسجل
 
-- [ ] [`AndroidManifest.xml:35-40`](../../android/app/src/main/AndroidManifest.xml#L35) بيسجّل `io.supabase.flutter://login-callback`، و [`ios/Runner/Info.plist:52-62`](../../ios/Runner/Info.plist#L52) بيسجّل `io.supabase.flutter`. والـ `app_links` في الـ pubspec ومش مستخدم.
+- [x] [`AndroidManifest.xml:35-40`](../../android/app/src/main/AndroidManifest.xml#L35) بيسجّل `io.supabase.flutter://login-callback`، و [`ios/Runner/Info.plist:52-62`](../../ios/Runner/Info.plist#L52) بيسجّل `io.supabase.flutter`. والـ `app_links` في الـ pubspec ومش مستخدم.
   - الـ scheme ده عام ومشترك بين كل التطبيقات اللي اتعملت من template الـ Supabase. ومع الـ deep linking اللي Flutter بيشغّله تلقائي، أي موقع أو تطبيق يقدر يدخّل مسارات go_router للتطبيق (`/states/*`، `/invite/accept`، `/github/*`).
 - **الحل:** احذف التسجيلين، واقفل `flutter_deeplinking_enabled` لحد ما يبقى فيه App Links / Universal Links متوثّقة بدومين حقيقي.
 
 ### الـ backup مش متضبط
 
-- [ ] `android:allowBackup` و `dataExtractionRules` مش متحددين ([`AndroidManifest.xml:10`](../../android/app/src/main/AndroidManifest.xml#L10))، فالـ backup شغال تلقائي.
+- [x] `android:allowBackup` و `dataExtractionRules` مش متحددين ([`AndroidManifest.xml:10`](../../android/app/src/main/AndroidManifest.xml#L10))، فالـ backup شغال تلقائي.
   - ملف الـ `EncryptedSharedPreferences` بيترجع على جهاز جديد **من غير** مفتاح الـ Keystore، فالقراية بتفشل والخطأ بيتبلع، والمستخدم بيخرج من غير سبب واضح (أو التطبيق بيقع، وده bug معروف).
 - **الحل:** `android:allowBackup="false"`، أو استثني `FlutterSecureStorage` من الـ backup.
 
 ### HTTP غير مشفر
 
-- [ ] `192.168.1.11` مسموح بـ cleartext في نسخة الـ release. التفاصيل في [03-security.md](03-security.md) بند 8.
+- [x] `192.168.1.11` مسموح بـ cleartext في نسخة الـ release. التفاصيل في [03-security.md](03-security.md) بند 8.
 
 ### مفيش حماية من الـ screenshots
 
@@ -38,7 +39,7 @@
 ## 🟡 iOS
 
 - [ ] بيانات الـ keychain بتفضل موجودة بعد مسح التطبيق، لأن `IOSOptions` الافتراضية مستخدمة ([`secure_storage_service.dart:9-11`](../../lib/core/storage/secure_storage_service.dart#L9)). لو المستخدم مسح التطبيق وسطّبه تاني، **هيدخل أوتوماتيك بحساب المستخدم اللي قبله**. امسح الـ keychain أول مرة التطبيق يشتغل، بـ flag في `SharedPreferences`.
-- [ ] scheme الـ Supabase متسجل في `Info.plist` (فوق).
+- [x] scheme الـ Supabase متسجل في `Info.plist` (فوق).
 
 ---
 

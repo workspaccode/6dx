@@ -1,0 +1,19 @@
+# HTTPS front for the 6DX API (stage 2: domain).
+#
+# Caddy obtains and renews the Let's Encrypt certificate for {$API_DOMAIN}
+# by itself; ports 80 and 443 must reach this machine and the domain's DNS
+# A record must point at the server's IP.
+{$API_DOMAIN} {
+	encode gzip zstd
+
+	# Caddy appends the client address to X-Forwarded-For; the API trusts that
+	# header only from this proxy (TRUSTED_PROXIES = the compose network).
+	reverse_proxy api:8080
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}

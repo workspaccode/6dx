@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  6DX network policy — LOCAL NETWORK / SERVER-BY-IP (cleartext allowed).
+
+  Used by debug builds, and by release builds only when
+  `sixdx.allowCleartext=true` is set in android/local.properties (or passed as
+  -Psixdx.allowCleartext=true). Plain HTTP exposes the GitHub token to anyone on
+  the same network: never ship this to real users. Once the server has a
+  domain and HTTPS, build without the flag.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

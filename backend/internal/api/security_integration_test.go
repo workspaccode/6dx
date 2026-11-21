@@ -262,3 +262,57 @@ func TestDuplicateEmailDoesNotBreakTheAccount(t *testing.T) {
 		t.Fatalf("sign-in with a taken e-mail: got %d %v, want 200", status, body)
 	}
 }
+
+// Limits: invites per request, address validation, field lengths and the
+// workspace scope of a task's project.
+func TestInputLimits(t *testing.T) {
+	h := newHarness(t)
+	h.do(t, http.MethodGet, "/v1/me", "owner-l", nil)
+
+	many := make([]string, maxInvitesPerRequest+1)
+	for i := range many {
+		many[i] = "user" + strings.Repeat("x", i%5) + string(rune('a'+i%26)) + "@6dx.test"
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/invites", "owner-l",
+		map[string]any{"emails": many}); status != http.StatusBadRequest || body["error"] != "too_many_invites" {
+		t.Errorf("too many invites: %d %v", status, body)
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/invites", "owner-l",
+		map[string]any{"emails": []string{"ok@6dx.test", "not an email"}}); status != http.StatusBadRequest || body["error"] != "invalid_email" {
+		t.Errorf("invalid email: %d %v", status, body)
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/invites", "owner-l",
+		map[string]any{"emails": []string{"Dup@6dx.test", "dup@6dx.test"}}); status != http.StatusCreated {
+		t.Errorf("duplicates must collapse into one invite: %d %v", status, body)
+	}
+
+	if status, body := h.do(t, http.MethodPost, "/v1/projects", "owner-l",
+		map[string]any{"name": strings.Repeat("م", maxProjectNameLength+1)}); status != http.StatusBadRequest || body["error"] != "name_too_long" {
+		t.Errorf("long project name: %d %v", status, body)
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/projects", "owner-l",
+		map[string]any{"name": strings.Repeat("م", maxProjectNameLength)}); status != http.StatusCreated {
+		t.Errorf("80 Arabic letters must be accepted: %d %v", status, body)
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/projects", "owner-l",
+		map[string]any{"name": "Repo", "repository_full_name": "../../etc"}); status != http.StatusBadRequest {
+		t.Errorf("bad repository name: %d %v", status, body)
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/tasks", "owner-l",
+		map[string]any{"title": strings.Repeat("a", maxTaskTitleLength+1)}); status != http.StatusBadRequest {
+		t.Errorf("long task title: %d %v", status, body)
+	}
+
+	// Another workspace's project cannot be attached to a task here.
+	h.do(t, http.MethodGet, "/v1/me", "other-l", nil)
+	_, foreign := h.do(t, http.MethodPost, "/v1/projects", "other-l", map[string]any{"name": "Theirs"})
+	project, _ := foreign["project"].(map[string]any)
+	foreignID, _ := project["id"].(string)
+	if foreignID == "" {
+		t.Fatalf("could not create the foreign project: %v", foreign)
+	}
+	if status, body := h.do(t, http.MethodPost, "/v1/tasks", "owner-l",
+		map[string]any{"title": "x", "project_id": foreignID}); status != http.StatusNotFound {
+		t.Errorf("cross-workspace project: %d %v, want 404", status, body)
+	}
+}

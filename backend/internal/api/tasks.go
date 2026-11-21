@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -102,9 +103,35 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if strings.TrimSpace(body.Title) == "" {
+	body.Title = strings.TrimSpace(body.Title)
+	if body.Title == "" {
 		writeError(w, badRequest("title_required", "عنوان المهمة مطلوب."))
 		return
+	}
+	if tooLong(body.Title, maxTaskTitleLength) {
+		writeError(w, badRequest("title_too_long",
+			fmt.Sprintf("عنوان المهمة أطول من %d حرف.", maxTaskTitleLength)))
+		return
+	}
+	if optionalTooLong(body.Description, maxTaskDescLength) {
+		writeError(w, badRequest("description_too_long",
+			fmt.Sprintf("وصف المهمة أطول من %d حرف.", maxTaskDescLength)))
+		return
+	}
+	// The project must belong to this workspace: the foreign key only checks
+	// that it exists somewhere (docs/review/04-backend.md).
+	if body.ProjectID != nil && *body.ProjectID != "" {
+		var found int
+		if err := s.store.db.QueryRowContext(r.Context(),
+			`select count(*) from projects where id = ? and workspace_id = ?`,
+			*body.ProjectID, ws.ID).Scan(&found); err != nil {
+			writeError(w, err)
+			return
+		}
+		if found == 0 {
+			writeError(w, notFound("project_not_found", "المشروع مش موجود في مساحة العمل دي."))
+			return
+		}
 	}
 	priority := "medium"
 	if body.Priority != nil && *body.Priority != "" {

@@ -73,9 +73,12 @@ func (s *Server) Handler() http.Handler {
 	// Rate-limited per IP: every call spends the app's GitHub quota, and a
 	// flood on device-code would lock everyone out of sign-in. The device
 	// flow polls every ~5s for up to 15 min, which stays well under the limit.
-	signIn := httpx.NewRateLimiter(30, time.Minute)
-	mux.Handle("POST /auth/github/device-code", signIn.Middleware(http.HandlerFunc(s.handleGithubDeviceCode)))
-	mux.Handle("POST /auth/github/device-token", signIn.Middleware(http.HandlerFunc(s.handleGithubDeviceToken)))
+	clientIP := httpx.ClientIPResolver{Trusted: s.cfg.TrustedProxies}.ClientIP
+	signIn := httpx.NewRateLimiter(orDefault(s.cfg.RateLimitSignIn, 30), time.Minute)
+	mux.Handle("POST /auth/github/device-code",
+		signIn.Middleware(clientIP, http.HandlerFunc(s.handleGithubDeviceCode)))
+	mux.Handle("POST /auth/github/device-token",
+		signIn.Middleware(clientIP, http.HandlerFunc(s.handleGithubDeviceToken)))
 
 	// --- authenticated -----------------------------------------------------
 	private := http.NewServeMux()
@@ -115,8 +118,8 @@ func (s *Server) Handler() http.Handler {
 
 	// The limiter runs before token verification, so a flood of bad tokens
 	// cannot turn into a flood of GitHub calls.
-	api := httpx.NewRateLimiter(600, time.Minute)
-	mux.Handle("/v1/", api.Middleware(s.verifier.Middleware(s.withStoredIdentity(private))))
+	api := httpx.NewRateLimiter(orDefault(s.cfg.RateLimitAPI, 600), time.Minute)
+	mux.Handle("/v1/", api.Middleware(clientIP, s.verifier.Middleware(s.withStoredIdentity(private))))
 
 	return s.withCommon(mux)
 }
@@ -164,4 +167,12 @@ func (s *Server) originAllowed(origin string) bool {
 		}
 	}
 	return false
+}
+
+// orDefault keeps tests (which build a bare Config) on the production limits.
+func orDefault(value, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }

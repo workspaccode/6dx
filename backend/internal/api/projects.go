@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -92,9 +93,28 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if strings.TrimSpace(body.Name) == "" {
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" {
 		writeError(w, badRequest("name_required", "اسم المشروع مطلوب."))
 		return
+	}
+	if tooLong(body.Name, maxProjectNameLength) {
+		writeError(w, badRequest("name_too_long",
+			fmt.Sprintf("اسم المشروع أطول من %d حرف.", maxProjectNameLength)))
+		return
+	}
+	if optionalTooLong(body.Description, maxProjectDescLength) {
+		writeError(w, badRequest("description_too_long",
+			fmt.Sprintf("وصف المشروع أطول من %d حرف.", maxProjectDescLength)))
+		return
+	}
+	if body.RepositoryFullName != nil {
+		repo := strings.TrimSpace(*body.RepositoryFullName)
+		if repo != "" && (len(repo) > maxRepoNameLength || !githubRepoPattern.MatchString(repo)) {
+			writeError(w, badRequest("invalid_repository", "اسم المستودع لازم يكون owner/name."))
+			return
+		}
+		body.RepositoryFullName = &repo
 	}
 
 	projectID := newID()

@@ -1,19 +1,37 @@
+# 6DX API.
+#
+# Stage 1 — server reached by IP (no domain yet):
+#   docker compose up -d --build
+#   → http://<server-ip>:8080
+#
+# Stage 2 — domain + HTTPS (Caddy in front, Let's Encrypt automatic):
+#   set API_DOMAIN, APP_ENV=production, API_BIND=127.0.0.1 in .env, then
+#   docker compose --profile https up -d --build
+#   → https://<API_DOMAIN>
+#
+# Full walkthrough: docs/deploy.md
 services:
   api:
     build: .
     environment:
       ADDR: ":8080"
+      APP_ENV: ${APP_ENV:-development}
       # SQLite: one file inside the mounted volume. Nothing else to run.
       DATABASE_FILE: /data/6dx.db
       MIGRATE_ON_STARTUP: "true"
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
-      FIREBASE_CREDENTIALS_FILE: /run/secrets/firebase.json
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CREDENTIALS_FILE: ${FIREBASE_CREDENTIALS_FILE:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      # Only the Caddy container may set X-Forwarded-For (see networks).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.30.0.0/24}
+      RATE_LIMIT_SIGNIN_PER_MIN: ${RATE_LIMIT_SIGNIN_PER_MIN:-30}
+      RATE_LIMIT_API_PER_MIN: ${RATE_LIMIT_API_PER_MIN:-600}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_STATE_SECRET: ${GITHUB_STATE_SECRET:-}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_OAUTH_REDIRECT: ${GITHUB_OAUTH_REDIRECT:-}
@@ -22,17 +40,45 @@ services:
       # everything.
       - 6dx-data:/data
     ports:
-      - "${API_PORT:-8080}:8080"
+      # Stage 1: 0.0.0.0 (reachable by IP). Stage 2: 127.0.0.1, so only
+      # Caddy (HTTPS) is public.
+      - "${API_BIND:-0.0.0.0}:${API_PORT:-8080}:8080"
     secrets:
-      - firebase.json
       - github-app.pem
+    networks:
+      - edge
     restart: unless-stopped
 
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["https"]
+    depends_on:
+      - api
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env for the https profile}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+    restart: unless-stopped
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
 secrets:
-  firebase.json:
-    file: ./secrets/firebase-service-account.json
   github-app.pem:
     file: ./secrets/github-app.private-key.pem
 
 volumes:
   6dx-data:
+  caddy-data:
+  caddy-config:
