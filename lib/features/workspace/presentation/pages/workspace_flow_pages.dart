@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/errors/exceptions.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../routes/app_router.dart';
@@ -103,14 +104,10 @@ class _AcceptInvitePageState extends ConsumerState<AcceptInvitePage> {
     } catch (error) {
       if (!mounted) return;
       AppLogger.action('AcceptInvite', 'accept failed', error);
-      final text = error.toString();
-      final message = text.contains('22023')
-          ? 'انتهت صلاحية الدعوة'
-          : text.contains('P0002')
-              ? 'لا توجد دعوة معلّقة لهذا الحساب'
-              : text.contains('42501')
-                  ? 'الدعوة مرتبطة ببريد إلكتروني آخر'
-                  : 'تعذّر قبول الدعوة';
+      // The API answers with a ready-to-show Arabic message.
+      final message = error is ServerException && error.message.isNotEmpty
+          ? error.message
+          : 'تعذّر قبول الدعوة';
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
     } finally {

@@ -2,6 +2,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/errors/exceptions.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_states.dart';
@@ -253,14 +254,11 @@ class _InvitePageState extends ConsumerState<InvitePage> {
     }
   }
 
-  /// The server raises Postgres errors; show the ones a user can act on.
+  /// The API answers with a ready-to-show Arabic message; anything else gets
+  /// the generic one.
   String _describe(Object error) {
-    final text = error.toString();
-    if (text.contains('42501')) {
-      return 'إرسال الدعوات يحتاج صلاحية مدير في مساحة العمل';
-    }
-    if (text.contains('23503')) {
-      return 'بريد غير صالح';
+    if (error is ServerException && error.message.isNotEmpty) {
+      return error.message;
     }
     return 'تعذّر إرسال الدعوات، حاول مرة أخرى';
   }
