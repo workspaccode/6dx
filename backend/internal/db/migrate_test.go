@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -173,5 +174,92 @@ func TestWorkflowMigrationMapsExistingTasks(t *testing.T) {
 	}
 	if states != 5 {
 		t.Errorf("new hardware group states = %d, want 5", states)
+	}
+}
+
+// 0005 gives existing hardware groups the default phase template and their
+// projects a copy of it; a released BOM is frozen, yet deleting its project
+// still cascades.
+func TestHardwareMigration(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "h.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	for _, f := range []string{"0001_init.sql", "0002_security.sql", "0003_groups.sql", "0004_workflow.sql"} {
+		applyFile(t, database, f)
+	}
+	seed := []string{
+		`insert into users (uid, created_at, updated_at) values ('o','t','t')`,
+		`insert into workspaces (id, name, slug, owner_uid, created_at, updated_at) values ('w1', 'WS', 'ws', 'o', 't', 't')`,
+		`insert into groups (id, workspace_id, name, type, created_at, updated_at) values ('g-hw', 'w1', 'HW', 'hardware', 't', 't')`,
+		`insert into projects (id, workspace_id, group_id, name, created_at, updated_at) values ('p1', 'w1', 'g-hw', 'Board', 't', 't')`,
+	}
+	for _, q := range seed {
+		if _, err := database.ExecContext(ctx, q); err != nil {
+			t.Fatalf("seed: %v\n%s", err, q)
+		}
+	}
+	applyFile(t, database, "0005_hardware.sql")
+
+	count := func(q string) int {
+		t.Helper()
+		var n int
+		if err := database.QueryRowContext(ctx, q).Scan(&n); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+		return n
+	}
+	if n := count(`select count(*) from phase_templates where group_id = 'g-hw'`); n != 5 {
+		t.Errorf("templates = %d, want 5", n)
+	}
+	if n := count(`select count(*) from hw_phases where project_id = 'p1'`); n != 5 {
+		t.Errorf("existing project phases = %d, want 5", n)
+	}
+	if n := count(`select count(*) from hw_phases where project_id = 'p1' and status = 'in_progress'`); n != 1 {
+		t.Errorf("running phases = %d, want 1", n)
+	}
+	var checklist string
+	if err := database.QueryRowContext(ctx,
+		`select checklist from hw_phases where project_id = 'p1' and name = 'EVT'`).Scan(&checklist); err != nil {
+		t.Fatal(err)
+	}
+	if checklist == "[]" || !strings.Contains(checklist, `"done":false`) {
+		t.Errorf("EVT checklist copy = %s", checklist)
+	}
+
+	// A new project copies the template through the trigger.
+	if _, err := database.ExecContext(ctx, `insert into projects (id, workspace_id, group_id, name, created_at, updated_at)
+		values ('p2', 'w1', 'g-hw', 'Board 2', 't', 't')`); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(`select count(*) from hw_phases where project_id = 'p2'`); n != 5 {
+		t.Errorf("new project phases = %d, want 5", n)
+	}
+
+	// Released BOM lines are frozen…
+	for _, q := range []string{
+		`insert into hw_parts (id, project_id, part_number, description, created_at, updated_at) values ('pt', 'p1', 'R1', 'r', 't', 't')`,
+		`insert into hw_bom_revs (id, project_id, rev, created_at) values ('b1', 'p1', 'A', 't')`,
+		`insert into hw_bom_lines (bom_rev_id, part_id, quantity) values ('b1', 'pt', 2)`,
+		`update hw_bom_revs set status = 'released' where id = 'b1'`,
+	} {
+		if _, err := database.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+	}
+	if _, err := database.ExecContext(ctx, `update hw_bom_lines set quantity = 3 where bom_rev_id = 'b1'`); err == nil {
+		t.Error("a released BOM line was changed")
+	}
+	if _, err := database.ExecContext(ctx, `delete from hw_bom_lines where bom_rev_id = 'b1'`); err == nil {
+		t.Error("a released BOM line was deleted")
+	}
+	// …but deleting the whole project still works.
+	if _, err := database.ExecContext(ctx, `delete from projects where id = 'p1'`); err != nil {
+		t.Fatalf("project delete with a released BOM: %v", err)
+	}
+	if n := count(`select count(*) from hw_bom_lines`); n != 0 {
+		t.Errorf("orphan BOM lines = %d", n)
 	}
 }
