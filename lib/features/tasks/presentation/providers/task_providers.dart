@@ -11,6 +11,7 @@ import '../../data/repositories/task_repository_impl.dart';
 import '../../domain/entities/task.dart';
 import '../../domain/repositories/task_repository.dart';
 import '../../domain/usecases/task_usecases.dart';
+import '../../../groups/presentation/providers/active_group.dart';
 
 final taskRemoteDataSourceProvider = Provider<TaskRemoteDataSource>(
   (ref) => TaskRemoteDataSource(
@@ -52,6 +53,8 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
   Future<List<Task>> build() async {
     // Reload whenever the signed-in account changes.
     ref.watch(authNotifierProvider.select((state) => state.value?.id));
+    // Reload when the active group changes (X-Group-Id).
+    ref.watch(activeGroupProvider);
     final result = await ref.watch(getTasksProvider).call(projectId: _projectId);
     _logResult('load', result);
     return result.dataOrNull ?? const [];

@@ -147,7 +147,7 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Headers",
-				"Authorization, Content-Type, X-Workspace-Id")
+				"Authorization, Content-Type, X-Workspace-Id, X-Group-Id")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 		}

@@ -47,7 +47,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(context.l10n.projects),
+        title: ActiveGroupTitle(title: context.l10n.projects),
         actions: [
           const GroupSwitcherButton(),
           IconButton(

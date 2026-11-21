@@ -11,6 +11,7 @@ import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../../domain/group_models.dart';
 import '../providers/group_providers.dart';
 import '../widgets/group_widgets.dart';
+import '../providers/active_group.dart';
 
 /// `/invite/:inviteId` — "Ahmed invited you to «Power Board» as Technician".
 ///
@@ -37,7 +38,7 @@ class _InviteLinkPageState extends ConsumerState<InviteLinkPage> {
         ..invalidate(workspaceSnapshotProvider);
       if (!mounted) return;
       if (groupId != null) {
-        await ref.read(lastGroupIdProvider).set(groupId);
+        ref.read(activeGroupProvider.notifier).select(groupId);
         if (mounted) context.go('/g/$groupId/welcome');
       } else {
         context.go('/groups');

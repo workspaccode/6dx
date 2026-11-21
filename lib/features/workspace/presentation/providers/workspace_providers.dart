@@ -9,6 +9,7 @@ import '../../data/repositories/workspace_repository_impl.dart';
 import '../../domain/entities/workspace_snapshot.dart';
 import '../../domain/repositories/workspace_repository.dart';
 import '../../domain/usecases/workspace_usecases.dart';
+import '../../../groups/presentation/providers/active_group.dart';
 
 final workspaceRemoteDataSourceProvider = Provider<WorkspaceRemoteDataSource>(
   (ref) => WorkspaceRemoteDataSource(
@@ -58,6 +59,8 @@ final getPendingInvitesProvider = Provider<GetPendingInvites>(
 final workspaceSnapshotProvider = FutureProvider<WorkspaceSnapshot>((ref) async {
   // Reload whenever the signed-in account changes.
   ref.watch(authNotifierProvider.select((state) => state.value?.id));
+  // The projection of the active group (X-Group-Id).
+  ref.watch(activeGroupProvider);
 
   // Deliver invites that were sent before this account existed. Best effort:
   // a failure here must not hide the workspace itself.

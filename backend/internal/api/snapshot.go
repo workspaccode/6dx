@@ -16,7 +16,7 @@ import (
 // SQLite has no plpgsql, so the projection is assembled here — and the JSON
 // shape is byte-for-byte the one `WorkspaceSnapshotMapper` already consumes, so
 // no screen changed.
-func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (map[string]any, error) {
+func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string, g snapScope) (map[string]any, error) {
 	var (
 		name string
 	)
@@ -37,8 +37,13 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 	if role == "" {
 		return nil, nil
 	}
+	// Inside a group the group role decides (a workspace developer can be
+	// the lead of a group, a workspace viewer is always a guest).
+	if !g.Default {
+		role = g.Role
+	}
 
-	members, err := s.snapshotMembers(ctx, workspaceID, role)
+	members, err := s.snapshotMembers(ctx, workspaceID, role, g)
 	if err != nil {
 		return nil, err
 	}
@@ -46,36 +51,36 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 	// people who manage invites need it.
 	invites := make([]any, 0)
 	if role.IsAdmin() {
-		invites, err = s.snapshotInvites(ctx, workspaceID)
+		invites, err = s.snapshotInvites(ctx, workspaceID, g)
 		if err != nil {
 			return nil, err
 		}
 	}
-	tasks, taskNames, err := s.snapshotTasks(ctx, workspaceID)
+	tasks, taskNames, err := s.snapshotTasks(ctx, workspaceID, g)
 	if err != nil {
 		return nil, err
 	}
-	comments, subtasks, err := s.snapshotTaskDetails(ctx, workspaceID)
+	comments, subtasks, err := s.snapshotTaskDetails(ctx, workspaceID, g)
 	if err != nil {
 		return nil, err
 	}
-	dependencies, err := s.snapshotDependencies(ctx, workspaceID, taskNames)
+	dependencies, err := s.snapshotDependencies(ctx, workspaceID, taskNames, g)
 	if err != nil {
 		return nil, err
 	}
-	activity, err := s.snapshotActivity(ctx, workspaceID)
+	activity, err := s.snapshotActivity(ctx, workspaceID, g)
 	if err != nil {
 		return nil, err
 	}
-	sprints, err := s.snapshotSprints(ctx, workspaceID, taskNames)
+	sprints, err := s.snapshotSprints(ctx, workspaceID, taskNames, g)
 	if err != nil {
 		return nil, err
 	}
-	pullRequests, err := s.snapshotPullRequests(ctx, workspaceID)
+	pullRequests, err := s.snapshotPullRequests(ctx, workspaceID, g)
 	if err != nil {
 		return nil, err
 	}
-	labels, repositories, err := s.snapshotProjectExtras(ctx, workspaceID)
+	labels, repositories, err := s.snapshotProjectExtras(ctx, workspaceID, g)
 	if err != nil {
 		return nil, err
 	}
@@ -87,13 +92,18 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 	if err != nil {
 		return nil, err
 	}
-	clientReport, err := s.snapshotClientReport(ctx, workspaceID, callerUID, role)
-	if err != nil {
-		return nil, err
+	// The client report predates groups and belongs to the default group.
+	var clientReport any
+	if g.Default {
+		clientReport, err = s.snapshotClientReport(ctx, workspaceID, callerUID, role)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return map[string]any{
 		"workspace_id":   workspaceID,
+		"group_id":       g.GroupID,
 		"name":           name,
 		"members":        members,
 		"invites":        invites,
@@ -115,8 +125,8 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 
 // snapshotMembers lists the team. A viewer is the external client: they see
 // names and roles, never the team's e-mail addresses.
-func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Role) ([]any, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Role, g snapScope) ([]any, error) {
+	query, args := `
 		select m.user_uid, u.email, u.display_name, u.photo_url, m.role,
 		       (select count(*) from tasks t
 		         where t.workspace_id = m.workspace_id
@@ -124,7 +134,25 @@ func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Rol
 		from workspace_members m
 		left join users u on u.uid = m.user_uid
 		where m.workspace_id = ?
-		order by m.created_at`, wsID)
+		order by m.created_at`, []any{wsID}
+	if !g.Default {
+		// A group lists its own members, with the group role expressed in
+		// the workspace-role vocabulary the existing screens understand.
+		query, args = `
+		select gm.user_uid, u.email, u.display_name, u.photo_url,
+		       case gm.group_role
+		         when 'lead' then 'owner' when 'admin' then 'admin' when 'guest' then 'viewer'
+		         else case gm.functional_role when 'reviewer' then 'reviewer' else 'developer' end
+		       end,
+		       (select count(*) from tasks t
+		         where t.assignee_uid = gm.user_uid and t.status <> 'done'
+		           and t.project_id in (select id from projects where group_id = gm.group_id))
+		from group_members gm
+		left join users u on u.uid = gm.user_uid
+		where gm.group_id = ?
+		order by gm.created_at`, []any{g.GroupID}
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -156,14 +184,14 @@ func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Rol
 	return out, rows.Err()
 }
 
-func (s *store) snapshotInvites(ctx context.Context, wsID string) ([]any, error) {
+func (s *store) snapshotInvites(ctx context.Context, wsID string, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select i.id, i.email, i.role, i.status, i.sent_at,
 		       (select coalesce(nullif(u.display_name, ''), u.email)
 		          from users u where u.uid = i.invited_by)
 		from workspace_invites i
-		where i.workspace_id = ?
-		order by i.sent_at desc`, wsID)
+		where i.workspace_id = ? and coalesce(i.group_id, '') = ?
+		order by i.sent_at desc`, wsID, g.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +216,7 @@ func (s *store) snapshotInvites(ctx context.Context, wsID string) ([]any, error)
 	return out, rows.Err()
 }
 
-func (s *store) snapshotTasks(ctx context.Context, wsID string) ([]any, map[string]taskInfo, error) {
+func (s *store) snapshotTasks(ctx context.Context, wsID string, g snapScope) ([]any, map[string]taskInfo, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select t.id, t.key, t.title, t.description, t.status, t.priority, t.points,
 		       t.project_id, p.name, t.assignee_uid,
@@ -197,8 +225,8 @@ func (s *store) snapshotTasks(ctx context.Context, wsID string) ([]any, map[stri
 		       t.label, t.branch, t.pr_number, t.due_at, t.created_at
 		from tasks t
 		left join projects p on p.id = t.project_id
-		where t.workspace_id = ?`+legacyTaskScope+`
-		order by t.created_at desc`, wsID)
+		where t.workspace_id = ?`+g.tasks("t")+`
+		order by t.created_at desc`, wsID, g.GroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,7 +278,7 @@ type taskInfo struct {
 	AssigneeName *string
 }
 
-func (s *store) snapshotTaskDetails(ctx context.Context, wsID string) ([]any, []any, error) {
+func (s *store) snapshotTaskDetails(ctx context.Context, wsID string, g snapScope) ([]any, []any, error) {
 	commentRows, err := s.db.QueryContext(ctx, `
 		select c.id, c.task_id,
 		       (select coalesce(nullif(u.display_name, ''), u.email)
@@ -258,8 +286,8 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string) ([]any, []
 		       c.body, c.attachment, c.code, c.created_at
 		from task_comments c
 		join tasks t on t.id = c.task_id
-		where t.workspace_id = ?`+legacyTaskScope+`
-		order by c.created_at`, wsID)
+		where t.workspace_id = ?`+g.tasks("t")+`
+		order by c.created_at`, wsID, g.GroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -287,7 +315,7 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string) ([]any, []
 		select sc.id, sc.task_id, sc.title, sc.is_done
 		from task_subtasks sc
 		join tasks t on t.id = sc.task_id
-		where t.workspace_id = ?`+legacyTaskScope, wsID)
+		where t.workspace_id = ?`+g.tasks("t"), wsID, g.GroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -310,12 +338,12 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string) ([]any, []
 	return comments, subtasks, nil
 }
 
-func (s *store) snapshotDependencies(ctx context.Context, wsID string, tasks map[string]taskInfo) ([]any, error) {
+func (s *store) snapshotDependencies(ctx context.Context, wsID string, tasks map[string]taskInfo, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select d.id, d.task_id, d.state, d.reason
 		from task_dependencies d
 		join tasks t on t.id = d.task_id
-		where t.workspace_id = ?`+legacyTaskScope, wsID)
+		where t.workspace_id = ?`+g.tasks("t"), wsID, g.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -342,16 +370,16 @@ func (s *store) snapshotDependencies(ctx context.Context, wsID string, tasks map
 	return out, rows.Err()
 }
 
-func (s *store) snapshotActivity(ctx context.Context, wsID string) ([]any, error) {
+func (s *store) snapshotActivity(ctx context.Context, wsID string, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select a.id, a.type, a.text,
 		       (select coalesce(nullif(u.display_name, ''), u.email)
 		          from users u where u.uid = a.actor_uid),
 		       a.created_at
 		from activity_events a
-		where a.workspace_id = ?
+		where a.workspace_id = ?`+g.tasks("a")+`
 		order by a.created_at desc
-		limit 200`, wsID)
+		limit 200`, wsID, g.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -375,11 +403,11 @@ func (s *store) snapshotActivity(ctx context.Context, wsID string) ([]any, error
 	return out, rows.Err()
 }
 
-func (s *store) snapshotSprints(ctx context.Context, wsID string, tasks map[string]taskInfo) ([]any, error) {
+func (s *store) snapshotSprints(ctx context.Context, wsID string, tasks map[string]taskInfo, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select id, name, goal, starts_at, ends_at, capacity, committed
-		from sprints where workspace_id = ?
-		order by starts_at`, wsID)
+		from sprints s where s.workspace_id = ?`+g.tasks("s")+`
+		order by s.starts_at`, wsID, g.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +478,7 @@ func (s *store) snapshotSprintItems(ctx context.Context, sprintID string, tasks 
 	return out, rows.Err()
 }
 
-func (s *store) snapshotPullRequests(ctx context.Context, wsID string) ([]any, error) {
+func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select pr.id, pr.number, pr.title, pr.author, pr.branch, pr.base_branch,
 		       pr.state, pr.checks, pr.files, pr.additions, pr.deletions,
@@ -460,7 +488,7 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string) ([]any, e
 		       (select t.key from tasks t where t.id = pr.task_id),
 		       (select p.name from projects p where p.id = pr.project_id)
 		from pull_requests pr
-		where pr.workspace_id = ?`+legacyPRScope, wsID)
+		where pr.workspace_id = ?`+g.tasks("pr"), wsID, g.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,12 +538,12 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string) ([]any, e
 	return out, rows.Err()
 }
 
-func (s *store) snapshotProjectExtras(ctx context.Context, wsID string) ([]any, []any, error) {
+func (s *store) snapshotProjectExtras(ctx context.Context, wsID string, g snapScope) ([]any, []any, error) {
 	labelRows, err := s.db.QueryContext(ctx, `
 		select l.id, l.name, l.color
 		from project_labels l
 		join projects p on p.id = l.project_id
-		where p.workspace_id = ?`+legacyProjectScope, wsID)
+		where p.workspace_id = ? and p.group_id = ?`, wsID, g.GroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -534,7 +562,7 @@ func (s *store) snapshotProjectExtras(ctx context.Context, wsID string) ([]any, 
 		select r.id, r.full_name, r.branch, r.description, r.language, r.last_synced_at
 		from repositories r
 		join projects p on p.id = r.project_id
-		where p.workspace_id = ?`+legacyProjectScope, wsID)
+		where p.workspace_id = ? and p.group_id = ?`, wsID, g.GroupID)
 	if err != nil {
 		return nil, nil, err
 	}

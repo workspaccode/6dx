@@ -46,7 +46,13 @@ func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	payload, err := s.store.snapshot(r.Context(), ws.ID, caller.UID)
+	// The projection of one group: ?group_id= / X-Group-Id, else the default.
+	access, err := s.scopeGroup(r, ws, caller.UID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	payload, err := s.store.snapshot(r.Context(), ws.ID, caller.UID, scopeOf(access))
 	if err != nil {
 		writeError(w, err)
 		return

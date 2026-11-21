@@ -9,6 +9,7 @@ import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/group_models.dart';
 import '../providers/group_providers.dart';
 import '../widgets/group_widgets.dart';
+import '../providers/active_group.dart';
 
 /// `/g/:gid/home` — the group's home, shaped by the caller's role.
 class GroupHomePage extends ConsumerStatefulWidget {
@@ -23,8 +24,11 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
   @override
   void initState() {
     super.initState();
-    // Reopen this group next time.
-    ref.read(lastGroupIdProvider).set(widget.gid);
+    // This group becomes the active one: the classic screens (board,
+    // sprints, reviews) now show it, and the app reopens it next time.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(activeGroupProvider.notifier).select(widget.gid);
+    });
   }
 
   @override
@@ -100,12 +104,15 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
                 title: 'إعدادات المجموعة',
                 onTap: () => context.push('/g/${widget.gid}/settings'),
               ),
-            if (access.isDefault)
+            if (access.type == GroupType.software)
               SettingsTile(
                 icon: Icons.dashboard_outlined,
-                title: 'الشاشات الكاملة (المهام، الـ sprints، المراجعات)',
-                subtitle: 'المجموعة الافتراضية متوصلة بكل شاشات التطبيق',
-                onTap: () => context.go(AppRoutes.projects),
+                title: 'الشاشات الكاملة (الـ board، الـ sprints، المراجعات)',
+                subtitle: 'بتعرض المجموعة دي',
+                onTap: () {
+                  ref.read(activeGroupProvider.notifier).select(widget.gid);
+                  context.go(AppRoutes.projects);
+                },
               ),
           ],
         );
@@ -453,7 +460,7 @@ class GroupSettingsPage extends ConsumerWidget {
                   if (!ok) return;
                   try {
                     await api.delete(gid);
-                    await ref.read(lastGroupIdProvider).set(null);
+                    ref.read(activeGroupProvider.notifier).clear();
                     ref.invalidate(groupsOverviewProvider);
                     if (context.mounted) context.go('/groups');
                   } catch (error) {

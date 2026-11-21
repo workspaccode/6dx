@@ -8,6 +8,7 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/group_models.dart';
 import '../providers/group_providers.dart';
+import '../providers/active_group.dart';
 
 /// Human message for an API failure.
 String describeError(Object error, {String fallback = 'حصل خطأ، حاول تاني.'}) {
@@ -100,6 +101,31 @@ class GroupTypeBadge extends StatelessWidget {
         label: type.label,
         color: type == GroupType.hardware ? AppColors.warning : AppColors.info,
       );
+}
+
+/// The active group's name, for the classic screens' app bars.
+class ActiveGroupTitle extends ConsumerWidget {
+  const ActiveGroupTitle({super.key, required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(activeGroupProvider);
+    final groups = ref.watch(groupsOverviewProvider).value?.groups ?? const [];
+    String? name;
+    for (final g in groups) {
+      if (active == null ? g.isDefault : g.id == active) name = g.name;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(title),
+        if (name != null)
+          Text(name, style: Theme.of(context).textTheme.labelSmall),
+      ],
+    );
+  }
 }
 
 /// AppBar action: current group name; opens the switcher.
@@ -223,6 +249,43 @@ class _GroupSwitcherSheet extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Guards a classic (pre-group) admin screen with the active group's
+/// capabilities: a client or developer opening /projects/settings sees the
+/// locked state instead of buttons the API would refuse anyway.
+class ActiveGroupGuard extends ConsumerWidget {
+  const ActiveGroupGuard({super.key, required this.requires, required this.child});
+
+  final String requires;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(activeGroupProvider);
+    if (active != null) {
+      return GroupScope(gid: active, requires: requires, builder: (_, __) => child);
+    }
+    // No active group = the default group.
+    final overview = ref.watch(groupsOverviewProvider);
+    return overview.when(
+      loading: () => const Scaffold(body: AppLoadingView()),
+      error: (error, _) => Scaffold(
+        body: AppErrorView(
+          message: describeError(error),
+          onRetry: () => ref.invalidate(groupsOverviewProvider),
+        ),
+      ),
+      data: (data) {
+        String? defaultId;
+        for (final g in data.groups) {
+          if (g.isDefault) defaultId = g.id;
+        }
+        if (defaultId == null) return child;
+        return GroupScope(gid: defaultId, requires: requires, builder: (_, __) => child);
+      },
     );
   }
 }

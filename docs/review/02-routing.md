@@ -89,7 +89,7 @@ errorBuilder: (context, state) => const NotFoundPage(),
 
 ## 🟡 مفيش حراسة حسب الصلاحية
 
-- [ ] الـ redirect بيفرّق بين مسجّل/مش مسجّل بس. العميل (client) أو المشاهد (viewer) يقدر يفتح `/projects/settings`، `/projects/members`، `/projects/archive`، و `/settings/billing`. السيرفر هيرفض الكتابة، بس المستخدم هيشوف شاشات وأزرار مش من حقه.
+- [x] الـ redirect بيفرّق بين مسجّل/مش مسجّل بس. العميل (client) أو المشاهد (viewer) يقدر يفتح `/projects/settings`، `/projects/members`، `/projects/archive`، و `/settings/billing`. السيرفر هيرفض الكتابة، بس المستخدم هيشوف شاشات وأزرار مش من حقه.
 - **الحل:** اقرا `role` من الـ snapshot واعمل guard للمسارات الإدارية (روّح لـ `NoPermissionPage` الموجودة).
 
 ## ⚪ تنظيم

@@ -17,23 +17,57 @@ import (
 // membership check — otherwise every workspace member would see every
 // private hardware project.
 
-// SQL fragments, appended after a `where` on the given alias. They need no
-// extra parameter: the default group is found from the row's workspace.
-const (
-	legacyTaskScope = ` and (t.project_id is null or t.project_id in (
-		select p2.id from projects p2 join groups g2 on g2.id = p2.group_id
-		where g2.workspace_id = t.workspace_id and g2.is_default = 1))`
-	legacyProjectScope = ` and p.group_id in (
-		select g2.id from groups g2 where g2.workspace_id = p.workspace_id and g2.is_default = 1)`
-	legacyPRScope = ` and (pr.project_id is null or pr.project_id in (
-		select p2.id from projects p2 join groups g2 on g2.id = p2.group_id
-		where g2.workspace_id = pr.workspace_id and g2.is_default = 1))`
-)
+// snapScope is the group a projection reads. Rows carry a project_id; a row
+// belongs to the group through its project, and rows with no project belong
+// to the default group.
+type snapScope struct {
+	GroupID string
+	Default bool
+	// Role is the caller's group role in workspace-role vocabulary, for the
+	// existing screens (owner = lead, viewer = guest).
+	Role Role
+}
+
+// tasks returns the filter for `alias.project_id` (one ? = GroupID).
+func (g snapScope) tasks(alias string) string {
+	if g.Default {
+		return ` and (` + alias + `.project_id is null or ` + alias +
+			`.project_id in (select id from projects where group_id = ?))`
+	}
+	return ` and ` + alias + `.project_id in (select id from projects where group_id = ?)`
+}
+
+func scopeOf(a *groupAccess) snapScope {
+	return snapScope{GroupID: a.ID, Default: a.IsDefault, Role: legacyRoleFor(a)}
+}
+
+// legacyRoleFor expresses a group role in the workspace-role vocabulary.
+func legacyRoleFor(a *groupAccess) Role {
+	switch {
+	case !a.IsMember:
+		return RoleAdmin // workspace owner/admin administering the group
+	case a.GroupRole == GroupLead:
+		return RoleOwner
+	case a.GroupRole == GroupAdmin:
+		return RoleAdmin
+	case a.GroupRole == GroupGuest:
+		return RoleViewer
+	case a.FunctionalRole == "reviewer":
+		return RoleReviewer
+	default:
+		return RoleDeveloper
+	}
+}
 
 // scopeGroup resolves the group a list request reads: ?group_id= (after an
 // access check) or the default group.
 func (s *Server) scopeGroup(r *http.Request, ws *Workspace, uid string) (*groupAccess, error) {
+	// ?group_id= wins; X-Group-Id is the app's "active group" (sent on
+	// every request, like X-Workspace-Id).
 	gid := r.URL.Query().Get("group_id")
+	if gid == "" {
+		gid = r.Header.Get("X-Group-Id")
+	}
 	if gid == "" {
 		var err error
 		if gid, err = s.store.defaultGroupID(r.Context(), ws.ID); err != nil {

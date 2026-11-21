@@ -11,6 +11,7 @@ import '../../data/repositories/project_repository_impl.dart';
 import '../../domain/entities/project.dart';
 import '../../domain/repositories/project_repository.dart';
 import '../../domain/usecases/project_usecases.dart';
+import '../../../groups/presentation/providers/active_group.dart';
 
 final projectRemoteDataSourceProvider = Provider<ProjectRemoteDataSource>(
   (ref) => ProjectRemoteDataSource(
@@ -47,6 +48,8 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
   Future<List<Project>> build() async {
     // Reload whenever the signed-in account changes.
     ref.watch(authNotifierProvider.select((state) => state.value?.id));
+    // Reload when the active group changes (X-Group-Id).
+    ref.watch(activeGroupProvider);
     final result = await ref.watch(getProjectsProvider).call();
     _logResult('load', result);
     return result.dataOrNull ?? const [];

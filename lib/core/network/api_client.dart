@@ -52,6 +52,10 @@ class ApiClient {
           if (workspace != null && workspace.isNotEmpty) {
             options.headers['X-Workspace-Id'] = workspace;
           }
+          final group = activeGroupId;
+          if (group != null && group.isNotEmpty) {
+            options.headers['X-Group-Id'] = group;
+          }
           handler.next(options);
         },
       ),
@@ -64,6 +68,13 @@ class ApiClient {
 
   /// The workspace the UI is showing; sent as `X-Workspace-Id`.
   String? activeWorkspaceId;
+
+  /// The group the classic screens show; sent as `X-Group-Id`. `null` = the
+  /// workspace's default group.
+  String? activeGroupId;
+
+  /// Called when the API answers `not_group_member` for the active group.
+  void Function()? onGroupRevoked;
 
   /// Called when the server answers 401 for a request that carried a token.
   /// The session layer re-validates the grant with GitHub then: a revoked
@@ -143,6 +154,9 @@ class ApiClient {
         return const ServerException('طلبات كتير في وقت قصير. حاول تاني بعد دقيقة.');
     }
 
+    if (response.statusCode == 403 && code == 'not_group_member' && activeGroupId != null) {
+      onGroupRevoked?.call();
+    }
     if (message != null && message.isNotEmpty) {
       return ServerException(message);
     }

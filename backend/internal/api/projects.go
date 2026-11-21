@@ -100,6 +100,11 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var groupID string
+	if body.GroupID == nil || *body.GroupID == "" {
+		if active := r.Header.Get("X-Group-Id"); active != "" {
+			body.GroupID = &active
+		}
+	}
 	if body.GroupID != nil && *body.GroupID != "" {
 		access, err := s.store.loadGroupAccess(r.Context(), ws, caller.UID, *body.GroupID)
 		if err != nil {

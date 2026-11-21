@@ -41,6 +41,8 @@ import '../features/groups/presentation/pages/group_pages.dart';
 import '../features/groups/presentation/pages/groups_pages.dart';
 import '../features/groups/presentation/pages/invite_page.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
+import '../features/groups/domain/group_models.dart';
+import '../features/groups/presentation/widgets/group_widgets.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -281,7 +283,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.connectRepository,
-        builder: (_, __) => const ConnectRepositoryPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageProjects,
+          child: ConnectRepositoryPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.taskBoard,
@@ -360,19 +365,31 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.projectSettings,
-        builder: (_, __) => const ProjectSettingsPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageGroup,
+          child: ProjectSettingsPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.syncSettings,
-        builder: (_, __) => const SyncSettingsPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageProjects,
+          child: SyncSettingsPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.labels,
-        builder: (_, __) => const LabelsPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageProjects,
+          child: LabelsPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.integrations,
-        builder: (_, __) => const IntegrationsPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageProjects,
+          child: IntegrationsPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.activityLog,
@@ -380,15 +397,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.archiveProject,
-        builder: (_, __) => const ArchivePage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageProjects,
+          child: ArchivePage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.members,
-        builder: (_, __) => const MembersPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageMembers,
+          child: MembersPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.invite,
-        builder: (_, __) => const InvitePage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageMembers,
+          child: InvitePage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.accountSettings,
@@ -503,7 +529,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.bulkInvite,
-        builder: (_, __) => const BulkInvitePage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageMembers,
+          child: BulkInvitePage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.regionalCalendar,
@@ -511,11 +540,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.billing,
-        builder: (_, __) => const BillingPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageGroup,
+          child: BillingPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.exportData,
-        builder: (_, __) => const ExportDataPage(),
+        builder: (_, __) => const ActiveGroupGuard(
+          requires: Caps.manageGroup,
+          child: ExportDataPage(),
+        ),
       ),
       GoRoute(
         path: AppRoutes.ghAppInstall,

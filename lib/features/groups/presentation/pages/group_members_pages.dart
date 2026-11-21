@@ -8,6 +8,7 @@ import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/group_models.dart';
 import '../providers/group_providers.dart';
 import '../widgets/group_widgets.dart';
+import '../providers/active_group.dart';
 
 /// `/g/:gid/members`
 class GroupMembersPage extends ConsumerWidget {
@@ -82,7 +83,7 @@ class GroupMembersPage extends ConsumerWidget {
     if (ok != true || !context.mounted) return;
     try {
       await ref.read(groupsApiProvider).removeMember(gid, myUid);
-      await ref.read(lastGroupIdProvider).set(null);
+      ref.read(activeGroupProvider.notifier).clear();
       ref.invalidate(groupsOverviewProvider);
       if (context.mounted) context.go('/groups');
     } catch (error) {

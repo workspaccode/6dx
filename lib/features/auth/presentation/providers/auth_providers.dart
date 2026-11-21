@@ -134,6 +134,7 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
   /// by `githubSdkProvider`, which listens to the account id.
   void _resetSessionState() {
     ref.read(currentWorkspaceProvider).reset();
+    ref.read(apiClientProvider).activeGroupId = null;
   }
 }
 
