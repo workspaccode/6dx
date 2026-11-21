@@ -10,6 +10,9 @@ type createProjectRequest struct {
 	Name               string  `json:"name"`
 	Description        *string `json:"description"`
 	RepositoryFullName *string `json:"repository_full_name"`
+	// GroupID places the project in a group (projects.manage there). Empty =
+	// the workspace's default group, for the legacy screens.
+	GroupID *string `json:"group_id"`
 }
 
 // GET /v1/projects
@@ -83,15 +86,33 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if _, err := s.store.requireEditor(r.Context(), ws.ID, caller.UID); err != nil {
-		writeError(w, err)
-		return
-	}
-
 	var body createProjectRequest
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, err)
 		return
+	}
+
+	var groupID string
+	if body.GroupID != nil && *body.GroupID != "" {
+		access, err := s.store.loadGroupAccess(r.Context(), ws, caller.UID, *body.GroupID)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if err := access.require(CapManageProjects); err != nil {
+			writeError(w, err)
+			return
+		}
+		groupID = access.ID
+	} else {
+		if _, err := s.store.requireEditor(r.Context(), ws.ID, caller.UID); err != nil {
+			writeError(w, err)
+			return
+		}
+		if groupID, err = s.store.defaultGroupID(r.Context(), ws.ID); err != nil {
+			writeError(w, err)
+			return
+		}
 	}
 	body.Name = strings.TrimSpace(body.Name)
 	if body.Name == "" {
@@ -127,10 +148,10 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(r.Context(), `
-		insert into projects (id, workspace_id, name, description, is_archived,
+		insert into projects (id, workspace_id, group_id, name, description, is_archived,
 		                      created_by, created_at, updated_at)
-		values (?, ?, ?, ?, 0, ?, ?, ?)`,
-		projectID, ws.ID, body.Name, body.Description, caller.UID, now, now,
+		values (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+		projectID, ws.ID, groupID, body.Name, body.Description, caller.UID, now, now,
 	); err != nil {
 		writeError(w, err)
 		return
@@ -160,6 +181,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 			"id":                   projectID,
 			"name":                 body.Name,
 			"description":          body.Description,
+			"group_id":             groupID,
 			"icon":                 nil,
 			"color":                nil,
 			"open_tasks":           0,

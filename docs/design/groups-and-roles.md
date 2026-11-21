@@ -818,7 +818,7 @@ POST             /v1/links/:id/approve | revoke          [lead | admin للطر�
 | المرحلة | المحتوى | يعتمد على |
 |---|---|---|
 | **0** | إصلاحات الحماية 🔴 من [docs/review](../review/README.md)، خصوصًا بنود 1 و 3 و 13 و 16، والـ redirect بـ `refreshListenable` | — |
-| **1** | `groups` و `group_members` والـ migration، و `requireCap`، و `GET /v1/groups/:gid/me`، و**حدود الخطة** (10 / 50) | 0 |
+| **1** ✅ | `groups` و `group_members` والـ migration، و `requireCap`، و `GET /v1/groups/:gid/me`، و**حدود الخطة** (10 / 50) | 0 |
 | **2** | الراوت الجديد `/g/:gid/...` والـ guards، و `/groups` والـ switcher والعداد، والدعوة بـ `/invite/:id` والـ welcome، والـ redirect لو المجموعة فيها مشروع واحد. نقل شاشات الـ Software الحالية تحت `/g/:gid/p/:pid` | 1 |
 | **3** | **الحالات القابلة للتعديل** (`workflow_states` بالفئات) وشاشة `/settings/workflow`، والشاشة الرئيسية حسب الدور، والـ override على مستوى المشروع، والمشاريع الخاصة | 2 |
 | **4أ** | Hardware MVP: **قالب المراحل القابل للتعديل** والـ gates، والـ parts، والـ BOM بمستوى واحد، والـ ECO باعتماد مرحلتين، والـ builds والوحدات، والاختبارات، و firmware ↔ HW | 3 |
@@ -826,6 +826,50 @@ POST             /v1/links/:id/approve | revoke          [lead | admin للطر�
 | **5** | لاحقًا: **ربط المشاريع بين المجموعات (استثنائي)**، و BOM متعدد المستويات و where-used، والشهادات، وحجز المعمل، و NCR/MRB/RMA، و custom roles، وشاشة الـ approval matrix، وتقييد الانتقالات بين الحالات بالأدوار، وتكامل Altium / KiCad / Onshape، وشاشة "ليه الشخص ده يقدر يعمل كذا" | 4ب |
 
 ---
+
+## 11.1 المرحلة 1: اللي اتنفذ
+
+**الـ migration (`0003_groups.sql`):**
+- جداول `plans` (العادية: 10 مجموعات، المدفوعة: 50 مجموعة بـ 6000 سنت) و `groups` و `group_members` (قائد واحد بس لكل مجموعة، والقاعدة نفسها بتضمن ده) و `project_members`.
+- عمود `group_id` اتضاف للمشاريع وللدعوات.
+- كل workspace موجود اتعمله مجموعة افتراضية (`is_default`) نوعها software، وانتقل ليها كل أعضائه ومشاريعه ودعواته المعلّقة، بالـ mapping اللي في القسم 10.
+
+**القدرات (`caps.go`):**
+- كل endpoint بيطلب قدرة (capability) مش دور.
+- الـ lead واخد كل القدرات.
+- الـ admin بيدير المجموعة، بس القدرات التشغيلية بياخدها من دوره الوظيفي بس.
+- الـ guest للقراءة بس، وممكن يسجّل قرار العميل.
+- المجموعة المأرشفة للقراءة بس.
+- owner و admin الـ workspace يقدروا يديروا أي مجموعة حتى لو مش أعضاء فيها، علشان مفيش مجموعة تفضل من غير حد يديرها. بس مابياخدوش أي قدرات تشغيلية.
+
+**الـ API:**
+
+```
+GET    /v1/workspace/plan                     الخطة + used / max
+GET    /v1/groups                             مجموعاتي (والكل لأدمن الـ workspace) + الخطة
+POST   /v1/groups                             {name, type, template?, description?} → 409 group_limit_reached
+GET    /v1/groups/{gid}/me                    group_role + functional_role + capabilities
+PATCH  /v1/groups/{gid}                       {name?, description?, is_archived?}
+DELETE /v1/groups/{gid}                       للـ lead، ولمجموعة فاضية بس (غير كده: أرشفة)
+POST   /v1/groups/{gid}/transfer              {uid} → الـ lead القديم بيبقى admin
+GET    /v1/groups/{gid}/members               الضيف مابيشوفش الإيميلات
+PATCH  /v1/groups/{gid}/members/{uid}         {group_role?, functional_role?}
+DELETE /v1/groups/{gid}/members/{uid}         إزالة، أو مغادرة لو uid = نفسك
+POST   /v1/groups/{gid}/invites               {emails, group_role?, functional_role?}
+POST   /v1/projects                           {..., group_id?} → لازم projects.manage في المجموعة
+```
+
+**القواعد:**
+- الـ admin مايقدرش يعيّن admin تاني، ولا ينزّله، ولا يشيله.
+- القيادة بتتنقل من «نقل القيادة» بس، والـ lead مايقدرش يمشي قبل ما ينقلها.
+- الدور الوظيفي لازم يكون متاح لنوع المجموعة.
+- دور `client` بييجي مع `guest` بس.
+- مينفعش تشيل عضو من الـ workspace لو هو قائد مجموعة.
+- المجموعات المأرشفة مش بتتحسب في حد الخطة، بس فك الأرشفة محتاج يكون فيه مكان فاضي.
+- الحد بيتشيّك جوه نفس الـ transaction اللي بتعمل المجموعة، وقاعدة البيانات باتصال واحد، فطلبين في نفس اللحظة مايقدروش ياخدوا آخر مكان مع بعض.
+- الـ endpoints القديمة (`/v1/invites` و `/v1/projects` من غير `group_id`) بتشتغل على المجموعة الافتراضية.
+
+**الاختبارات:** `groups_integration_test.go` فيه 7 سيناريوهات، و `internal/db/migrate_test.go` بيختبر الـ migration على بيانات قديمة.
 
 ## 12. القرارات
 

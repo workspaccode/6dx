@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -168,10 +167,44 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.store.db.ExecContext(r.Context(),
+	// A group must never be left without its lead.
+	var leads int
+	if err := s.store.db.QueryRowContext(r.Context(), `
+		select count(*) from group_members gm
+		join groups g on g.id = gm.group_id
+		where g.workspace_id = ? and gm.user_uid = ? and gm.group_role = 'lead'`,
+		ws.ID, target).Scan(&leads); err != nil {
+		writeError(w, err)
+		return
+	}
+	if leads > 0 {
+		writeError(w, conflict("member_leads_a_group",
+			"العضو ده قائد مجموعة. انقل القيادة لحد تاني الأول."))
+		return
+	}
+
+	tx, err := s.store.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(r.Context(), `
+		delete from group_members
+		 where user_uid = ? and group_id in (select id from groups where workspace_id = ?)`,
+		target, ws.ID,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
 		`delete from workspace_members where workspace_id = ? and user_uid = ?`,
 		ws.ID, target,
 	); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -189,7 +222,7 @@ type inviteRequest struct {
 	Role   string   `json:"role"`
 }
 
-// POST /v1/invites
+// POST /v1/invites — legacy workspace invite; lands in the default group.
 func (s *Server) handleSendInvites(w http.ResponseWriter, r *http.Request) {
 	caller, ws, err := s.callerAndWorkspace(r)
 	if err != nil {
@@ -205,34 +238,6 @@ func (s *Server) handleSendInvites(w http.ResponseWriter, r *http.Request) {
 	var body inviteRequest
 	if err := decodeBody(r, &body); err != nil {
 		writeError(w, err)
-		return
-	}
-	if len(body.Emails) > maxInvitesPerRequest {
-		writeError(w, badRequest("too_many_invites",
-			fmt.Sprintf("أقصى عدد للدعوات في المرة الواحدة %d.", maxInvitesPerRequest)))
-		return
-	}
-	// Validate and de-duplicate up front: one bad address rejects the whole
-	// request, so the admin sees exactly which one to fix.
-	emails := make([]string, 0, len(body.Emails))
-	seen := make(map[string]bool, len(body.Emails))
-	for _, raw := range body.Emails {
-		if strings.TrimSpace(raw) == "" {
-			continue
-		}
-		email := normalizeEmail(raw)
-		if email == "" {
-			writeError(w, badRequest("invalid_email", "بريد غير صالح: "+truncate(raw, 60)))
-			return
-		}
-		if !seen[email] {
-			seen[email] = true
-			emails = append(emails, email)
-		}
-	}
-	body.Emails = emails
-	if len(body.Emails) == 0 {
-		writeError(w, badRequest("no_emails", "لا يوجد بريد لدعوته."))
 		return
 	}
 	role := body.Role
@@ -254,94 +259,23 @@ func (s *Server) handleSendInvites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := s.store.db.BeginTx(r.Context(), nil)
+	groupID, err := s.store.defaultGroupID(r.Context(), ws.ID)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	var pending int
-	if err := tx.QueryRowContext(r.Context(),
-		`select count(*) from workspace_invites where workspace_id = ? and status = 'pending'`,
-		ws.ID).Scan(&pending); err != nil {
+	groupRole, functional := legacyToGroupRoles(Role(role))
+	created, err := s.storeInvites(r, ws, caller.UID, body.Emails, inviteSpec{
+		WorkspaceRole:  Role(role),
+		GroupID:        groupID,
+		GroupRole:      groupRole,
+		FunctionalRole: functional,
+		Label:          role,
+	})
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	if pending+len(body.Emails) > maxPendingInvitesPerWS {
-		writeError(w, conflict("pending_invites_limit",
-			fmt.Sprintf("مساحة العمل وصلت للحد الأقصى للدعوات المعلّقة (%d). ألغِ أو انتظر انتهاء القديمة.", maxPendingInvitesPerWS)))
-		return
-	}
-
-	now := nowString()
-	created := 0
-	for _, email := range body.Emails {
-
-		// One pending invite per (workspace, e-mail): reuse the row if it
-		// exists so re-inviting updates the role instead of duplicating.
-		var inviteID string
-		err := tx.QueryRowContext(r.Context(), `
-			select id from workspace_invites
-			 where workspace_id = ? and lower(email) = ? and status = 'pending'
-			 limit 1`, ws.ID, email).Scan(&inviteID)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			inviteID = newID()
-			if _, err := tx.ExecContext(r.Context(), `
-				insert into workspace_invites
-				  (id, workspace_id, email, role, status, invited_by, sent_at, expires_at)
-				values (?, ?, ?, ?, 'pending', ?, ?, ?)`,
-				inviteID, ws.ID, email, role, caller.UID, now, timeAhead(inviteTTL),
-			); err != nil {
-				writeError(w, err)
-				return
-			}
-		case err != nil:
-			writeError(w, err)
-			return
-		default:
-			if _, err := tx.ExecContext(r.Context(), `
-				update workspace_invites set role = ?, sent_at = ?, expires_at = ?
-				 where id = ?`, role, now, timeAhead(inviteTTL), inviteID,
-			); err != nil {
-				writeError(w, err)
-				return
-			}
-		}
-
-		// Notify an existing account right away (the old DB trigger).
-		if _, err := tx.ExecContext(r.Context(), `
-			insert into notifications
-			  (id, workspace_id, user_uid, kind, title, body, action_label, invite_id,
-			   is_read, created_at)
-			select ?, ?, u.uid, 'invite',
-			       'دعوة للانضمام إلى ' || w.name,
-			       coalesce(nullif(cu.display_name, ''), cu.email, 'أحد المدراء')
-			         || ' دعاك للانضمام بدور ' || ?,
-			       'قبول الدعوة', ?, 0, ?
-			from users u
-			join workspaces w on w.id = ?
-			left join users cu on cu.uid = ?
-			where lower(u.email) = ?
-			  and not exists (
-			    select 1 from notifications n
-			    where n.user_uid = u.uid and n.invite_id = ?)`,
-			newID(), ws.ID, role, inviteID, now, ws.ID, caller.UID, email, inviteID,
-		); err != nil {
-			writeError(w, err)
-			return
-		}
-		created++
-	}
-
-	if err := tx.Commit(); err != nil {
-		writeError(w, err)
-		return
-	}
-	_ = s.store.logActivity(r.Context(), ws.ID, caller.UID, "member_invited",
-		"تمت دعوة "+itoa(created)+" عضو بدور "+role, nil)
-
 	writeJSON(w, http.StatusCreated, map[string]int{"created": created})
 }
 
@@ -471,19 +405,24 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		inviteID, workspaceID, role, status, email string
 		invitedBy                                 *string
 		expiresAt                                 string
+		groupID, groupRole, functionalRole        *string
 	)
+	const inviteColumns = `id, workspace_id, role, status, email, invited_by, expires_at,
+		group_id, group_role, functional_role`
 	if body.InviteID != nil && *body.InviteID != "" {
 		err = tx.QueryRowContext(r.Context(), `
-			select id, workspace_id, role, status, email, invited_by, expires_at
+			select `+inviteColumns+`
 			from workspace_invites where id = ?`, *body.InviteID,
-		).Scan(&inviteID, &workspaceID, &role, &status, &email, &invitedBy, &expiresAt)
+		).Scan(&inviteID, &workspaceID, &role, &status, &email, &invitedBy, &expiresAt,
+			&groupID, &groupRole, &functionalRole)
 	} else {
 		err = tx.QueryRowContext(r.Context(), `
-			select id, workspace_id, role, status, email, invited_by, expires_at
+			select `+inviteColumns+`
 			from workspace_invites
 			where status = 'pending' and lower(email) = lower(?)
 			order by sent_at desc limit 1`, caller.Email,
-		).Scan(&inviteID, &workspaceID, &role, &status, &email, &invitedBy, &expiresAt)
+		).Scan(&inviteID, &workspaceID, &role, &status, &email, &invitedBy, &expiresAt,
+			&groupID, &groupRole, &functionalRole)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, notFound("no_pending_invite", "لا توجد دعوة في انتظار هذا الحساب."))
@@ -524,6 +463,22 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	// Invites made before groups existed land in the default group.
+	if groupID == nil || *groupID == "" {
+		id, err := s.store.defaultGroupID(r.Context(), workspaceID)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		mappedRole, mappedFunctional := legacyToGroupRoles(Role(role))
+		gr, fr := string(mappedRole), mappedFunctional
+		groupID, groupRole, functionalRole = &id, &gr, &fr
+	}
+	if err := joinGroup(r.Context(), tx, *groupID, caller.UID,
+		GroupRole(deref(groupRole)), deref(functionalRole), now); err != nil {
+		writeError(w, err)
+		return
+	}
 	if _, err := tx.ExecContext(r.Context(),
 		`update workspace_invites set status = 'accepted' where id = ?`, inviteID,
 	); err != nil {
@@ -557,7 +512,17 @@ func (s *Server) handleAcceptInvite(w http.ResponseWriter, r *http.Request) {
 	_ = s.store.logActivity(r.Context(), workspaceID, caller.UID, "member_joined",
 		caller.Email+" انضم بدور "+role, nil)
 
-	writeJSON(w, http.StatusOK, map[string]string{"workspace_id": workspaceID})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"workspace_id": workspaceID,
+		"group_id":     *groupID,
+	})
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // --- notifications ----------------------------------------------------------

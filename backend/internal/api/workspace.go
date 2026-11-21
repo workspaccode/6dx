@@ -136,6 +136,21 @@ func (s *Server) activeWorkspace(r *http.Request, caller *authCaller) (*Workspac
 	); err != nil {
 		return nil, err
 	}
+	// Every workspace starts with one software group, led by its owner; the
+	// legacy endpoints act on it.
+	groupID := newID()
+	if _, err := tx.ExecContext(r.Context(), `
+		insert into groups (id, workspace_id, name, type, template, is_default,
+		                    created_by, created_at, updated_at)
+		values (?, ?, ?, 'software', 'scrum', 1, ?, ?, ?)`,
+		groupID, workspaceID, defaultName, caller.UID, now, now,
+	); err != nil {
+		return nil, err
+	}
+	if err := joinGroup(r.Context(), tx, groupID, caller.UID, GroupLead,
+		defaultLeadRole[GroupSoftware], now); err != nil {
+		return nil, err
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}

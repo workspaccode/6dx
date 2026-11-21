@@ -105,6 +105,18 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("POST /v1/invites/sync", s.handleSyncInvites)
 	private.HandleFunc("POST /v1/invites/accept", s.handleAcceptInvite)
 
+	private.HandleFunc("GET /v1/workspace/plan", s.handleWorkspacePlan)
+	private.HandleFunc("GET /v1/groups", s.handleListGroups)
+	private.HandleFunc("POST /v1/groups", s.handleCreateGroup)
+	private.HandleFunc("GET /v1/groups/{gid}/me", s.handleGroupMe)
+	private.HandleFunc("PATCH /v1/groups/{gid}", s.handleUpdateGroup)
+	private.HandleFunc("DELETE /v1/groups/{gid}", s.handleDeleteGroup)
+	private.HandleFunc("POST /v1/groups/{gid}/transfer", s.handleTransferGroupLead)
+	private.HandleFunc("GET /v1/groups/{gid}/members", s.handleListGroupMembers)
+	private.HandleFunc("PATCH /v1/groups/{gid}/members/{uid}", s.handleUpdateGroupMember)
+	private.HandleFunc("DELETE /v1/groups/{gid}/members/{uid}", s.handleRemoveGroupMember)
+	private.HandleFunc("POST /v1/groups/{gid}/invites", s.handleSendGroupInvites)
+
 	private.HandleFunc("POST /v1/notifications/{id}/read", s.handleMarkNotificationRead)
 	private.HandleFunc("POST /v1/notifications/read-all", s.handleMarkAllNotificationsRead)
 
