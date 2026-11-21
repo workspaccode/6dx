@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/extensions/context_extensions.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
@@ -71,74 +72,76 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
         icon: const Icon(Icons.add),
         label: const Text('مشروع جديد'),
       ),
-      body: RefreshIndicator(
-        onRefresh: () => ref.read(projectsNotifierProvider.notifier).refresh(),
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 96),
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-              child: TextField(
-                controller: _searchController,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  hintText: 'ابحث في المشاريع',
-                  prefixIcon: Icon(Icons.search),
+      body: ResponsiveContent(
+        child: RefreshIndicator(
+          onRefresh: () => ref.read(projectsNotifierProvider.notifier).refresh(),
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 96),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    hintText: 'ابحث في المشاريع',
+                    prefixIcon: Icon(Icons.search),
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  _FilterChip(
-                    label: 'الكل',
-                    count: allProjects.length,
-                    selected: filter == ProjectFilter.all,
-                    onTap: () => ref
-                        .read(projectFilterProvider.notifier)
-                        .setFilter(ProjectFilter.all),
-                  ),
-                  const SizedBox(width: 8),
-                  _FilterChip(
-                    label: 'أنا المالك',
-                    count: allProjects.length,
-                    selected: filter == ProjectFilter.active,
-                    onTap: () => ref
-                        .read(projectFilterProvider.notifier)
-                        .setFilter(ProjectFilter.active),
-                  ),
-                  const SizedBox(width: 8),
-                  _FilterChip(
-                    label: 'مشارك',
-                    count: 0,
-                    selected: filter == ProjectFilter.archived,
-                    onTap: () => ref
-                        .read(projectFilterProvider.notifier)
-                        .setFilter(ProjectFilter.archived),
-                  ),
-                ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    _FilterChip(
+                      label: 'الكل',
+                      count: allProjects.length,
+                      selected: filter == ProjectFilter.all,
+                      onTap: () => ref
+                          .read(projectFilterProvider.notifier)
+                          .setFilter(ProjectFilter.all),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChip(
+                      label: 'أنا المالك',
+                      count: allProjects.length,
+                      selected: filter == ProjectFilter.active,
+                      onTap: () => ref
+                          .read(projectFilterProvider.notifier)
+                          .setFilter(ProjectFilter.active),
+                    ),
+                    const SizedBox(width: 8),
+                    _FilterChip(
+                      label: 'مشارك',
+                      count: 0,
+                      selected: filter == ProjectFilter.archived,
+                      onTap: () => ref
+                          .read(projectFilterProvider.notifier)
+                          .setFilter(ProjectFilter.archived),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            if (ref.watch(workspaceInvitesProvider).isNotEmpty) ...[
-              const SizedBox(height: 12),
-              const _PendingInviteCard(),
-              const SizedBox(height: 8),
+              if (ref.watch(workspaceInvitesProvider).isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const _PendingInviteCard(),
+                const SizedBox(height: 8),
+              ],
+              if (projectsState.isLoading && projects.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(40),
+                  child: AppLoadingView(),
+                )
+              else if (projects.isEmpty)
+                const AppEmptyState(
+                  icon: Icons.folder_open_rounded,
+                  title: 'لا توجد مشاريع',
+                  message: 'أنشئ مشروعك الأول واربطه بمستودع GitHub.',
+                )
+              else
+                ...projects.map((project) => _ProjectCard(project: project)),
             ],
-            if (projectsState.isLoading && projects.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(40),
-                child: AppLoadingView(),
-              )
-            else if (projects.isEmpty)
-              const AppEmptyState(
-                icon: Icons.folder_open_rounded,
-                title: 'لا توجد مشاريع',
-                message: 'أنشئ مشروعك الأول واربطه بمستودع GitHub.',
-              )
-            else
-              ...projects.map((project) => _ProjectCard(project: project)),
-          ],
+          ),
         ),
       ),
     );

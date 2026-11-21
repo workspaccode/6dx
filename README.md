@@ -15,6 +15,7 @@
 lib/
 ├── core/
 │   ├── config/          # AppConfig (API_BASE_URL)
+│   ├── layout/          # breakpoints + ResponsiveLayout (هاتف/سطح مكتب)
 │   ├── network/          # api_client (توكن GitHub + X-Workspace-Id)
 │   │                    # current_workspace
 │   ├── errors/          # ServerException / UnauthorizedException
@@ -27,6 +28,21 @@ lib/
 
 backend/                 # Go API + SQLite  (اقرأ backend/README.md)
 ```
+
+## سطح المكتب (Windows / macOS / Linux)
+
+الواجهة واحدة على كل المنصات وتتكيّف مع عرض النافذة:
+
+| العرض | التخطيط |
+| --- | --- |
+| أقل من 700 | هاتف: شريط تنقّل سفلي وحواف 20 |
+| 700 – 1099 | سطح مكتب ضيّق: شريط جانبي بالأيقونات فقط |
+| 1100 وأكثر | سطح مكتب: شريط جانبي بالعناوين + محتوى بعرض أقصى 1180 |
+
+- نافذة سطح المكتب تفتح بـ 1280×800 ولا تصغر عن 900×600 (`AppBreakpoints`).
+- اختصارات: `Ctrl/⌘ + 1–4` للتنقّل بين الأقسام، و`Ctrl/⌘ + K` للبحث.
+- `AppScreen` في `shared/widgets/ui_kit.dart` يوسّط المحتوى ويقصّه عند 1180 على
+  سطح المكتب، ويُبقي حواف الهاتف كما هي.
 
 ## التشغيل
 

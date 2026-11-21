@@ -26,7 +26,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
+  // Desktop layout: wide by default, and the window never drops below the
+  // minimum where the shell still has room for its sidebar.
+  Win32Window::Size size(1280, 800);
   if (!window.Create(L"sixdx", origin, size)) {
     return EXIT_FAILURE;
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../core/layout/app_breakpoints.dart';
+import '../../core/layout/responsive_layout.dart';
 import '../../core/theme/app_theme.dart';
 
 /// Reusable building blocks shared by all feature screens, extracted from the
@@ -15,7 +17,8 @@ class AppScreen extends StatelessWidget {
     required this.children,
     this.floatingActionButton,
     this.scrollable = true,
-    this.padding = const EdgeInsets.fromLTRB(20, 8, 20, 96),
+    this.padding,
+    this.maxContentWidth = AppBreakpoints.maxContentWidth,
   });
 
   final String? title;
@@ -24,13 +27,32 @@ class AppScreen extends StatelessWidget {
   final List<Widget> children;
   final Widget? floatingActionButton;
   final bool scrollable;
-  final EdgeInsets padding;
+
+  /// Defaults to a phone gutter on a compact window and to a wider desktop
+  /// gutter (without the space the bottom bar needs) above the breakpoint.
+  final EdgeInsets? padding;
+
+  /// On a desktop window the body is centred and capped at this width.
+  final double? maxContentWidth;
 
   @override
   Widget build(BuildContext context) {
-    final body = scrollable
-        ? ListView(padding: padding, children: children)
-        : Padding(padding: padding, child: Column(children: children));
+    final compact = ResponsiveLayout.of(context).isCompact;
+    final effectivePadding = padding ??
+        (compact
+            ? const EdgeInsets.fromLTRB(20, 8, 20, 96)
+            : const EdgeInsets.fromLTRB(32, 16, 32, 40));
+
+    Widget body = scrollable
+        ? ListView(padding: effectivePadding, children: children)
+        : Padding(
+            padding: effectivePadding,
+            child: Column(children: children),
+          );
+
+    if (!compact && maxContentWidth != null) {
+      body = ResponsiveContent(maxWidth: maxContentWidth!, child: body);
+    }
 
     return Scaffold(
       appBar: (title == null && subtitle == null)
@@ -51,6 +73,8 @@ class AppScreen extends StatelessWidget {
                 ],
               ),
               actions: [if (trailing != null) trailing!],
+              // Wider gutter on a desktop window, matching the body padding.
+              titleSpacing: compact ? null : 32,
             ),
       body: body,
       floatingActionButton: floatingActionButton,

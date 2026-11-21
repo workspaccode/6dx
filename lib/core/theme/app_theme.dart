@@ -174,6 +174,33 @@ class AppTheme {
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.accent,
       ),
+      // Desktop polish: a visible, draggable scrollbar and compact tooltips.
+      scrollbarTheme: ScrollbarThemeData(
+        thickness: const WidgetStatePropertyAll(8),
+        radius: const Radius.circular(8),
+        crossAxisMargin: 2,
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.dragged)
+              ? AppColors.accent.withValues(alpha: 0.7)
+              : (isDark ? AppColors.border : AppColors.lightBorder)
+                  .withValues(alpha: 0.9),
+        ),
+      ),
+      tooltipTheme: TooltipThemeData(
+        waitDuration: const Duration(milliseconds: 400),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceElevated : AppColors.lightText,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isDark ? AppColors.border : AppColors.lightBorder,
+          ),
+        ),
+        textStyle: TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 12,
+          color: isDark ? AppColors.text : Colors.white,
+        ),
+      ),
     );
   }
 

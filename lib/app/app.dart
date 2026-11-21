@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/layout/app_breakpoints.dart';
+import '../core/layout/app_scroll_behavior.dart';
+import '../core/layout/responsive_layout.dart';
 import '../core/theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../routes/app_router.dart';
@@ -25,6 +28,13 @@ class SixDxApp extends ConsumerWidget {
       themeMode: themeMode,
       locale: locale,
       supportedLocales: AppLocalizations.supportedLocales,
+      scrollBehavior: const AppScrollBehavior(),
+      // Resolved here so every screen — and every dialog or sheet pushed above
+      // the shell — sees the same window size class.
+      builder: (context, child) => ResponsiveLayout(
+        sizeClass: WindowSizeClass.of(context),
+        child: child ?? const SizedBox.shrink(),
+      ),
       localizationsDelegates: const [
         AppLocalizations.delegate,
         GlobalMaterialLocalizations.delegate,
