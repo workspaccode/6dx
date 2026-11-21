@@ -205,6 +205,7 @@ class WorkspaceSnapshotMapper {
         unread: json['unread'] == true,
         actionLabel: _str(json['action_label']),
         projectId: _str(json['project_id']),
+        inviteId: _str(json['invite_id']),
       );
 
   DigestEntry _digest(Map<String, dynamic> json) => DigestEntry(

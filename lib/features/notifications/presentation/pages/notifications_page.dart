@@ -93,8 +93,12 @@ class NotificationsPage extends ConsumerWidget {
                       : TextButton(
                           // An invite is the only action the app can complete
                           // today; everything else is informational.
+                          // The notification names its invite: open exactly
+                          // that one, not "the newest pending invite".
                           onPressed: item.kind == 'invite'
-                              ? () => context.push(AppRoutes.acceptInvite)
+                              ? () => context.push(item.inviteId == null
+                                  ? AppRoutes.acceptInvite
+                                  : '/invite/${item.inviteId}')
                               : null,
                           child: Text(item.actionLabel!),
                         ),

@@ -33,4 +33,11 @@ class LocalStorageService {
 
   Future<void> setThemeMode(ThemeMode mode) =>
       _prefs.setString(AppConstants.keyThemeMode, mode.name);
+
+  /// The group the user opened last, so the app reopens it.
+  String? get lastGroupId => _prefs.getString(AppConstants.keyLastGroup);
+
+  Future<void> setLastGroupId(String? id) => id == null
+      ? _prefs.remove(AppConstants.keyLastGroup)
+      : _prefs.setString(AppConstants.keyLastGroup, id);
 }

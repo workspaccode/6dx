@@ -48,7 +48,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (!mounted) return;
     if (signedIn) {
       AppLogger.action('LoginPage', 'sign-in with GitHub finished, opening the app');
-      context.go(AppRoutes.home);
+      // Back to the link that sent the user here (an invite, say).
+      final from = AppRoutes.safeFrom(GoRouterState.of(context).uri.queryParameters['from']);
+      context.go(from ?? AppRoutes.home);
     }
   }
 

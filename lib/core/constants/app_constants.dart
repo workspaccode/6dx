@@ -12,4 +12,5 @@ class AppConstants {
   static const String keyOnboardingDone = 'onboarding_done';
   static const String keyLocale = 'locale';
   static const String keyThemeMode = 'theme_mode';
+  static const String keyLastGroup = 'last_group_id';
 }

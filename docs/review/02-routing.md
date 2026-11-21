@@ -71,7 +71,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 ## 🟡 السبلاش ممكن يعلّق
 
-- [ ] [سطر 590](../../lib/routes/app_router.dart#L590): `SplashPage` بيعتمد على `ref.listen` بس. الـ `listen` مش بيشتغل على القيمة الحالية، فلو `authNotifierProvider` كان خلص تحميل قبل ما السبلاش يتبني (مثلًا رجعت لـ `/`) الشاشة هتفضل spinner على طول.
+- [x] [سطر 590](../../lib/routes/app_router.dart#L590): `SplashPage` بيعتمد على `ref.listen` بس. الـ `listen` مش بيشتغل على القيمة الحالية، فلو `authNotifierProvider` كان خلص تحميل قبل ما السبلاش يتبني (مثلًا رجعت لـ `/`) الشاشة هتفضل spinner على طول.
 - **الحل:** الأسهل تشيل منطق السبلاش من الصفحة وتخلّي الـ `redirect` هو اللي يقرر (`/` + loaded → `/home` أو `/onboarding`). أو استخدم `ref.watch` وقرّر في `build` بـ `addPostFrameCallback`.
 - [ ] الـ onboarding بيظهر في كل مرة المستخدم مش مسجّل، لأن `setOnboardingDone` عمره ما بيتنادى.
 
@@ -96,6 +96,6 @@ errorBuilder: (context, state) => const NotFoundPage(),
 
 - [ ] مسارات `/states/*` (offline, skeleton, not-found, push-permission...) شاشات تصميم معمولة routes. دي المفروض **حالات** بتظهر جوه الشاشات، مش صفحات المستخدم يقدر يروحلها بلينك. خليها widgets، أو حطها ورا `kDebugMode`.
 - [ ] الملف 600 سطر و 86 route في قائمة واحدة. قسّمه حسب الـ feature: `tasksRoutes`، `projectRoutes`، `reviewRoutes`... كل واحدة `List<RouteBase>` في ملف الـ feature بتاعها.
-- [ ] الـ deep link بيضيع بعد الدخول: لو المستخدم مش مسجّل وفتح `/tasks/123` بيروح `/login`، وبعد الدخول بيروح `/home` مش `/tasks/123`. ابعت المسار الأصلي كـ `?from=` وارجعله بعد الدخول.
+- [x] الـ deep link بيضيع بعد الدخول: لو المستخدم مش مسجّل وفتح `/tasks/123` بيروح `/login`، وبعد الدخول بيروح `/home` مش `/tasks/123`. ابعت المسار الأصلي كـ `?from=` وارجعله بعد الدخول.
 - [x] **(المراجعة التانية) أي تطبيق تاني يقدر يفتح مسارات جوه التطبيق:** scheme الـ Supabase القديم (`io.supabase.flutter`) لسه متسجل في Android و iOS، والـ deep linking بتاع Flutter شغال تلقائي. يعني أي موقع أو تطبيق يقدر يبعت `/states/*` أو `/invite/accept` أو `/github/*`. ومع إن مفيش حراسة حسب الصلاحية (فوق)، ده بيكبّر المشكلة. تفاصيل في [06-platform-release.md](06-platform-release.md).
 - [ ] `auto_router_config.dart` فيه 13 route بس ومش متزامن مع go_router. احذفه (تفاصيل في [01-design.md](01-design.md)).

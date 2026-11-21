@@ -36,6 +36,11 @@ import '../features/workspace/presentation/pages/workspace_flow_pages.dart';
 import '../features/tasks/presentation/pages/task_flow_pages.dart';
 import '../features/web/presentation/pages/web_routes.dart';
 import '../features/web/presentation/pages/web_shell_page.dart';
+import '../features/groups/presentation/pages/group_members_pages.dart';
+import '../features/groups/presentation/pages/group_pages.dart';
+import '../features/groups/presentation/pages/groups_pages.dart';
+import '../features/groups/presentation/pages/invite_page.dart';
+import '../features/groups/presentation/providers/group_providers.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -144,6 +149,23 @@ class AppRoutes {
 
   /// Concrete location of a pull-request detail screen.
   static String prDetailPath(String number) => '/reviews/pr/$number';
+
+  // --- groups (docs/design/groups-and-roles.md §6) -------------------------
+  static const String groups = '/groups';
+  static const String groupsNew = '/groups/new';
+  static const String group = '/g/:gid';
+  static const String inviteById = '/invite/:inviteId';
+
+  static String groupHomePath(String gid) => '/g/$gid/home';
+
+  /// A `?from=` target is only followed when it is an in-app path: never
+  /// `//host` or a full URL (open redirect).
+  static String? safeFrom(String? from) {
+    if (from == null || from.isEmpty) return null;
+    if (!from.startsWith('/') || from.startsWith('//')) return null;
+    if (from.startsWith(login) || from == splash) return null;
+    return from;
+  }
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -175,9 +197,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         AppRoutes.login,
       }.contains(location);
 
-      if (!isSignedIn && !isPublicRoute) return AppRoutes.login;
+      // Keep where the user was going (an invite link, a deep link) and
+      // return there after the sign-in.
+      if (!isSignedIn && !isPublicRoute) {
+        final target = AppRoutes.safeFrom(state.uri.toString());
+        return target == null
+            ? AppRoutes.login
+            : '${AppRoutes.login}?from=${Uri.encodeComponent(target)}';
+      }
       if (isSignedIn && location == AppRoutes.login) {
-        return AppRoutes.home;
+        return AppRoutes.safeFrom(state.uri.queryParameters['from']) ?? AppRoutes.home;
       }
       // The bottom-navigation shell only exposes its branches, so `/home`
       // resolves to the first branch (projects).
@@ -418,6 +447,56 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.inviteExpired,
         builder: (_, __) => const InviteExpiredPage(),
       ),
+      // After the fixed /invite/* paths, so "accept" is never read as an id.
+      GoRoute(
+        path: AppRoutes.inviteById,
+        builder: (_, state) => InviteLinkPage(inviteId: state.pathParameters['inviteId']!),
+      ),
+      GoRoute(
+        path: AppRoutes.groups,
+        builder: (_, __) => const MyGroupsPage(),
+        routes: [
+          GoRoute(path: 'new', builder: (_, __) => const CreateGroupPage()),
+        ],
+      ),
+      GoRoute(
+        path: AppRoutes.group,
+        redirect: (_, state) {
+          final gid = state.pathParameters['gid']!;
+          return state.uri.path == '/g/$gid' ? AppRoutes.groupHomePath(gid) : null;
+        },
+        routes: [
+          GoRoute(
+            path: 'home',
+            builder: (_, state) => GroupHomePage(gid: state.pathParameters['gid']!),
+          ),
+          GoRoute(
+            path: 'welcome',
+            builder: (_, state) => GroupWelcomePage(gid: state.pathParameters['gid']!),
+          ),
+          GoRoute(
+            path: 'members',
+            builder: (_, state) => GroupMembersPage(gid: state.pathParameters['gid']!),
+            routes: [
+              GoRoute(
+                path: 'invite',
+                builder: (_, state) => GroupInvitePage(gid: state.pathParameters['gid']!),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: 'settings',
+            builder: (_, state) => GroupSettingsPage(gid: state.pathParameters['gid']!),
+          ),
+          GoRoute(
+            path: 'p/:pid',
+            builder: (_, state) => GroupProjectPage(
+              gid: state.pathParameters['gid']!,
+              pid: state.pathParameters['pid']!,
+            ),
+          ),
+        ],
+      ),
       GoRoute(
         path: AppRoutes.joinRequests,
         builder: (_, __) => const JoinRequestsPage(),
@@ -594,17 +673,37 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 /// Splash screen: decides where to send the user based on the session.
 @RoutePage()
-class SplashPage extends ConsumerWidget {
+class SplashPage extends ConsumerStatefulWidget {
   const SplashPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen(authNotifierProvider, (previous, next) {
-      if (next.isLoading) return;
-      final user = next.value;
-      context.go(user == null ? AppRoutes.onboarding : AppRoutes.home);
-    });
+  ConsumerState<SplashPage> createState() => _SplashPageState();
+}
 
+class _SplashPageState extends ConsumerState<SplashPage> {
+  bool _left = false;
+
+  /// Decides from the *current* auth state, not only from changes: when the
+  /// session finished loading before this page was built (coming back to
+  /// `/`), a `listen` alone never fires and the spinner stays forever.
+  void _maybeLeave(AsyncValue<Object?> auth) {
+    if (_left || auth.isLoading) return;
+    _left = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (auth.value == null) {
+        context.go(AppRoutes.onboarding);
+        return;
+      }
+      // Reopen the group used last; otherwise the classic home.
+      final lastGroup = ref.read(lastGroupIdProvider).id;
+      context.go(lastGroup == null ? AppRoutes.home : AppRoutes.groupHomePath(lastGroup));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _maybeLeave(ref.watch(authNotifierProvider));
     return const Scaffold(
       body: Center(child: CircularProgressIndicator()),
     );

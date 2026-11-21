@@ -44,7 +44,7 @@ go test -tags=integration ./...   ✅  (internal/api و internal/auth)
 | لون الـ label | `"#9AA3B2"` (نص) — [`snapshot.go:516`](../../backend/internal/api/snapshot.go#L516) | `_int(json['color'])` — [`workspace_snapshot_mapper.dart:176`](../../lib/features/workspace/data/models/workspace_snapshot_mapper.dart#L176) | كل الـ labels رمادي |
 | مفتاح المهمة `key` | `/v1/tasks` مش بيرجّعه (`scanTask` في [`tasks.go`](../../backend/internal/api/tasks.go)) | `Task.key` بيتعمل `PROJECTNAME-<uuid>` | مش بيطابق `issue_key` في الـ PR ولا عناصر الـ sprint |
 | المسؤول عن المهمة | `/v1/tasks` مش بيرجّعه | بيظهر "—" دايمًا | ومكان "المراجِع" بيستخدم `assigneeName` غلط |
-| `invite_id` في الإشعار | بيتبعت | الـ mapper بيرميه | قبول الدعوة من الإشعار بيقبل "أحدث دعوة" مش اللي المستخدم داس عليها |
+| ~~`invite_id` في الإشعار~~ ✅ اتصلح في v8.0 | بيتبعت | الـ mapper بيرميه | قبول الدعوة من الإشعار بيقبل "أحدث دعوة" مش اللي المستخدم داس عليها |
 | `decision_choice` | بيتبعت في `client_report` | بيترمي | القرار المسجّل بيظهر كأنه لسه معلّق |
 | `dependencies[].task_id` | بيتبعت | بيترمي | الاعتماديات مش مربوطة بمهمة |
 | `workload`، `workload_suggestions`، `rate_limit` | **مش بيتبعتوا** | الـ mapper بيقراهم | صفحة حجم الشغل فاضية دايمًا |

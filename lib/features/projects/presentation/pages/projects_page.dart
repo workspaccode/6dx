@@ -12,6 +12,7 @@ import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/project.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/project_providers.dart';
+import '../../../groups/presentation/widgets/group_widgets.dart';
 
 @RoutePage()
 class ProjectsPage extends ConsumerStatefulWidget {
@@ -48,6 +49,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
       appBar: AppBar(
         title: Text(context.l10n.projects),
         actions: [
+          const GroupSwitcherButton(),
           IconButton(
             tooltip: 'البحث',
             onPressed: () => context.push(AppRoutes.taskSearch),

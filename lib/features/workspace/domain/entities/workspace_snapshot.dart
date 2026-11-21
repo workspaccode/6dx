@@ -282,9 +282,13 @@ class AppNotification {
     this.unread = false,
     this.actionLabel,
     this.projectId,
+    this.inviteId,
   });
 
   final String id;
+
+  /// For `invite`: the invite to open at /invite/:id.
+  final String? inviteId;
 
   /// `review` | `checks` | `comment` | `invite` | `mention`
   final String kind;

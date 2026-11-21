@@ -29,6 +29,7 @@ type groupAccess struct {
 	// are not in: they may administer it (so no group is ever orphaned) but
 	// get no operational capabilities.
 	IsMember       bool
+	UID            string // the caller's stored uid (the app's "me")
 	GroupRole      GroupRole
 	FunctionalRole string
 	Caps           map[Capability]bool
@@ -54,6 +55,7 @@ func (a *groupAccess) json() map[string]any {
 		"is_archived":     a.IsArchived,
 		"created_at":      a.CreatedAt,
 		"is_member":       a.IsMember,
+		"uid":             a.UID,
 		"group_role":      nullIfEmpty(string(a.GroupRole)),
 		"functional_role": nullIfEmpty(a.FunctionalRole),
 		"capabilities":    sortedCaps(a.Caps),
@@ -69,7 +71,7 @@ func nullIfEmpty(s string) any {
 
 // loadGroupAccess resolves gid inside the active workspace for the caller.
 func (s *store) loadGroupAccess(ctx context.Context, ws *Workspace, uid, gid string) (*groupAccess, error) {
-	a := &groupAccess{}
+	a := &groupAccess{UID: uid}
 	var isDefault, isArchived int
 	err := s.db.QueryRowContext(ctx, `
 		select id, workspace_id, name, description, type, template, is_default,
