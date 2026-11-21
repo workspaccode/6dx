@@ -197,7 +197,7 @@ func (s *store) snapshotTasks(ctx context.Context, wsID string) ([]any, map[stri
 		       t.label, t.branch, t.pr_number, t.due_at, t.created_at
 		from tasks t
 		left join projects p on p.id = t.project_id
-		where t.workspace_id = ?
+		where t.workspace_id = ?`+legacyTaskScope+`
 		order by t.created_at desc`, wsID)
 	if err != nil {
 		return nil, nil, err
@@ -258,7 +258,7 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string) ([]any, []
 		       c.body, c.attachment, c.code, c.created_at
 		from task_comments c
 		join tasks t on t.id = c.task_id
-		where t.workspace_id = ?
+		where t.workspace_id = ?`+legacyTaskScope+`
 		order by c.created_at`, wsID)
 	if err != nil {
 		return nil, nil, err
@@ -287,7 +287,7 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string) ([]any, []
 		select sc.id, sc.task_id, sc.title, sc.is_done
 		from task_subtasks sc
 		join tasks t on t.id = sc.task_id
-		where t.workspace_id = ?`, wsID)
+		where t.workspace_id = ?`+legacyTaskScope, wsID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -315,7 +315,7 @@ func (s *store) snapshotDependencies(ctx context.Context, wsID string, tasks map
 		select d.id, d.task_id, d.state, d.reason
 		from task_dependencies d
 		join tasks t on t.id = d.task_id
-		where t.workspace_id = ?`, wsID)
+		where t.workspace_id = ?`+legacyTaskScope, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +460,7 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string) ([]any, e
 		       (select t.key from tasks t where t.id = pr.task_id),
 		       (select p.name from projects p where p.id = pr.project_id)
 		from pull_requests pr
-		where pr.workspace_id = ?`, wsID)
+		where pr.workspace_id = ?`+legacyPRScope, wsID)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +515,7 @@ func (s *store) snapshotProjectExtras(ctx context.Context, wsID string) ([]any, 
 		select l.id, l.name, l.color
 		from project_labels l
 		join projects p on p.id = l.project_id
-		where p.workspace_id = ?`, wsID)
+		where p.workspace_id = ?`+legacyProjectScope, wsID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -534,7 +534,7 @@ func (s *store) snapshotProjectExtras(ctx context.Context, wsID string) ([]any, 
 		select r.id, r.full_name, r.branch, r.description, r.language, r.last_synced_at
 		from repositories r
 		join projects p on p.id = r.project_id
-		where p.workspace_id = ?`, wsID)
+		where p.workspace_id = ?`+legacyProjectScope, wsID)
 	if err != nil {
 		return nil, nil, err
 	}

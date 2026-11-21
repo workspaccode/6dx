@@ -173,3 +173,111 @@ func joinGroup(ctx context.Context, tx *sql.Tx, groupID, uid string, role GroupR
 		groupID, uid, string(role), functional, now)
 	return err
 }
+
+// GET /v1/invites/{id} — what the invite screen shows before accepting. Only
+// the invitee may read it: the address must match the caller's verified
+// e-mail, so an invite id alone reveals nothing.
+func (s *Server) handleGetInvite(w http.ResponseWriter, r *http.Request) {
+	caller, err := s.callerAndUpsert(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var (
+		id, workspaceID, workspaceName, email, status, expiresAt, sentAt string
+		groupID, groupName, groupType, groupRole, functional, inviter    *string
+	)
+	err = s.store.db.QueryRowContext(r.Context(), `
+		select i.id, i.workspace_id, w.name, i.email, i.status, i.expires_at, i.sent_at,
+		       i.group_id, g.name, g.type, i.group_role, i.functional_role,
+		       (select coalesce(nullif(u.display_name, ''), u.email) from users u where u.uid = i.invited_by)
+		from workspace_invites i
+		join workspaces w on w.id = i.workspace_id
+		left join groups g on g.id = i.group_id
+		where i.id = ?`, r.PathValue("id"),
+	).Scan(&id, &workspaceID, &workspaceName, &email, &status, &expiresAt, &sentAt,
+		&groupID, &groupName, &groupType, &groupRole, &functional, &inviter)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, notFound("invite_not_found", "الدعوة مش موجودة."))
+		return
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if caller.Email == "" || !strings.EqualFold(email, caller.Email) {
+		// Say which address it is for (masked), so the user knows to switch
+		// accounts, without leaking anything about the group.
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error":   "invite_for_another_email",
+			"message": "الدعوة دي لبريد تاني: " + maskEmail(email),
+		})
+		return
+	}
+	if status == "pending" && expiresAt <= nowString() {
+		status = "expired"
+	}
+	alreadyMember := false
+	if groupID != nil {
+		var n int
+		_ = s.store.db.QueryRowContext(r.Context(),
+			`select count(*) from group_members where group_id = ? and user_uid = ?`,
+			*groupID, caller.UID).Scan(&n)
+		alreadyMember = n > 0
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"invite": map[string]any{
+			"id":              id,
+			"status":          status,
+			"sent_at":         sentAt,
+			"expires_at":      expiresAt,
+			"workspace_id":    workspaceID,
+			"workspace_name":  workspaceName,
+			"group_id":        groupID,
+			"group_name":      groupName,
+			"group_type":      groupType,
+			"group_role":      groupRole,
+			"functional_role": functional,
+			"invited_by":      inviter,
+			"already_member":  alreadyMember,
+		},
+	})
+}
+
+// POST /v1/invites/{id}/decline
+func (s *Server) handleDeclineInvite(w http.ResponseWriter, r *http.Request) {
+	caller, err := s.callerAndUpsert(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if caller.Email == "" {
+		writeError(w, badRequest("email_required", "حسابك بلا بريد إلكتروني لمطابقة الدعوة."))
+		return
+	}
+	result, err := s.store.db.ExecContext(r.Context(), `
+		update workspace_invites set status = 'revoked'
+		 where id = ? and status = 'pending' and lower(email) = lower(?)`,
+		r.PathValue("id"), caller.Email)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		writeError(w, notFound("no_pending_invite", "مفيش دعوة معلّقة بالرقم ده لحسابك."))
+		return
+	}
+	_, _ = s.store.db.ExecContext(r.Context(),
+		`update notifications set is_read = 1 where user_uid = ? and invite_id = ?`,
+		caller.UID, r.PathValue("id"))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// maskEmail turns sami@company.com into s***@company.com.
+func maskEmail(email string) string {
+	local, domain, ok := strings.Cut(email, "@")
+	if !ok || local == "" {
+		return "***"
+	}
+	return string([]rune(local)[:1]) + "***@" + domain
+}

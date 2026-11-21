@@ -17,7 +17,14 @@ type createProjectRequest struct {
 
 // GET /v1/projects
 func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	_, ws, err := s.callerAndWorkspace(r)
+	caller, ws, err := s.callerAndWorkspace(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	// ?group_id= lists one group's projects (members only); without it the
+	// default group, as before groups existed.
+	access, err := s.scopeGroup(r, ws, caller.UID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -30,8 +37,8 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		       (select count(*) from tasks t where t.project_id = p.id and t.status = 'done'),
 		       (select r.full_name from repositories r where r.project_id = p.id order by r.id limit 1)
 		from projects p
-		where p.workspace_id = ?
-		order by p.updated_at desc`, ws.ID)
+		where p.workspace_id = ? and p.group_id = ?
+		order by p.updated_at desc`, ws.ID, access.ID)
 	if err != nil {
 		writeError(w, err)
 		return

@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -351,5 +352,119 @@ func TestLegacyInviteJoinsTheDefaultGroup(t *testing.T) {
 	g := groups[0].(map[string]any)
 	if g["is_default"] != true || g["group_role"] != "member" || g["functional_role"] != "reviewer" {
 		t.Fatalf("legacy mapping: %v", g)
+	}
+}
+
+// The pre-group endpoints show the default group only; a private hardware
+// group's projects and tasks are reached through the group, by members.
+func TestLegacyEndpointsDoNotLeakOtherGroups(t *testing.T) {
+	h := newHarness(t)
+	_, me := h.do(t, http.MethodGet, "/v1/me", "s-owner", nil)
+	wsID := workspaceOf(t, me)
+	joinAs(t, h, "s-owner", "s-dev", "developer")
+	_, created := createGroup(t, h, "s-owner", wsID, "Secret HW", "hardware")
+	gid := groupIDOf(t, created)
+
+	_, p := h.doWithWorkspace(t, http.MethodPost, "/v1/projects", "s-owner", wsID,
+		map[string]any{"name": "Prototype", "group_id": gid})
+	projectID := p["project"].(map[string]any)["id"].(string)
+	_, task := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks", "s-owner", wsID,
+		map[string]any{"title": "Bring-up", "project_id": projectID})
+	taskID := task["task"].(map[string]any)["id"].(string)
+
+	contains := func(list []any, id string) bool {
+		for _, raw := range list {
+			if raw.(map[string]any)["id"] == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	// The developer (not in the group) sees neither.
+	_, projects := h.doWithWorkspace(t, http.MethodGet, "/v1/projects", "s-dev", wsID, nil)
+	if contains(projects["projects"].([]any), projectID) {
+		t.Error("/v1/projects leaks the hardware project")
+	}
+	_, tasks := h.doWithWorkspace(t, http.MethodGet, "/v1/tasks", "s-dev", wsID, nil)
+	if contains(tasks["tasks"].([]any), taskID) {
+		t.Error("/v1/tasks leaks the hardware task")
+	}
+	_, snap := h.doWithWorkspace(t, http.MethodGet, "/v1/workspace/snapshot", "s-dev", wsID, nil)
+	if contains(snap["tasks"].([]any), taskID) {
+		t.Error("snapshot leaks the hardware task")
+	}
+	if status, _ := h.doWithWorkspace(t, http.MethodGet, "/v1/projects?group_id="+gid, "s-dev", wsID, nil); status != http.StatusForbidden {
+		t.Errorf("group listing for a non-member: %d, want 403", status)
+	}
+	// ...and cannot write to the task by id.
+	if status, _ := h.doWithWorkspace(t, http.MethodPatch, "/v1/tasks/"+taskID+"/status", "s-dev", wsID,
+		map[string]any{"status": "done"}); status != http.StatusNotFound {
+		t.Errorf("status change by a non-member: %d, want 404", status)
+	}
+	if status, _ := h.doWithWorkspace(t, http.MethodDelete, "/v1/tasks/"+taskID, "s-dev", wsID, nil); status != http.StatusNotFound {
+		t.Errorf("delete by a non-member: %d, want 404", status)
+	}
+
+	// The lead reads the group explicitly.
+	_, mine := h.doWithWorkspace(t, http.MethodGet, "/v1/projects?group_id="+gid, "s-owner", wsID, nil)
+	if !contains(mine["projects"].([]any), projectID) {
+		t.Error("the group listing misses its project")
+	}
+	_, groupTasks := h.doWithWorkspace(t, http.MethodGet, "/v1/tasks?group_id="+gid, "s-owner", wsID, nil)
+	if !contains(groupTasks["tasks"].([]any), taskID) {
+		t.Error("the group task listing misses its task")
+	}
+}
+
+func TestInviteScreenEndpoints(t *testing.T) {
+	h := newHarness(t)
+	_, me := h.do(t, http.MethodGet, "/v1/me", "v-lead", nil)
+	wsID := workspaceOf(t, me)
+	_, created := createGroup(t, h, "v-lead", wsID, "Power Board", "hardware")
+	gid := groupIDOf(t, created)
+	h.doWithWorkspace(t, http.MethodPost, "/v1/groups/"+gid+"/invites", "v-lead", wsID,
+		map[string]any{"emails": []string{"v-tech@6dx.test"}, "functional_role": "technician"})
+
+	var inviteID string
+	if err := h.database.QueryRowContext(context.Background(),
+		`select id from workspace_invites where email = 'v-tech@6dx.test'`).Scan(&inviteID); err != nil {
+		t.Fatal(err)
+	}
+
+	h.do(t, http.MethodGet, "/v1/me", "v-tech", nil)
+	status, body := h.do(t, http.MethodGet, "/v1/invites/"+inviteID, "v-tech", nil)
+	if status != http.StatusOK {
+		t.Fatalf("get invite: %d %v", status, body)
+	}
+	invite := body["invite"].(map[string]any)
+	if invite["group_name"] != "Power Board" || invite["group_type"] != "hardware" ||
+		invite["functional_role"] != "technician" || invite["status"] != "pending" {
+		t.Fatalf("invite: %v", invite)
+	}
+
+	// Someone else's account sees only the masked address.
+	h.do(t, http.MethodGet, "/v1/me", "v-other", nil)
+	status, body = h.do(t, http.MethodGet, "/v1/invites/"+inviteID, "v-other", nil)
+	if status != http.StatusForbidden || body["error"] != "invite_for_another_email" {
+		t.Fatalf("other account: %d %v", status, body)
+	}
+	if msg, _ := body["message"].(string); msg == "" || strings.Contains(msg, "v-tech@") {
+		t.Errorf("address must be masked: %q", msg)
+	}
+	if status, _ := h.do(t, http.MethodPost, "/v1/invites/"+inviteID+"/decline", "v-other", nil); status != http.StatusNotFound {
+		t.Errorf("decline by another account: %d, want 404", status)
+	}
+
+	if status, _ := h.do(t, http.MethodPost, "/v1/invites/"+inviteID+"/decline", "v-tech", nil); status != http.StatusOK {
+		t.Fatalf("decline: %d", status)
+	}
+	_, body = h.do(t, http.MethodGet, "/v1/invites/"+inviteID, "v-tech", nil)
+	if body["invite"].(map[string]any)["status"] != "revoked" {
+		t.Errorf("declined invite status: %v", body)
+	}
+	if status, _ := h.do(t, http.MethodPost, "/v1/invites/accept", "v-tech",
+		map[string]any{"invite_id": inviteID}); status != http.StatusConflict {
+		t.Errorf("accept after decline: %d, want 409", status)
 	}
 }

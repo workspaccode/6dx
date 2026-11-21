@@ -104,6 +104,8 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("GET /v1/invites/pending", s.handlePendingInvites)
 	private.HandleFunc("POST /v1/invites/sync", s.handleSyncInvites)
 	private.HandleFunc("POST /v1/invites/accept", s.handleAcceptInvite)
+	private.HandleFunc("GET /v1/invites/{id}", s.handleGetInvite)
+	private.HandleFunc("POST /v1/invites/{id}/decline", s.handleDeclineInvite)
 
 	private.HandleFunc("GET /v1/workspace/plan", s.handleWorkspacePlan)
 	private.HandleFunc("GET /v1/groups", s.handleListGroups)

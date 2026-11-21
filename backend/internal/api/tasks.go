@@ -1,9 +1,9 @@
 package api
 
 import (
-	"fmt"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -17,7 +17,12 @@ type createTaskRequest struct {
 
 // GET /v1/tasks?project_id=
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
-	_, ws, err := s.callerAndWorkspace(r)
+	caller, ws, err := s.callerAndWorkspace(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	access, err := s.scopeGroup(r, ws, caller.UID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -31,6 +36,12 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		left join projects p on p.id = t.project_id
 		where t.workspace_id = ?`
 	args := []any{ws.ID}
+	if access.IsDefault {
+		query += ` and (t.project_id is null or t.project_id in (select id from projects where group_id = ?))`
+	} else {
+		query += ` and t.project_id in (select id from projects where group_id = ?)`
+	}
+	args = append(args, access.ID)
 	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
 		query += ` and t.project_id = ?`
 		args = append(args, projectID)
@@ -121,15 +132,20 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// The project must belong to this workspace: the foreign key only checks
 	// that it exists somewhere (docs/review/04-backend.md).
 	if body.ProjectID != nil && *body.ProjectID != "" {
-		var found int
-		if err := s.store.db.QueryRowContext(r.Context(),
-			`select count(*) from projects where id = ? and workspace_id = ?`,
-			*body.ProjectID, ws.ID).Scan(&found); err != nil {
+		var groupID sql.NullString
+		err := s.store.db.QueryRowContext(r.Context(),
+			`select group_id from projects where id = ? and workspace_id = ?`,
+			*body.ProjectID, ws.ID).Scan(&groupID)
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, notFound("project_not_found", "المشروع مش موجود في مساحة العمل دي."))
+			return
+		}
+		if err != nil {
 			writeError(w, err)
 			return
 		}
-		if found == 0 {
-			writeError(w, notFound("project_not_found", "المشروع مش موجود في مساحة العمل دي."))
+		if err := s.requireGroupCapUnlessDefault(r.Context(), ws, caller.UID, groupID.String, CapEditTasks); err != nil {
+			writeError(w, err)
 			return
 		}
 	}
@@ -208,6 +224,10 @@ func (s *Server) handleUpdateTaskStatus(w http.ResponseWriter, r *http.Request) 
 	}
 
 	taskID := r.PathValue("id")
+	if err := s.requireTaskAccess(r, ws, caller.UID, taskID, CapEditTasks); err != nil {
+		writeError(w, err)
+		return
+	}
 	result, err := s.store.db.ExecContext(r.Context(),
 		`update tasks set status = ?, updated_at = ? where id = ? and workspace_id = ?`,
 		body.Status, nowString(), taskID, ws.ID)
@@ -240,6 +260,10 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.requireTaskAccess(r, ws, caller.UID, r.PathValue("id"), CapEditTasks); err != nil {
+		writeError(w, err)
+		return
+	}
 	result, err := s.store.db.ExecContext(r.Context(),
 		`delete from tasks where id = ? and workspace_id = ?`, r.PathValue("id"), ws.ID)
 	if err != nil {
