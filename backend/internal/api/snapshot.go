@@ -101,25 +101,32 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string, g s
 		}
 	}
 
+	// The group's task states: the board shows custom names and colours.
+	states, err := s.workflowStates(ctx, s.db, g.GroupID)
+	if err != nil {
+		return nil, err
+	}
+
 	return map[string]any{
-		"workspace_id":   workspaceID,
-		"group_id":       g.GroupID,
-		"name":           name,
-		"members":        members,
-		"invites":        invites,
-		"tasks":          tasks,
-		"comments":       comments,
-		"subtasks":       subtasks,
-		"dependencies":   dependencies,
-		"activity":       activity,
-		"sprints":        sprints,
-		"pull_requests":  pullRequests,
-		"labels":         labels,
-		"integrations":   integrations,
-		"repositories":   repositories,
-		"notifications":  notifications,
-		"digest":         digest,
-		"client_report":  clientReport,
+		"workspace_id":    workspaceID,
+		"group_id":        g.GroupID,
+		"workflow_states": states,
+		"name":            name,
+		"members":         members,
+		"invites":         invites,
+		"tasks":           tasks,
+		"comments":        comments,
+		"subtasks":        subtasks,
+		"dependencies":    dependencies,
+		"activity":        activity,
+		"sprints":         sprints,
+		"pull_requests":   pullRequests,
+		"labels":          labels,
+		"integrations":    integrations,
+		"repositories":    repositories,
+		"notifications":   notifications,
+		"digest":          digest,
+		"client_report":   clientReport,
 	}, nil
 }
 
@@ -130,11 +137,11 @@ func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Rol
 		select m.user_uid, u.email, u.display_name, u.photo_url, m.role,
 		       (select count(*) from tasks t
 		         where t.workspace_id = m.workspace_id
-		           and t.assignee_uid = m.user_uid and t.status <> 'done')
+		           and t.assignee_uid = m.user_uid and t.status <> 'done'`+g.tasks("t")+`)
 		from workspace_members m
 		left join users u on u.uid = m.user_uid
 		where m.workspace_id = ?
-		order by m.created_at`, []any{wsID}
+		order by m.created_at`, append(g.args(), wsID)
 	if !g.Default {
 		// A group lists its own members, with the group role expressed in
 		// the workspace-role vocabulary the existing screens understand.
@@ -145,12 +152,11 @@ func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Rol
 		         else case gm.functional_role when 'reviewer' then 'reviewer' else 'developer' end
 		       end,
 		       (select count(*) from tasks t
-		         where t.assignee_uid = gm.user_uid and t.status <> 'done'
-		           and t.project_id in (select id from projects where group_id = gm.group_id))
+		         where t.assignee_uid = gm.user_uid and t.status <> 'done'`+g.tasks("t")+`)
 		from group_members gm
 		left join users u on u.uid = gm.user_uid
 		where gm.group_id = ?
-		order by gm.created_at`, []any{g.GroupID}
+		order by gm.created_at`, append(g.args(), g.GroupID)
 	}
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -222,11 +228,11 @@ func (s *store) snapshotTasks(ctx context.Context, wsID string, g snapScope) ([]
 		       t.project_id, p.name, t.assignee_uid,
 		       (select coalesce(nullif(u.display_name, ''), u.email)
 		          from users u where u.uid = t.assignee_uid),
-		       t.label, t.branch, t.pr_number, t.due_at, t.created_at
+		       t.label, t.branch, t.pr_number, t.due_at, t.created_at, t.state_id
 		from tasks t
 		left join projects p on p.id = t.project_id
 		where t.workspace_id = ?`+g.tasks("t")+`
-		order by t.created_at desc`, wsID, g.GroupID)
+		order by t.created_at desc`, g.withArgs(wsID)...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -238,15 +244,15 @@ func (s *store) snapshotTasks(ctx context.Context, wsID string, g snapScope) ([]
 		var (
 			id, title, status, priority string
 			key, description, projectID *string
-			projectName, assigneeUID   *string
+			projectName, assigneeUID    *string
 			assigneeName, label, branch *string
-			dueAt, createdAt           *string
-			prNumber                   *int
-			points                     int
+			dueAt, createdAt, stateID   *string
+			prNumber                    *int
+			points                      int
 		)
 		if err := rows.Scan(&id, &key, &title, &description, &status, &priority, &points,
 			&projectID, &projectName, &assigneeUID, &assigneeName, &label, &branch,
-			&prNumber, &dueAt, &createdAt); err != nil {
+			&prNumber, &dueAt, &createdAt, &stateID); err != nil {
 			return nil, nil, err
 		}
 		names[id] = taskInfo{Key: key, Title: title, AssigneeName: assigneeName}
@@ -256,6 +262,7 @@ func (s *store) snapshotTasks(ctx context.Context, wsID string, g snapScope) ([]
 			"title":         title,
 			"description":   description,
 			"status":        status,
+			"state_id":      stateID,
 			"priority":      priority,
 			"points":        points,
 			"project_id":    projectID,
@@ -287,7 +294,7 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string, g snapScop
 		from task_comments c
 		join tasks t on t.id = c.task_id
 		where t.workspace_id = ?`+g.tasks("t")+`
-		order by c.created_at`, wsID, g.GroupID)
+		order by c.created_at`, g.withArgs(wsID)...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -315,7 +322,7 @@ func (s *store) snapshotTaskDetails(ctx context.Context, wsID string, g snapScop
 		select sc.id, sc.task_id, sc.title, sc.is_done
 		from task_subtasks sc
 		join tasks t on t.id = sc.task_id
-		where t.workspace_id = ?`+g.tasks("t"), wsID, g.GroupID)
+		where t.workspace_id = ?`+g.tasks("t"), g.withArgs(wsID)...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -343,7 +350,7 @@ func (s *store) snapshotDependencies(ctx context.Context, wsID string, tasks map
 		select d.id, d.task_id, d.state, d.reason
 		from task_dependencies d
 		join tasks t on t.id = d.task_id
-		where t.workspace_id = ?`+g.tasks("t"), wsID, g.GroupID)
+		where t.workspace_id = ?`+g.tasks("t"), g.withArgs(wsID)...)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +386,7 @@ func (s *store) snapshotActivity(ctx context.Context, wsID string, g snapScope) 
 		from activity_events a
 		where a.workspace_id = ?`+g.tasks("a")+`
 		order by a.created_at desc
-		limit 200`, wsID, g.GroupID)
+		limit 200`, g.withArgs(wsID)...)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +414,7 @@ func (s *store) snapshotSprints(ctx context.Context, wsID string, tasks map[stri
 	rows, err := s.db.QueryContext(ctx, `
 		select id, name, goal, starts_at, ends_at, capacity, committed
 		from sprints s where s.workspace_id = ?`+g.tasks("s")+`
-		order by s.starts_at`, wsID, g.GroupID)
+		order by s.starts_at`, g.withArgs(wsID)...)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +437,7 @@ func (s *store) snapshotSprints(ctx context.Context, wsID string, tasks map[stri
 
 	out := make([]any, 0)
 	for _, sprint := range sprints {
-		items, err := s.snapshotSprintItems(ctx, sprint.id, tasks)
+		items, err := s.snapshotSprintItems(ctx, sprint.id, g)
 		if err != nil {
 			return nil, err
 		}
@@ -448,12 +455,14 @@ func (s *store) snapshotSprints(ctx context.Context, wsID string, tasks map[stri
 	return out, nil
 }
 
-func (s *store) snapshotSprintItems(ctx context.Context, sprintID string, tasks map[string]taskInfo) ([]any, error) {
+// snapshotSprintItems: a visible sprint can hold tasks of a private project;
+// those stay hidden like everywhere else.
+func (s *store) snapshotSprintItems(ctx context.Context, sprintID string, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select si.task_id, si.points, t.key, t.title, t.assignee_uid
 		from sprint_items si
 		join tasks t on t.id = si.task_id
-		where si.sprint_id = ?`, sprintID)
+		where si.sprint_id = ?`+g.tasks("t"), g.withArgs(sprintID)...)
 	if err != nil {
 		return nil, err
 	}
@@ -485,10 +494,10 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapSco
 		       (select coalesce(nullif(u.display_name, ''), u.email)
 		          from users u where u.uid = pr.reviewer_uid),
 		       pr.last_commit,
-		       (select t.key from tasks t where t.id = pr.task_id),
+		       (select t.key from tasks t where t.id = pr.task_id`+g.tasks("t")+`),
 		       (select p.name from projects p where p.id = pr.project_id)
 		from pull_requests pr
-		where pr.workspace_id = ?`+g.tasks("pr"), wsID, g.GroupID)
+		where pr.workspace_id = ?`+g.tasks("pr"), append(g.args(), g.withArgs(wsID)...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +552,7 @@ func (s *store) snapshotProjectExtras(ctx context.Context, wsID string, g snapSc
 		select l.id, l.name, l.color
 		from project_labels l
 		join projects p on p.id = l.project_id
-		where p.workspace_id = ? and p.group_id = ?`, wsID, g.GroupID)
+		where p.workspace_id = ?`+g.projects("p"), g.withArgs(wsID)...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -562,7 +571,7 @@ func (s *store) snapshotProjectExtras(ctx context.Context, wsID string, g snapSc
 		select r.id, r.full_name, r.branch, r.description, r.language, r.last_synced_at
 		from repositories r
 		join projects p on p.id = r.project_id
-		where p.workspace_id = ? and p.group_id = ?`, wsID, g.GroupID)
+		where p.workspace_id = ?`+g.projects("p"), g.withArgs(wsID)...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -681,13 +690,13 @@ func (s *store) snapshotUserSurfaces(ctx context.Context, wsID, uid string) ([]a
 
 func (s *store) snapshotClientReport(ctx context.Context, wsID, uid string, role Role) (any, error) {
 	var (
-		clientName, projectName        string
-		period, nextMilestone          *string
-		milestoneDate                  *string
-		decisionQuestion, decisionChoice *string
-		totalHours, hourlyRate, invoiceNumber *string
+		clientName, projectName                                         string
+		period, nextMilestone                                           *string
+		milestoneDate                                                   *string
+		decisionQuestion, decisionChoice                                *string
+		totalHours, hourlyRate, invoiceNumber                           *string
 		decisionOptions, weeklyHighlights, deliveredItems, invoiceLines string
-		progress                       float64
+		progress                                                        float64
 	)
 	err := s.db.QueryRowContext(ctx, `
 		select client_name, project_name, period, progress, next_milestone,

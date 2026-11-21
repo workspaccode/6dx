@@ -74,6 +74,7 @@ abstract final class Caps {
   static const editTasks = 'tasks.edit';
   static const editOwnTasks = 'tasks.edit_own';
   static const comment = 'comments.write';
+  static const manageWorkflow = 'workflow.manage';
 }
 
 class PlanUsage {
@@ -256,6 +257,8 @@ class GroupProject {
     required this.openTasks,
     required this.doneTasks,
     required this.isArchived,
+    this.isPrivate = false,
+    this.myAccess,
   });
 
   final String id;
@@ -265,6 +268,12 @@ class GroupProject {
   final int doneTasks;
   final bool isArchived;
 
+  /// Only the group's lead / admins and the project's own members see it.
+  final bool isPrivate;
+
+  /// The caller's project override: 'edit', 'read' or null (group roles).
+  final String? myAccess;
+
   factory GroupProject.fromJson(Map<String, dynamic> json) => GroupProject(
         id: '${json['id']}',
         name: '${json['name'] ?? ''}',
@@ -272,6 +281,8 @@ class GroupProject {
         openTasks: _int(json['open_tasks']),
         doneTasks: _int(json['done_tasks']),
         isArchived: json['is_archived'] == true,
+        isPrivate: json['visibility'] == 'private',
+        myAccess: json['my_access'] as String?,
       );
 }
 
@@ -282,6 +293,7 @@ class GroupTask {
     required this.status,
     required this.priority,
     required this.projectId,
+    this.stateId,
   });
 
   final String id;
@@ -290,12 +302,16 @@ class GroupTask {
   final String priority;
   final String? projectId;
 
+  /// The group workflow state (null for tasks the API has not mapped yet).
+  final String? stateId;
+
   factory GroupTask.fromJson(Map<String, dynamic> json) => GroupTask(
         id: '${json['id']}',
         title: '${json['title'] ?? ''}',
         status: '${json['status'] ?? 'todo'}',
         priority: '${json['priority'] ?? 'medium'}',
         projectId: json['project_id'] as String?,
+        stateId: json['state_id'] as String?,
       );
 }
 

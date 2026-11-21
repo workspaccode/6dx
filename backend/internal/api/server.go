@@ -118,6 +118,16 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("PATCH /v1/groups/{gid}/members/{uid}", s.handleUpdateGroupMember)
 	private.HandleFunc("DELETE /v1/groups/{gid}/members/{uid}", s.handleRemoveGroupMember)
 	private.HandleFunc("POST /v1/groups/{gid}/invites", s.handleSendGroupInvites)
+	private.HandleFunc("GET /v1/groups/{gid}/home", s.handleGroupHome)
+	private.HandleFunc("GET /v1/groups/{gid}/workflow", s.handleListWorkflow)
+	private.HandleFunc("POST /v1/groups/{gid}/workflow", s.handleCreateWorkflowState)
+	private.HandleFunc("PUT /v1/groups/{gid}/workflow/order", s.handleReorderWorkflow)
+	private.HandleFunc("PATCH /v1/groups/{gid}/workflow/{sid}", s.handleUpdateWorkflowState)
+	private.HandleFunc("GET /v1/groups/{gid}/projects/{pid}/me", s.handleProjectMe)
+	private.HandleFunc("PATCH /v1/groups/{gid}/projects/{pid}", s.handleUpdateGroupProject)
+	private.HandleFunc("GET /v1/groups/{gid}/projects/{pid}/members", s.handleListProjectMembers)
+	private.HandleFunc("PUT /v1/groups/{gid}/projects/{pid}/members/{uid}", s.handleSetProjectMember)
+	private.HandleFunc("DELETE /v1/groups/{gid}/projects/{pid}/members/{uid}", s.handleRemoveProjectMember)
 
 	private.HandleFunc("POST /v1/notifications/{id}/read", s.handleMarkNotificationRead)
 	private.HandleFunc("POST /v1/notifications/read-all", s.handleMarkAllNotificationsRead)
@@ -148,7 +158,7 @@ func (s *Server) withCommon(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Headers",
 				"Authorization, Content-Type, X-Workspace-Id, X-Group-Id")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 		}
 		if r.Method == http.MethodOptions {

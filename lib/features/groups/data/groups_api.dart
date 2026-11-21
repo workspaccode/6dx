@@ -1,6 +1,7 @@
 import '../../../core/network/api_client.dart';
 import '../../../core/network/current_workspace.dart';
 import '../domain/group_models.dart';
+import '../domain/workflow_models.dart';
 
 /// `/v1/groups/...` and the invite-by-id endpoints.
 ///
@@ -150,6 +151,122 @@ class GroupsApi {
       _api.run('groups.task_status', () async {
         await _workspace.resolve();
         await _api.patch('/v1/tasks/${_seg(taskId)}/status', body: {'status': status});
+      });
+
+  Future<void> setTaskState(String taskId, String stateId) =>
+      _api.run('groups.task_state', () async {
+        await _workspace.resolve();
+        await _api.patch('/v1/tasks/${_seg(taskId)}/status', body: {'state_id': stateId});
+      });
+
+  // --- workflow ---------------------------------------------------------------
+
+  Future<GroupWorkflow> workflow(String gid) => _api.run('groups.workflow', () async {
+        await _workspace.resolve();
+        return _workflow(await _api.get('/v1/groups/${_seg(gid)}/workflow'));
+      });
+
+  Future<GroupWorkflow> addState(
+    String gid, {
+    required String name,
+    required StateCategory category,
+    required String color,
+  }) =>
+      _api.run('groups.workflow_add', () async {
+        await _workspace.resolve();
+        return _workflow(await _api.post('/v1/groups/${_seg(gid)}/workflow', body: {
+          'name': name,
+          'category': category.wire,
+          'color': color,
+        }));
+      });
+
+  Future<GroupWorkflow> updateState(
+    String gid,
+    String stateId, {
+    String? name,
+    StateCategory? category,
+    String? color,
+    bool? archived,
+  }) =>
+      _api.run('groups.workflow_update', () async {
+        await _workspace.resolve();
+        return _workflow(await _api.patch(
+          '/v1/groups/${_seg(gid)}/workflow/${_seg(stateId)}',
+          body: {
+            if (name != null) 'name': name,
+            if (category != null) 'category': category.wire,
+            if (color != null) 'color': color,
+            if (archived != null) 'archived': archived,
+          },
+        ));
+      });
+
+  Future<GroupWorkflow> reorderStates(String gid, List<String> ids) =>
+      _api.run('groups.workflow_order', () async {
+        await _workspace.resolve();
+        return _workflow(await _api.put('/v1/groups/${_seg(gid)}/workflow/order',
+            body: {'ids': ids}));
+      });
+
+  static GroupWorkflow _workflow(Map<String, dynamic> payload) => GroupWorkflow(
+        states: _list(payload['states']).map(WorkflowState.fromJson).toList(),
+        canManage: payload['can_manage'] == true,
+      );
+
+  // --- home and projects ------------------------------------------------------
+
+  Future<GroupHome> home(String gid) => _api.run('groups.home', () async {
+        await _workspace.resolve();
+        return GroupHome.fromJson(await _api.get('/v1/groups/${_seg(gid)}/home'));
+      });
+
+  Future<ProjectAccess> projectAccess(String gid, String pid) =>
+      _api.run('groups.project_me', () async {
+        await _workspace.resolve();
+        final payload =
+            await _api.get('/v1/groups/${_seg(gid)}/projects/${_seg(pid)}/me');
+        return ProjectAccess.fromJson(_map(payload['project']));
+      });
+
+  Future<void> setProjectPrivate(String gid, String pid, {required bool private}) =>
+      _api.run('groups.project_update', () async {
+        await _workspace.resolve();
+        await _api.patch('/v1/groups/${_seg(gid)}/projects/${_seg(pid)}',
+            body: {'visibility': private ? 'private' : 'group'});
+      });
+
+  Future<List<ProjectMemberOverride>> projectMembers(String gid, String pid) =>
+      _api.run('groups.project_members', () async {
+        await _workspace.resolve();
+        final payload =
+            await _api.get('/v1/groups/${_seg(gid)}/projects/${_seg(pid)}/members');
+        return _list(payload['members']).map(ProjectMemberOverride.fromJson).toList();
+      });
+
+  Future<void> setProjectMember(
+    String gid,
+    String pid,
+    String uid, {
+    required bool readOnly,
+    String? functionalRole,
+  }) =>
+      _api.run('groups.project_member_set', () async {
+        await _workspace.resolve();
+        await _api.put(
+          '/v1/groups/${_seg(gid)}/projects/${_seg(pid)}/members/${_seg(uid)}',
+          body: {
+            'access': readOnly ? 'read' : 'edit',
+            if (functionalRole != null) 'functional_role': functionalRole,
+          },
+        );
+      });
+
+  Future<void> removeProjectMember(String gid, String pid, String uid) =>
+      _api.run('groups.project_member_remove', () async {
+        await _workspace.resolve();
+        await _api.delete(
+            '/v1/groups/${_seg(gid)}/projects/${_seg(pid)}/members/${_seg(uid)}');
       });
 
   /// The invite is addressed to an e-mail, not to a workspace: read it

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -30,15 +32,17 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope := scopeOf(access)
 	rows, err := s.store.db.QueryContext(r.Context(), `
 		select p.id, p.name, p.description, p.icon, p.color, p.is_archived,
-		       p.updated_at,
+		       p.updated_at, p.visibility,
+		       (select pm.access from project_members pm where pm.project_id = p.id and pm.user_uid = ?),
 		       (select count(*) from tasks t where t.project_id = p.id and t.status <> 'done'),
 		       (select count(*) from tasks t where t.project_id = p.id and t.status = 'done'),
 		       (select r.full_name from repositories r where r.project_id = p.id order by r.id limit 1)
 		from projects p
-		where p.workspace_id = ? and p.group_id = ?
-		order by p.updated_at desc`, ws.ID, access.ID)
+		where p.workspace_id = ?`+scope.projects("p")+`
+		order by p.updated_at desc`, scope.withArgs(caller.UID, ws.ID)...)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -61,15 +65,17 @@ func scanProject(rows interface {
 	Scan(dest ...any) error
 }) (map[string]any, error) {
 	var (
-		id, name, updatedAt string
-		description, icon   *string
-		color               *string
-		isArchived          int
+		id, name, updatedAt  string
+		description, icon    *string
+		color                *string
+		isArchived           int
+		visibility           string
+		override             *string
 		openTasks, doneTasks int
-		repositoryFullName  *string
+		repositoryFullName   *string
 	)
 	if err := rows.Scan(&id, &name, &description, &icon, &color, &isArchived,
-		&updatedAt, &openTasks, &doneTasks, &repositoryFullName); err != nil {
+		&updatedAt, &visibility, &override, &openTasks, &doneTasks, &repositoryFullName); err != nil {
 		return nil, err
 	}
 	return map[string]any{
@@ -83,6 +89,8 @@ func scanProject(rows interface {
 		"repository_full_name": repositoryFullName,
 		"is_archived":          isArchived != 0,
 		"updated_at":           updatedAt,
+		"visibility":           visibility,
+		"my_access":            override,
 	}, nil
 }
 
@@ -201,6 +209,8 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 			"repository_full_name": repositoryFullName,
 			"is_archived":          false,
 			"updated_at":           now,
+			"visibility":           "group",
+			"my_access":            nil,
 		},
 	})
 }
@@ -213,6 +223,25 @@ func (s *Server) handleArchiveProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.store.requireEditor(r.Context(), ws.ID, caller.UID); err != nil {
+		writeError(w, err)
+		return
+	}
+	// A project in another group needs projects.manage there; the default
+	// group keeps the legacy editor rule.
+	var groupID sql.NullString
+	err = s.store.db.QueryRowContext(r.Context(),
+		`select group_id from projects where id = ? and workspace_id = ?`,
+		r.PathValue("id"), ws.ID).Scan(&groupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, notFound("project_not_found", "المشروع غير موجود."))
+		return
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.requireProjectCap(r.Context(), ws, caller.UID, groupID.String,
+		r.PathValue("id"), CapManageProjects); err != nil {
 		writeError(w, err)
 		return
 	}

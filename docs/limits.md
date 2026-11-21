@@ -21,6 +21,9 @@
 | مدة الطلب | قراءة 30s، كتابة 60s، idle 120s | السيرفر بيقفل الاتصال | `cmd/api/main.go` |
 | حجم الـ headers | **64KB** | `431` | `cmd/api/main.go` |
 | webhook من GitHub | **25MB** | التوقيع بيفشل | `github.go` |
+| حالات المهام في المجموعة | **20** حالة شغالة | `409 state_limit_reached` | `workflow.go` |
+| اسم حالة المهمة | **1 – 40** حرف، ومفيش اسمين زي بعض في نفس المجموعة | `400 invalid_state_name` / `409 state_name_taken` | `workflow.go` |
+| لون حالة المهمة | `#RRGGBB` | `400 invalid_color` | `workflow.go` |
 | صلاحية الـ state في ربط GitHub | **10 دقايق**، ومش بتتجدد | "انتهت صلاحية الطلب" | `github.go` |
 
 **الحسابات بالحروف مش بالـ bytes:** الحرف العربي بياخد 2 bytes، فـ 80 حرف عربي مسموح زي 80 حرف إنجليزي.

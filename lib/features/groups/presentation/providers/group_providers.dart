@@ -6,6 +6,7 @@ import '../../../../core/network/current_workspace.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/groups_api.dart';
 import '../../domain/group_models.dart';
+import '../../domain/workflow_models.dart';
 
 final groupsApiProvider = Provider<GroupsApi>(
   (ref) => GroupsApi(ref.watch(apiClientProvider), ref.watch(currentWorkspaceProvider)),
@@ -49,6 +50,31 @@ final groupTasksProvider =
     FutureProvider.family<List<GroupTask>, ProjectKey>((ref, key) {
   _bindToSession(ref);
   return ref.watch(groupsApiProvider).tasks(key.gid, projectId: key.pid);
+});
+
+/// The group's task states; the project screen groups tasks by them.
+final groupWorkflowProvider =
+    FutureProvider.family<GroupWorkflow, String>((ref, gid) {
+  _bindToSession(ref);
+  return ref.watch(groupsApiProvider).workflow(gid);
+});
+
+/// What the group home shows for the caller's role.
+final groupHomeProvider = FutureProvider.family<GroupHome, String>((ref, gid) {
+  _bindToSession(ref);
+  return ref.watch(groupsApiProvider).home(gid);
+});
+
+final projectAccessProvider =
+    FutureProvider.family<ProjectAccess, ProjectKey>((ref, key) {
+  _bindToSession(ref);
+  return ref.watch(groupsApiProvider).projectAccess(key.gid, key.pid);
+});
+
+final projectMembersProvider =
+    FutureProvider.family<List<ProjectMemberOverride>, ProjectKey>((ref, key) {
+  _bindToSession(ref);
+  return ref.watch(groupsApiProvider).projectMembers(key.gid, key.pid);
 });
 
 final inviteDetailsProvider =

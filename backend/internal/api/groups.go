@@ -33,6 +33,11 @@ type groupAccess struct {
 	GroupRole      GroupRole
 	FunctionalRole string
 	Caps           map[Capability]bool
+
+	// Set by projectAccess when the access is narrowed to one project.
+	ProjectID         string
+	ProjectVisibility string
+	ProjectAccess     string // "", "read" or "edit" (project_members)
 }
 
 func (a *groupAccess) can(c Capability) bool { return a.Caps[c] }
@@ -753,8 +758,26 @@ func (s *Server) handleRemoveGroupMember(w http.ResponseWriter, r *http.Request)
 		writeError(w, forbidden("admin_requires_lead", "إزالة مساعد خاصة بقائد المجموعة."))
 		return
 	}
-	if _, err := s.store.db.ExecContext(r.Context(),
+	tx, err := s.store.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	// Leaving the group also ends every project override in it: a stale row
+	// would let them back into a private project if they rejoined.
+	if _, err := tx.ExecContext(r.Context(), `
+		delete from project_members where user_uid = ?
+		  and project_id in (select id from projects where group_id = ?)`, target, access.ID); err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(),
 		`delete from group_members where group_id = ? and user_uid = ?`, access.ID, target); err != nil {
+		writeError(w, err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
 		writeError(w, err)
 		return
 	}

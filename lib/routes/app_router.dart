@@ -40,6 +40,7 @@ import '../features/groups/presentation/pages/group_members_pages.dart';
 import '../features/groups/presentation/pages/group_pages.dart';
 import '../features/groups/presentation/pages/groups_pages.dart';
 import '../features/groups/presentation/pages/invite_page.dart';
+import '../features/groups/presentation/pages/workflow_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
@@ -513,6 +514,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: 'settings',
             builder: (_, state) => GroupSettingsPage(gid: state.pathParameters['gid']!),
+            routes: [
+              GoRoute(
+                path: 'workflow',
+                builder: (_, state) =>
+                    WorkflowSettingsPage(gid: state.pathParameters['gid']!),
+              ),
+            ],
           ),
           GoRoute(
             path: 'p/:pid',
@@ -520,6 +528,15 @@ final routerProvider = Provider<GoRouter>((ref) {
               gid: state.pathParameters['gid']!,
               pid: state.pathParameters['pid']!,
             ),
+            routes: [
+              GoRoute(
+                path: 'settings',
+                builder: (_, state) => GroupProjectSettingsPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                ),
+              ),
+            ],
           ),
         ],
       ),

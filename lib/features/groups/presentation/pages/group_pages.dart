@@ -7,6 +7,7 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/group_models.dart';
+import '../../domain/workflow_models.dart';
 import '../providers/group_providers.dart';
 import '../widgets/group_widgets.dart';
 import '../providers/active_group.dart';
@@ -55,7 +56,7 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
               const HintBanner(
                 'انت بتشوف المجموعة كمدير لمساحة العمل. تقدر تدير الأعضاء والإعدادات بس.',
               ),
-            _RoleFocus(access: access),
+            _HomeSummary(gid: widget.gid),
             const SizedBox(height: 16),
             SectionLabel('المشاريع'),
             const SizedBox(height: 8),
@@ -79,12 +80,17 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
                       children: [
                         for (final project in list)
                           SettingsTile(
-                            icon: access.type == GroupType.hardware
-                                ? Icons.memory_rounded
-                                : Icons.folder_outlined,
+                            icon: project.isPrivate
+                                ? Icons.lock_outline_rounded
+                                : access.type == GroupType.hardware
+                                    ? Icons.memory_rounded
+                                    : Icons.folder_outlined,
                             title: project.name,
-                            subtitle:
-                                '${project.openTasks} مفتوحة · ${project.doneTasks} مكتملة',
+                            subtitle: [
+                              '${project.openTasks} مفتوحة · ${project.doneTasks} مكتملة',
+                              if (project.isPrivate) 'خاص',
+                              if (project.myAccess == 'read') 'قراءة بس',
+                            ].join(' · '),
                             onTap: () => context.push('/g/${widget.gid}/p/${project.id}'),
                           ),
                       ],
@@ -131,6 +137,7 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
     try {
       final project = await ref.read(groupsApiProvider).createProject(widget.gid, name: name);
       ref.invalidate(groupProjectsProvider(widget.gid));
+      ref.invalidate(groupHomeProvider(widget.gid));
       ref.invalidate(groupsOverviewProvider);
       if (context.mounted) context.push('/g/${widget.gid}/p/${project.id}');
     } catch (error) {
@@ -139,61 +146,129 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
   }
 }
 
-/// What this role should look at first (§5.4). The full role dashboards come
-/// with the hardware screens; until then each role gets its checklist.
-class _RoleFocus extends StatelessWidget {
-  const _RoleFocus({required this.access});
-  final GroupAccess access;
-
-  static const _focus = <String, List<String>>{
-    'tech_lead': ['الـ sprint الحالي', 'PRs محتاجة مراجعة', 'CI فاشل'],
-    'developer': ['مهامي', 'PRs مستنية مراجعتي'],
-    'reviewer': ['طابور المراجعة', 'الـ SLA'],
-    'qa': ['مهام محتاجة اختبار', 'الـ bugs المفتوحة'],
-    'designer': ['مهام التصميم', 'المراجعات المطلوبة'],
-    'devops': ['الـ pipelines', 'الـ releases'],
-    'pm': ['تقدم الـ sprint', 'الـ backlog'],
-    'hw_lead': ['اعتمادات ECO المستنياك', 'جاهزية الـ gate الجاية', 'المخاطر'],
-    'electrical': ['مهام التصميم', 'الـ ECOs بتاعتي', 'الـ BOM المسودة'],
-    'mechanical': ['مهام التصميم', 'الـ ECOs بتاعتي'],
-    'firmware': ['مهامي و PRs', 'توافق الـ firmware مع الـ HW'],
-    'test': ['اختبارات مطلوبة', 'الوحدات الفاشلة', 'خطط الاختبار'],
-    'technician': ['طابور الـ builds', 'الوحدات المتعيّنة عليّا', 'تسجيل نتيجة'],
-    'manufacturing': ['الـ builds الجاية', 'DFM'],
-    'procurement': ['قطع طويلة التوريد', 'أوامر الشراء المفتوحة'],
-    'client': ['تقدم المراحل', 'التقارير', 'القرار المطلوب منك'],
-  };
+/// The real home numbers (`GET /v1/groups/{gid}/home`), shaped by role:
+/// the lead and admins see the team, a member their own tasks, a guest the
+/// progress only. The API decides what each role gets.
+class _HomeSummary extends ConsumerWidget {
+  const _HomeSummary({required this.gid});
+  final String gid;
 
   @override
-  Widget build(BuildContext context) {
-    final items = _focus[access.functionalRole] ??
-        (access.isMember ? const <String>[] : const ['الأعضاء', 'الإعدادات']);
-    if (items.isEmpty) return const SizedBox.shrink();
-    return AppPanel(
-      accent: AppColors.accent,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('أول حاجة ليك', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          for (final item in items)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final home = ref.watch(groupHomeProvider(gid));
+    return home.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: LinearProgressIndicator(),
+      ),
+      error: (error, _) => AppErrorView(
+        message: describeError(error),
+        onRetry: () => ref.invalidate(groupHomeProvider(gid)),
+      ),
+      data: (data) {
+        final team = data.team;
+        final mine = data.myTasks;
+        final now = DateTime.now();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                StatTile(value: '${data.openTasks}', label: 'مفتوحة'),
+                const SizedBox(width: 8),
+                StatTile(
+                  value: '${data.count(StateCategory.blocked)}',
+                  label: 'متوقفة',
+                  color: AppColors.danger,
+                ),
+                const SizedBox(width: 8),
+                StatTile(
+                  value: '${data.count(StateCategory.done)}',
+                  label: 'تمت',
+                  color: AppColors.success,
+                ),
+              ],
+            ),
+            if (team != null) ...[
+              const SizedBox(height: 16),
+              SectionLabel('الفريق'),
+              const SizedBox(height: 8),
+              Row(
                 children: [
-                  const Icon(Icons.arrow_left_rounded, size: 18, color: AppColors.accent),
-                  const SizedBox(width: 4),
-                  Expanded(child: Text(item)),
+                  StatTile(value: '${team.members}', label: 'عضو', color: AppColors.info),
+                  const SizedBox(width: 8),
+                  StatTile(
+                    value: '${team.unassigned}',
+                    label: 'مهام من غير مسؤول',
+                    color: AppColors.warning,
+                  ),
+                  const SizedBox(width: 8),
+                  StatTile(
+                    value: '${team.overdue}',
+                    label: 'متأخرة',
+                    color: team.overdue > 0 ? AppColors.danger : AppColors.textMuted,
+                  ),
                 ],
               ),
-            ),
-        ],
-      ),
+              if (team.pendingInvites > 0) ...[
+                const SizedBox(height: 8),
+                HintBanner('${team.pendingInvites} دعوة لسه ماتقبلتش.'),
+              ],
+            ],
+            if (mine != null) ...[
+              const SizedBox(height: 16),
+              SectionLabel(data.myOverdue > 0
+                  ? 'مهامي (${mine.length}) · ${data.myOverdue} متأخرة'
+                  : 'مهامي (${mine.length})'),
+              const SizedBox(height: 8),
+              if (mine.isEmpty)
+                const HintBanner('مفيش مهام مفتوحة متعيّنة عليك.')
+              else
+                for (final task in mine)
+                  SettingsTile(
+                    icon: Icons.circle,
+                    color: Color(parseHexColor(task.stateColor)),
+                    title: task.title,
+                    subtitle: [
+                      task.stateName ?? task.category.label,
+                      if (task.projectName != null) task.projectName!,
+                      if (task.isOverdue(now)) 'متأخرة',
+                    ].join(' · '),
+                    onTap: task.projectId == null
+                        ? null
+                        : () => context.push('/g/$gid/p/${task.projectId}'),
+                  ),
+            ],
+            if (mine == null && data.projects.isNotEmpty) ...[
+              // A guest's view: how far each project got, no names.
+              const SizedBox(height: 16),
+              SectionLabel('التقدم'),
+              const SizedBox(height: 8),
+              for (final project in data.projects)
+                AppPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(project.name, style: Theme.of(context).textTheme.titleSmall),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(value: project.progress),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${project.doneTasks} من ${project.openTasks + project.doneTasks} مهمة تمت',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
 
-/// `/g/:gid/p/:pid` — a project's tasks inside its group.
+/// `/g/:gid/p/:pid` — a project's tasks, grouped by the group's states.
 class GroupProjectPage extends ConsumerStatefulWidget {
   const GroupProjectPage({super.key, required this.gid, required this.pid});
   final String gid;
@@ -207,13 +282,6 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
   final _newTask = TextEditingController();
   bool _adding = false;
 
-  static const _statuses = <String, String>{
-    'todo': 'للتنفيذ',
-    'in_progress': 'جاري',
-    'review': 'مراجعة',
-    'done': 'مكتملة',
-  };
-
   ProjectKey get _key => (gid: widget.gid, pid: widget.pid);
 
   @override
@@ -222,15 +290,22 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
     super.dispose();
   }
 
+  void _refresh() {
+    ref.invalidate(groupTasksProvider(_key));
+    ref.invalidate(groupProjectsProvider(widget.gid));
+    ref.invalidate(groupHomeProvider(widget.gid));
+    ref.invalidate(groupWorkflowProvider(widget.gid));
+  }
+
   Future<void> _add() async {
     final title = _newTask.text.trim();
     if (title.isEmpty) return;
     setState(() => _adding = true);
     try {
       await ref.read(groupsApiProvider).createTask(projectId: widget.pid, title: title);
+      if (!mounted) return;
       _newTask.clear();
-      ref.invalidate(groupTasksProvider(_key));
-      ref.invalidate(groupProjectsProvider(widget.gid));
+      _refresh();
     } catch (error) {
       if (mounted) showSnack(context, describeError(error, fallback: 'تعذّر إضافة المهمة.'));
     } finally {
@@ -238,11 +313,10 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
     }
   }
 
-  Future<void> _move(GroupTask task, String status) async {
+  Future<void> _move(GroupTask task, WorkflowState state) async {
     try {
-      await ref.read(groupsApiProvider).setTaskStatus(task.id, status);
-      ref.invalidate(groupTasksProvider(_key));
-      ref.invalidate(groupProjectsProvider(widget.gid));
+      await ref.read(groupsApiProvider).setTaskState(task.id, state.id);
+      if (mounted) _refresh();
     } catch (error) {
       if (mounted) showSnack(context, describeError(error, fallback: 'تعذّر تحديث المهمة.'));
     }
@@ -258,12 +332,41 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
         for (final p in projects) {
           if (p.id == widget.pid) project = p;
         }
+        final projectAccess = ref.watch(projectAccessProvider(_key));
+        // The project override decides (a read-only member); until it loads,
+        // nothing is editable.
+        final canEdit = projectAccess.value?.canEditTasks ?? false;
         final tasks = ref.watch(groupTasksProvider(_key));
-        final canEdit = access.canEditTasks;
+        final workflow = ref.watch(groupWorkflowProvider(widget.gid));
+
+        if (projectAccess.hasError) {
+          return AppScreen(
+            title: 'المشروع',
+            children: [
+              AppEmptyState(
+                icon: Icons.lock_outline_rounded,
+                title: 'المشروع ده مش متاح',
+                message: describeError(projectAccess.error!),
+              ),
+            ],
+          );
+        }
 
         return AppScreen(
           title: project?.name ?? 'المشروع',
-          subtitle: access.name,
+          subtitle: [
+            access.name,
+            if (project?.isPrivate ?? false) 'خاص',
+            if (projectAccess.value?.override == 'read') 'قراءة بس',
+          ].join(' · '),
+          // Visibility and per-project roles are the lead's / admins' call.
+          trailing: access.can(Caps.manageGroup)
+              ? IconButton(
+                  tooltip: 'إعدادات المشروع',
+                  icon: const Icon(Icons.tune_rounded),
+                  onPressed: () => context.push('/g/${widget.gid}/p/${widget.pid}/settings'),
+                )
+              : null,
           children: [
             if (canEdit)
               Row(
@@ -288,56 +391,108 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
                 ],
               ),
             const SizedBox(height: 12),
-            tasks.when(
-              loading: () => const AppLoadingView(),
-              error: (error, _) => AppErrorView(
-                message: describeError(error),
-                onRetry: () => ref.invalidate(groupTasksProvider(_key)),
-              ),
-              data: (list) {
-                if (list.isEmpty) {
-                  return const AppEmptyState(
-                    icon: Icons.checklist_rounded,
-                    title: 'مفيش مهام في المشروع ده',
-                  );
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final status in _statuses.keys)
-                      if (list.any((t) => t.status == status)) ...[
-                        SectionLabel(
-                          '${_statuses[status]} (${list.where((t) => t.status == status).length})',
-                        ),
-                        const SizedBox(height: 6),
-                        for (final task in list.where((t) => t.status == status))
-                          SettingsTile(
-                            icon: status == 'done'
-                                ? Icons.check_circle_rounded
-                                : Icons.radio_button_unchecked_rounded,
-                            color: status == 'done' ? AppColors.success : AppColors.textMuted,
-                            title: task.title,
-                            trailing: canEdit
-                                ? PopupMenuButton<String>(
-                                    tooltip: 'نقل',
-                                    onSelected: (next) => _move(task, next),
-                                    itemBuilder: (_) => [
-                                      for (final entry in _statuses.entries)
-                                        if (entry.key != task.status)
-                                          PopupMenuItem(value: entry.key, child: Text(entry.value)),
-                                    ],
-                                  )
-                                : const SizedBox.shrink(),
-                          ),
-                        const SizedBox(height: 8),
-                      ],
-                  ],
-                );
-              },
-            ),
+            switch ((tasks, workflow)) {
+              (AsyncValue(:final error?), _) || (_, AsyncValue(:final error?)) => AppErrorView(
+                  message: describeError(error),
+                  onRetry: _refresh,
+                ),
+              (AsyncData(value: final list), AsyncData(value: final flow)) =>
+                _TasksByState(
+                  tasks: list,
+                  workflow: flow,
+                  canEdit: canEdit,
+                  onMove: _move,
+                ),
+              _ => const AppLoadingView(),
+            },
           ],
         );
       },
+    );
+  }
+}
+
+class _TasksByState extends StatelessWidget {
+  const _TasksByState({
+    required this.tasks,
+    required this.workflow,
+    required this.canEdit,
+    required this.onMove,
+  });
+
+  final List<GroupTask> tasks;
+  final GroupWorkflow workflow;
+  final bool canEdit;
+  final void Function(GroupTask task, WorkflowState state) onMove;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tasks.isEmpty) {
+      return const AppEmptyState(
+        icon: Icons.checklist_rounded,
+        title: 'مفيش مهام في المشروع ده',
+      );
+    }
+    final byState = <String, List<GroupTask>>{};
+    final unmapped = <GroupTask>[];
+    for (final task in tasks) {
+      final state = workflow.forTask(task);
+      if (state == null) {
+        unmapped.add(task);
+      } else {
+        byState.putIfAbsent(state.id, () => []).add(task);
+      }
+    }
+    // Live states in order, then archived ones still holding old tasks.
+    final sections = [
+      ...workflow.live,
+      ...workflow.archived.where((s) => byState.containsKey(s.id)),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final state in sections)
+          if (byState[state.id] case final list?) ...[
+            SectionLabel('${state.name} (${list.length})'),
+            const SizedBox(height: 6),
+            for (final task in list) _tile(task, state),
+            const SizedBox(height: 8),
+          ],
+        if (unmapped.isNotEmpty) ...[
+          SectionLabel('من غير حالة (${unmapped.length})'),
+          const SizedBox(height: 6),
+          for (final task in unmapped) _tile(task, null),
+        ],
+      ],
+    );
+  }
+
+  Widget _tile(GroupTask task, WorkflowState? state) {
+    final closed = state?.category.isClosed ?? false;
+    return SettingsTile(
+      icon: closed ? Icons.check_circle_rounded : Icons.circle,
+      color: state == null ? AppColors.textMuted : Color(state.argb),
+      title: task.title,
+      trailing: canEdit
+          ? PopupMenuButton<WorkflowState>(
+              tooltip: 'نقل',
+              onSelected: (next) => onMove(task, next),
+              itemBuilder: (_) => [
+                for (final next in workflow.live)
+                  if (next.id != state?.id)
+                    PopupMenuItem(
+                      value: next,
+                      child: Row(
+                        children: [
+                          Icon(Icons.circle, size: 12, color: Color(next.argb)),
+                          const SizedBox(width: 8),
+                          Text(next.name),
+                        ],
+                      ),
+                    ),
+              ],
+            )
+          : const SizedBox.shrink(),
     );
   }
 }
@@ -383,6 +538,13 @@ class GroupSettingsPage extends ConsumerWidget {
                       await run(() => api.update(gid, name: name), 'اتغيّر الاسم');
                     },
             ),
+            if (access.can(Caps.manageWorkflow))
+              SettingsTile(
+                icon: Icons.view_column_outlined,
+                title: 'حالات المهام',
+                subtitle: 'الأسماء والألوان والترتيب',
+                onTap: () => context.push('/g/$gid/settings/workflow'),
+              ),
             SettingsTile(
               icon: Icons.category_outlined,
               title: 'النوع',

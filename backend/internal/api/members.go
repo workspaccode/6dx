@@ -190,6 +190,14 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(r.Context(), `
+		delete from project_members
+		 where user_uid = ? and project_id in (select id from projects where workspace_id = ?)`,
+		target, ws.ID,
+	); err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(), `
 		delete from group_members
 		 where user_uid = ? and group_id in (select id from groups where workspace_id = ?)`,
 		target, ws.ID,

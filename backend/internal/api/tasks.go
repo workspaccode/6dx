@@ -13,6 +13,9 @@ type createTaskRequest struct {
 	Description *string `json:"description"`
 	ProjectID   *string `json:"project_id"`
 	Priority    *string `json:"priority"`
+	// StateID puts the task in one of its group's states (default: the
+	// group's first backlog state).
+	StateID *string `json:"state_id"`
 }
 
 // GET /v1/tasks?project_id=
@@ -31,17 +34,14 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	query := `
 		select t.id, t.title, t.description, t.status, t.priority,
 		       t.project_id, p.name, t.label, t.branch, t.pr_number,
-		       t.due_at, t.created_at
+		       t.due_at, t.created_at, t.state_id
 		from tasks t
 		left join projects p on p.id = t.project_id
 		where t.workspace_id = ?`
-	args := []any{ws.ID}
-	if access.IsDefault {
-		query += ` and (t.project_id is null or t.project_id in (select id from projects where group_id = ?))`
-	} else {
-		query += ` and t.project_id in (select id from projects where group_id = ?)`
-	}
-	args = append(args, access.ID)
+	// The group's tasks, minus private projects the caller is not in.
+	scope := scopeOf(access)
+	query += scope.tasks("t")
+	args := scope.withArgs(ws.ID)
 	if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
 		query += ` and t.project_id = ?`
 		args = append(args, projectID)
@@ -73,12 +73,12 @@ func scanTask(rows interface {
 	var (
 		id, title, status, priority, createdAt string
 		description, projectID, projectName    *string
-		label, branch, dueAt                   *string
+		label, branch, dueAt, stateID          *string
 		prNumber                               *int
 	)
 	if err := rows.Scan(&id, &title, &description, &status, &priority,
 		&projectID, &projectName, &label, &branch, &prNumber, &dueAt,
-		&createdAt); err != nil {
+		&createdAt, &stateID); err != nil {
 		return nil, err
 	}
 	return map[string]any{
@@ -86,6 +86,7 @@ func scanTask(rows interface {
 		"title":        title,
 		"description":  description,
 		"status":       status,
+		"state_id":     stateID,
 		"priority":     priority,
 		"project_id":   projectID,
 		"project_name": projectName,
@@ -131,6 +132,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	// The project must belong to this workspace: the foreign key only checks
 	// that it exists somewhere (docs/review/04-backend.md).
+	var taskGroupID string
 	if body.ProjectID != nil && *body.ProjectID != "" {
 		var groupID sql.NullString
 		err := s.store.db.QueryRowContext(r.Context(),
@@ -144,10 +146,26 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err)
 			return
 		}
-		if err := s.requireGroupCapUnlessDefault(r.Context(), ws, caller.UID, groupID.String, CapEditTasks); err != nil {
+		if _, err := s.requireProjectCap(r.Context(), ws, caller.UID, groupID.String, *body.ProjectID, CapEditTasks); err != nil {
 			writeError(w, err)
 			return
 		}
+		taskGroupID = groupID.String
+	}
+	if taskGroupID == "" {
+		if taskGroupID, err = s.store.defaultGroupID(r.Context(), ws.ID); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	status := "todo"
+	if body.StateID != nil && *body.StateID != "" {
+		if status, err = s.store.stateForTask(r.Context(), taskGroupID, *body.StateID); err != nil {
+			writeError(w, err)
+			return
+		}
+	} else {
+		body.StateID = nil // the trigger picks the group's first backlog state
 	}
 	priority := "medium"
 	if body.Priority != nil && *body.Priority != "" {
@@ -164,9 +182,10 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	now := nowString()
 	if _, err := s.store.db.ExecContext(r.Context(), `
 		insert into tasks (id, workspace_id, project_id, title, description,
-		                   status, priority, points, created_at, updated_at)
-		values (?, ?, ?, ?, ?, 'todo', ?, 0, ?, ?)`,
-		taskID, ws.ID, body.ProjectID, body.Title, body.Description, priority, now, now,
+		                   status, state_id, priority, points, created_at, updated_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		taskID, ws.ID, body.ProjectID, body.Title, body.Description, status, body.StateID,
+		priority, now, now,
 	); err != nil {
 		writeError(w, err)
 		return
@@ -184,7 +203,7 @@ func (s *Server) taskByID(r *http.Request, taskID string) (map[string]any, error
 	row := s.store.db.QueryRowContext(r.Context(), `
 		select t.id, t.title, t.description, t.status, t.priority,
 		       t.project_id, p.name, t.label, t.branch, t.pr_number,
-		       t.due_at, t.created_at
+		       t.due_at, t.created_at, t.state_id
 		from tasks t
 		left join projects p on p.id = t.project_id
 		where t.id = ?`, taskID)
@@ -197,6 +216,9 @@ func (s *Server) taskByID(r *http.Request, taskID string) (map[string]any, error
 
 type updateStatusRequest struct {
 	Status string `json:"status"`
+	// StateID moves the task to one of its group's states; status then
+	// follows the state's legacy status. Either field may be sent.
+	StateID string `json:"state_id"`
 }
 
 // PATCH /v1/tasks/{id}/status
@@ -216,21 +238,42 @@ func (s *Server) handleUpdateTaskStatus(w http.ResponseWriter, r *http.Request) 
 		writeError(w, err)
 		return
 	}
+	taskID := r.PathValue("id")
+	if err := s.requireTaskAccess(r, ws, caller.UID, taskID, CapEditTasks); err != nil {
+		writeError(w, err)
+		return
+	}
+	var stateID any
+	if body.StateID != "" {
+		groupID, _, err := s.store.taskGroup(r.Context(), ws.ID, taskID)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if groupID == "" {
+			if groupID, err = s.store.defaultGroupID(r.Context(), ws.ID); err != nil {
+				writeError(w, err)
+				return
+			}
+		}
+		if body.Status, err = s.store.stateForTask(r.Context(), groupID, body.StateID); err != nil {
+			writeError(w, err)
+			return
+		}
+		stateID = body.StateID
+	}
 	switch body.Status {
 	case "todo", "in_progress", "review", "done":
 	default:
 		writeError(w, badRequest("invalid_status", "حالة المهمة غير معروفة."))
 		return
 	}
-
-	taskID := r.PathValue("id")
-	if err := s.requireTaskAccess(r, ws, caller.UID, taskID, CapEditTasks); err != nil {
-		writeError(w, err)
-		return
-	}
+	// With a status only, state_id stays and the trigger re-picks it when
+	// its legacy status no longer matches.
 	result, err := s.store.db.ExecContext(r.Context(),
-		`update tasks set status = ?, updated_at = ? where id = ? and workspace_id = ?`,
-		body.Status, nowString(), taskID, ws.ID)
+		`update tasks set status = ?, state_id = coalesce(?, state_id), updated_at = ?
+		  where id = ? and workspace_id = ?`,
+		body.Status, stateID, nowString(), taskID, ws.ID)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -300,11 +343,45 @@ func (s *Server) handleReviewPullRequest(w http.ResponseWriter, r *http.Request)
 	if body.Approve {
 		state = "approved"
 	}
-
+	// A PR number is only unique per workspace: review it only if it belongs
+	// to the active group (X-Group-Id), and with the caller's rights on the
+	// PR's project (a read-only override cannot approve; a project role can).
+	access, err := s.scopeGroup(r, ws, caller.UID)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	scope := scopeOf(access)
+	var prID string
+	var projectID, prGroup sql.NullString
+	err = s.store.db.QueryRowContext(r.Context(), `
+		select pull_requests.id, pull_requests.project_id, p.group_id
+		from pull_requests left join projects p on p.id = pull_requests.project_id
+		where pull_requests.workspace_id = ? and pull_requests.number = ?`+scope.tasks("pull_requests"),
+		scope.withArgs(ws.ID, r.PathValue("number"))...).Scan(&prID, &projectID, &prGroup)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, notFound("pull_request_not_found", "طلب السحب غير موجود."))
+		return
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if projectID.Valid {
+		if _, err := s.requireProjectCap(r.Context(), ws, caller.UID, prGroup.String,
+			projectID.String, CapReviewPR); err != nil {
+			writeError(w, err)
+			return
+		}
+	} else if !access.IsDefault {
+		if err := access.require(CapReviewPR); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
 	result, err := s.store.db.ExecContext(r.Context(),
-		`update pull_requests set state = ?, reviewer_uid = ?
-		  where workspace_id = ? and number = ?`,
-		state, caller.UID, ws.ID, r.PathValue("number"))
+		`update pull_requests set state = ?, reviewer_uid = ? where id = ?`,
+		state, caller.UID, prID)
 	if err != nil {
 		writeError(w, err)
 		return
