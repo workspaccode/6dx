@@ -9,6 +9,7 @@ import (
 
 	"github.com/workspaccode/6dx/backend/internal/config"
 	"github.com/workspaccode/6dx/backend/internal/db"
+	"github.com/workspaccode/6dx/backend/internal/httpx"
 )
 
 // Verifier is the dependency the middleware needs. It is an interface so a test
@@ -69,8 +70,12 @@ func (s *Server) Handler() http.Handler {
 
 	// Sign-in itself is public: the device flow runs before a session exists.
 	// It is proxied here because GitHub's OAuth endpoints send no CORS headers.
-	mux.HandleFunc("POST /auth/github/device-code", s.handleGithubDeviceCode)
-	mux.HandleFunc("POST /auth/github/device-token", s.handleGithubDeviceToken)
+	// Rate-limited per IP: every call spends the app's GitHub quota, and a
+	// flood on device-code would lock everyone out of sign-in. The device
+	// flow polls every ~5s for up to 15 min, which stays well under the limit.
+	signIn := httpx.NewRateLimiter(30, time.Minute)
+	mux.Handle("POST /auth/github/device-code", signIn.Middleware(http.HandlerFunc(s.handleGithubDeviceCode)))
+	mux.Handle("POST /auth/github/device-token", signIn.Middleware(http.HandlerFunc(s.handleGithubDeviceToken)))
 
 	// --- authenticated -----------------------------------------------------
 	private := http.NewServeMux()
@@ -108,7 +113,10 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("POST /v1/github/install-url", s.handleGithubInstallURL)
 	private.HandleFunc("POST /v1/github/disconnect", s.handleGithubDisconnect)
 
-	mux.Handle("/v1/", s.verifier.Middleware(s.withStoredIdentity(private)))
+	// The limiter runs before token verification, so a flood of bad tokens
+	// cannot turn into a flood of GitHub calls.
+	api := httpx.NewRateLimiter(600, time.Minute)
+	mux.Handle("/v1/", api.Middleware(s.verifier.Middleware(s.withStoredIdentity(private))))
 
 	return s.withCommon(mux)
 }

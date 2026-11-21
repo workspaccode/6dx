@@ -18,6 +18,10 @@ class _FakeGithubDataSource extends GithubAuthDataSource {
   int pollResultsBeforeApproval = 2;
   String? token;
 
+  /// When set, `fetchUser` fails with a response of this status (or with no
+  /// response at all when it is 0, i.e. offline).
+  int? failUserWith;
+
   @override
   Future<GithubDeviceCodeResponse> requestDeviceCode() async {
     deviceCodeCalls++;
@@ -42,6 +46,18 @@ class _FakeGithubDataSource extends GithubAuthDataSource {
   @override
   Future<Map<String, dynamic>> fetchUser(String token) async {
     userCalls++;
+    final status = failUserWith;
+    if (status != null) {
+      final options = RequestOptions(path: '/user');
+      throw DioException(
+        requestOptions: options,
+        type: status == 0
+            ? DioExceptionType.connectionError
+            : DioExceptionType.badResponse,
+        response:
+            status == 0 ? null : Response(requestOptions: options, statusCode: status),
+      );
+    }
     return {
       'id': 42,
       'login': 'sami',
@@ -61,6 +77,13 @@ class _MemorySecureStorage extends SecureStorageService {
   _MemorySecureStorage() : super(const FlutterSecureStorage());
 
   String? _token;
+  String? _user;
+
+  @override
+  Future<String?> readUser() async => _user;
+
+  @override
+  Future<void> writeUser(String json) async => _user = json;
 
   @override
   Future<String?> readAccessToken() async => _token;
@@ -138,5 +161,65 @@ void main() {
     final restored = await repository.currentUser();
     expect(restored.dataOrNull?.login, 'sami');
     expect(github.userCalls, 1);
+  });
+
+  Future<AuthRepositoryImpl> signedIn(
+    _FakeGithubDataSource github,
+    _MemorySecureStorage storage,
+  ) async {
+    final repository = AuthRepositoryImpl(
+      local: AuthLocalDataSource(storage),
+      backend: GithubAuthBackend(github: github, secureStorage: storage),
+    );
+    final started = await repository.startGithubDeviceFlow();
+    await repository.completeGithubDeviceFlow(started.dataOrNull!);
+    return repository;
+  }
+
+  test('offline at start-up keeps the session and the grant', () async {
+    final github = _FakeGithubDataSource()..pollResultsBeforeApproval = 0;
+    final storage = _MemorySecureStorage();
+    final repository = await signedIn(github, storage);
+
+    github.failUserWith = 0; // no network
+    final restored = await repository.currentUser();
+
+    expect(restored.dataOrNull?.login, 'sami');
+    expect(restored.dataOrNull?.accessToken, 'gho_test_token');
+    expect(await storage.readAccessToken(), 'gho_test_token');
+  });
+
+  test('a GitHub outage (5xx) does not sign the user out', () async {
+    final github = _FakeGithubDataSource()..pollResultsBeforeApproval = 0;
+    final storage = _MemorySecureStorage();
+    final repository = await signedIn(github, storage);
+
+    github.failUserWith = 503;
+    final restored = await repository.currentUser();
+
+    expect(restored.dataOrNull?.login, 'sami');
+    expect(await storage.readAccessToken(), isNotNull);
+  });
+
+  test('a revoked grant (401) signs the user out', () async {
+    final github = _FakeGithubDataSource()..pollResultsBeforeApproval = 0;
+    final storage = _MemorySecureStorage();
+    final repository = await signedIn(github, storage);
+
+    github.failUserWith = 401;
+    final restored = await repository.currentUser();
+
+    expect(restored.dataOrNull, isNull);
+    expect(await storage.readAccessToken(), isNull);
+  });
+
+  test('the cached profile never holds a copy of the token', () async {
+    final github = _FakeGithubDataSource()..pollResultsBeforeApproval = 0;
+    final storage = _MemorySecureStorage();
+    await signedIn(github, storage);
+
+    final cached = await storage.readUser();
+    expect(cached, isNotNull);
+    expect(cached, isNot(contains('gho_test_token')));
   });
 }

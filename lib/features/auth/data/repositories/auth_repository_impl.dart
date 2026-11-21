@@ -54,7 +54,21 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<Result<AuthUser?>> currentUser() => _guard(() async {
         // GitHub validates the stored grant and answers `null` once it is
         // revoked, which is exactly the "signed out" state.
-        final restored = await _backend.restoreSession();
+        final AuthUser? restored;
+        try {
+          restored = await _backend.restoreSession();
+        } on SessionUnverifiedException {
+          // Offline / GitHub down: keep the last confirmed session instead of
+          // deleting the token. The API re-validates on its next 401.
+          final offline = await _local.readOfflineSession();
+          AppLogger.action(
+            _tag,
+            offline == null
+                ? 'GitHub unreachable and no cached session'
+                : 'GitHub unreachable — using the cached session',
+          );
+          return offline?.toEntity();
+        }
         if (restored == null) {
           await _local.clearSession();
           return null;

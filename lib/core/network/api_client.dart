@@ -25,6 +25,13 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // The bearer token belongs to this API only. A request to any other
+          // host (an absolute URL that came from server data, say) goes out
+          // without it.
+          if (options.uri.host != Uri.parse(_dio.options.baseUrl).host) {
+            handler.next(options);
+            return;
+          }
           final token = await _secureStorage?.readAccessToken();
           if (token == null || token.isEmpty) {
             // Without a session there is nothing to authorise, so the request
@@ -57,6 +64,12 @@ class ApiClient {
 
   /// The workspace the UI is showing; sent as `X-Workspace-Id`.
   String? activeWorkspaceId;
+
+  /// Called when the server answers 401 for a request that carried a token.
+  /// The session layer re-validates the grant with GitHub then: a revoked
+  /// grant signs the user out, a GitHub outage keeps the cached session.
+  void Function()? onUnauthorized;
+  DateTime? _lastUnauthorized;
 
   Future<Map<String, dynamic>> get(String path, {Map<String, dynamic>? query}) =>
       _send(() => _dio.get<dynamic>(path, queryParameters: query));
@@ -122,15 +135,30 @@ class ApiClient {
 
     switch (response.statusCode) {
       case 401:
+        _notifyUnauthorized();
         return const UnauthorizedException();
       case 413:
         return const ServerException('حجم الطلب أكبر من المسموح.');
+      case 429:
+        return const ServerException('طلبات كتير في وقت قصير. حاول تاني بعد دقيقة.');
     }
 
     if (message != null && message.isNotEmpty) {
       return ServerException(message);
     }
     return ServerException('تعذّر إتمام العملية${code == null ? '' : ' ($code)'}.');
+  }
+
+  /// At most once every 30 s, so a burst of failing requests triggers a
+  /// single re-validation.
+  void _notifyUnauthorized() {
+    final now = DateTime.now();
+    final last = _lastUnauthorized;
+    if (last != null && now.difference(last) < const Duration(seconds: 30)) {
+      return;
+    }
+    _lastUnauthorized = now;
+    onUnauthorized?.call();
   }
 
   String _describe(Object error) {

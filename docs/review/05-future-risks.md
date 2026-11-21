@@ -8,9 +8,9 @@
 
 **الملف:** [`.github/workflows/checks.yml`](../../.github/workflows/checks.yml)
 
-- [ ] **مش بيشتغل على الـ push:** الـ trigger على `branches: [main]`، والفرع الافتراضي عندك اسمه `master`. يعني مفيش أي فحص بيحصل على الـ push.
-- [ ] **لو اشتغل هيفشل في أول خطوة:** بيسطّب Flutter `3.35.x` (Dart 3.9)، والـ [`pubspec.yaml`](../../pubspec.yaml#L7) طالب `sdk: ">=3.10.0"`، فـ `flutter pub get` هيقع.
-- [ ] Go في الـ CI `1.23`، والـ [`go.mod`](../../backend/go.mod#L3) بيقول `go 1.26.0`. هيشتغل بس لأن Go بينزّل الـ toolchain تلقائي في كل run، وده وقت ضايع ومصدر مفاجآت.
+- [x] **مش بيشتغل على الـ push:** الـ trigger على `branches: [main]`، والفرع الافتراضي عندك اسمه `master`. يعني مفيش أي فحص بيحصل على الـ push.
+- [x] **لو اشتغل هيفشل في أول خطوة:** بيسطّب Flutter `3.35.x` (Dart 3.9)، والـ [`pubspec.yaml`](../../pubspec.yaml#L7) طالب `sdk: ">=3.10.0"`، فـ `flutter pub get` هيقع. **(تصحيح المراجعة التانية):** الـ `pubspec.lock` فعليًا طالب `flutter: ">=3.47.0"` و `dart: ">=3.13.0"`، يعني `3.38.x` المقترح تحت **مش هيكفي**.
+- [x] Go في الـ CI `1.23`، والـ [`go.mod`](../../backend/go.mod#L3) بيقول `go 1.26.0`. هيشتغل بس لأن Go بينزّل الـ toolchain تلقائي في كل run، وده وقت ضايع ومصدر مفاجآت. ونفس المشكلة في الـ [`Dockerfile`](../../backend/Dockerfile#L2) (`golang:1.23-alpine`) — تفاصيل في [06-platform-release.md](06-platform-release.md).
 
 **الحل:**
 
@@ -23,7 +23,7 @@ on:
 # ...
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.x'   # أو أي إصدار فيه Dart >= 3.10
+          flutter-version: '3.47.x'   # الـ pubspec.lock طالب flutter >= 3.47.0
 # ...
       - uses: actions/setup-go@v5
         with:
@@ -54,7 +54,7 @@ on:
 
 ### مفيش rate limiting
 
-- [ ] أي حد يقدر يبعت آلاف الطلبات بتوكنات غلط، وكل واحد بينادي GitHub. GitHub هيعمل throttle لـ IP السيرفر، فـ**كل** المستخدمين مش هيقدروا يدخلوا.
+- [x] أي حد يقدر يبعت آلاف الطلبات بتوكنات غلط، وكل واحد بينادي GitHub. GitHub هيعمل throttle لـ IP السيرفر، فـ**كل** المستخدمين مش هيقدروا يدخلوا.
 - **الحل:** rate limiter لكل IP (مثلًا `golang.org/x/time/rate`)، وكاش سلبي للتوكنات الغلط لمدة دقيقة.
 
 ### الـ Migrations
@@ -112,3 +112,8 @@ on:
 - [ ] `pubspec.yaml` فيه `auto_route` و `auto_route_generator` مستخدمين في 13 route ميتة. احذفهم.
 - [ ] `firebase.google.com/go/v4` في الـ backend: dependency تقيل علشان مسار legacy.
 - [ ] اعمل Dependabot (`.github/dependabot.yml`) لـ `pub` و `gomod` و `github-actions`.
+- [x] **(المراجعة التانية) dependencies عليها CVEs معروفة** في [`backend/go.mod`](../../backend/go.mod):
+  - `golang-jwt/jwt/v5 v5.2.1` و `jwt/v4 v4.5.0` (indirect): CVE-2025-30204، متصلّح في 5.2.2. مش reachable لأن الكود بيوقّع JWT بس ومش بيعمل parse.
+  - `golang.org/x/net v0.30.0`: CVE-2024-45338 و CVE-2025-22870/22872.
+  - `golang.org/x/crypto v0.28.0`: CVEs في SSH، والـ SSH مش مستخدم.
+  - **الحل:** حدّثهم كلهم، وضيف `govulncheck ./...` في الـ CI (اتقيّم بقراءة الكود بس، `govulncheck` مكانش متسطب).

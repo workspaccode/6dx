@@ -2,8 +2,12 @@ name: checks
 
 on:
   push:
-    branches: [main]
+    branches: [master, 'v*']
   pull_request:
+
+# Least privilege for the default GITHUB_TOKEN: the jobs only read the code.
+permissions:
+  contents: read
 
 jobs:
   # Dart: analyzer + widget/unit tests
@@ -14,7 +18,8 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.x'
+          # pubspec.lock requires flutter >= 3.47.0 / dart >= 3.13.0.
+          flutter-version: '3.47.x'
           channel: stable
           cache: true
 
@@ -34,9 +39,13 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          # Latest stable patch release: go.mod's `go 1.26.0` is the
+          # minimum, and older patch releases carry standard-library CVEs.
+          go-version: 'stable'
+          check-latest: true
           cache-dependency-path: backend/go.sum
 
       - run: go build ./...
       - run: go vet ./...
       - run: go test -tags=integration ./... -v
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...

@@ -93,7 +93,15 @@ func Decode(r *http.Request, dst any) error {
 			// fields (accepting an invite, disconnecting GitHub, …).
 			return nil
 		}
-		return BadRequest("invalid_body", "صيغة الطلب غير صحيحة: "+err.Error())
+		// The decoder's message names Go types and struct fields; keep it in
+		// the log only.
+		slog.Info("invalid request body", "path", r.URL.Path, "error", err)
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return &Error{Status: http.StatusRequestEntityTooLarge, Code: "body_too_large",
+				Message: "حجم الطلب أكبر من المسموح."}
+		}
+		return BadRequest("invalid_body", "صيغة الطلب غير صحيحة.")
 	}
 	return nil
 }

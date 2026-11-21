@@ -55,11 +55,22 @@ func main() {
 		verifier = auth.NewGitHubVerifier()
 	}
 
+	verifier.SetGitHubApp(cfg.GitHubClientID, cfg.GitHubClientSecret)
+	if cfg.GitHubClientID == "" || cfg.GitHubClientSecret == "" {
+		slog.Warn("GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET missing — GitHub sign-in is rejected")
+	}
+
 	server := api.New(cfg, database, verifier)
 	httpServer := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		// Bound the whole request, not only the headers, so a slow body
+		// cannot hold a connection (and the single DB connection) forever.
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   60 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: 64 << 10,
 	}
 
 	go func() {

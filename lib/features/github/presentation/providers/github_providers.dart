@@ -18,9 +18,16 @@ final githubApiProvider = Provider<GithubApi>(
 /// Short-lived installation-token client for the `github` package. Only
 /// editors can obtain a token (the API enforces it), so the GitHub App scoping
 /// and the workspace roles both stay in force.
-final githubSdkProvider = Provider<GithubSdk>(
-  (ref) => GithubSdk(ref.watch(apiClientProvider), ref.watch(currentWorkspaceProvider)),
-);
+final githubSdkProvider = Provider<GithubSdk>((ref) {
+  final sdk =
+      GithubSdk(ref.watch(apiClientProvider), ref.watch(currentWorkspaceProvider));
+  // Never let one account reuse the installation token minted for another.
+  ref.listen(
+    authNotifierProvider.select((state) => state.value?.id),
+    (_, __) => sdk.reset(),
+  );
+  return sdk;
+});
 
 final githubRepositoryRepositoryProvider = Provider<GithubRepositoryRepository>(
   (ref) => GithubRepositoryRepositoryImpl(ref.watch(githubApiProvider)),

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/hmac"
 	"crypto/rand"
@@ -47,7 +48,7 @@ type githubBroker struct {
 const (
 	githubAPI         = "https://api.github.com"
 	githubOAuth       = "https://github.com/login/oauth"
-	stateTTL          = 30 * time.Minute
+	stateTTL          = 10 * time.Minute
 	githubHTTPTimeout = 15 * time.Second
 )
 
@@ -77,14 +78,27 @@ func newGithubBroker(cfg *config.Config) (*githubBroker, error) {
 
 // --- state ------------------------------------------------------------------
 
+// hmac signs the browser-leg state tokens. The "6dx-state:" prefix keeps a
+// state signature from ever being a valid signature for anything else.
 func (b *githubBroker) hmac(payload string) string {
 	mac := hmac.New(sha256.New, []byte(b.cfg.GitHubStateSecret))
+	mac.Write([]byte("6dx-state:"))
 	mac.Write([]byte(payload))
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (b *githubBroker) signState(workspaceID, userID string, installationID int64) string {
-	payload := fmt.Sprintf("v1.%s.%s.%d.%d", workspaceID, userID, installationID, time.Now().UnixMilli())
+// webhookHMAC is GitHub's X-Hub-Signature-256: HMAC-SHA256 of the raw body
+// with the webhook secret — a different key from the state tokens.
+func (b *githubBroker) webhookHMAC(body []byte) string {
+	mac := hmac.New(sha256.New, []byte(b.cfg.GitHubWebhookSecret))
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// signState issues a state token. issuedAt is carried over when an existing
+// state is re-signed, so re-signing can never extend its lifetime.
+func (b *githubBroker) signState(workspaceID, userID string, installationID int64, issuedAt time.Time) string {
+	payload := fmt.Sprintf("v1.%s.%s.%d.%d", workspaceID, userID, installationID, issuedAt.UnixMilli())
 	return payload + "." + b.hmac(payload)
 }
 
@@ -92,6 +106,7 @@ type statePayload struct {
 	WorkspaceID    string
 	UserID         string
 	InstallationID int64
+	IssuedAt       time.Time
 }
 
 func (b *githubBroker) verifyState(state string) (*statePayload, bool) {
@@ -115,6 +130,7 @@ func (b *githubBroker) verifyState(state string) (*statePayload, bool) {
 		WorkspaceID:    parts[1],
 		UserID:         parts[2],
 		InstallationID: installationID,
+		IssuedAt:       time.UnixMilli(issuedAt),
 	}, true
 }
 
@@ -213,9 +229,12 @@ func (b *githubBroker) getJSON(token, path string, dst any) error {
 
 // revokeUserToken drops the user token once ownership is proven.
 func (b *githubBroker) revokeUserToken(userToken string) {
-	body := strings.NewReader(`{"access_token":"` + userToken + `"}`)
+	payload, err := json.Marshal(map[string]string{"access_token": userToken})
+	if err != nil {
+		return
+	}
 	request, err := http.NewRequest(http.MethodDelete,
-		fmt.Sprintf("%s/applications/%s/token", githubAPI, b.cfg.GitHubClientID), body)
+		fmt.Sprintf("%s/applications/%s/token", githubAPI, b.cfg.GitHubClientID), bytes.NewReader(payload))
 	if err != nil {
 		return
 	}
@@ -229,6 +248,9 @@ func (b *githubBroker) revokeUserToken(userToken string) {
 		return
 	}
 	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		slog.Warn("github token revocation rejected", "status", response.StatusCode)
+	}
 }
 
 // --- browser legs -----------------------------------------------------------
@@ -259,7 +281,7 @@ func (s *Server) handleGithubSetup(w http.ResponseWriter, r *http.Request) {
 	// A missing state is not fatal: GitHub does not promise to echo it back.
 	var next, stateKind string
 	if state, ok := s.github.verifyState(r.URL.Query().Get("state")); ok {
-		next = s.github.signState(state.WorkspaceID, state.UserID, installationID)
+		next = s.github.signState(state.WorkspaceID, state.UserID, installationID, state.IssuedAt)
 		stateKind = "signed"
 	} else {
 		next = s.github.signRecovery(installationID)
@@ -357,7 +379,8 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 
 	workspaceID, callerUID, ok := s.resolveGithubTarget(r, state, stateOK, user.ID)
 	if !ok {
-		githubHTML(w, "حساب GitHub ده مش مربوط بأي حساب 6DX. سجّل الدخول بـ GitHub في التطبيق.")
+		s.github.revokeUserToken(userToken)
+		githubHTML(w, "حساب GitHub ده مش هو الحساب اللي طلب الربط من التطبيق، أو مالوش صلاحية admin على مساحة العمل. سجّل الدخول بنفس حساب GitHub وحاول تاني.")
 		return
 	}
 
@@ -368,15 +391,30 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One installation belongs to one workspace: webhooks pick the workspace by
+	// installation id, so a second owner would receive another org's PRs.
+	var linkedTo string
+	err = s.store.db.QueryRowContext(r.Context(),
+		`select workspace_id from github_installations where installation_id = ?`, installationID,
+	).Scan(&linkedTo)
+	if err == nil && linkedTo != workspaceID {
+		s.github.revokeUserToken(userToken)
+		githubHTML(w, "التثبيت ده مربوط بمساحة عمل تانية. افصله من هناك الأول.")
+		return
+	}
+
 	now := nowString()
 	if _, err := s.store.db.ExecContext(r.Context(), `
 		insert into github_installations
 		  (id, workspace_id, installation_id, account_login, account_type,
 		   created_by, created_at)
 		values (?, ?, ?, ?, ?, ?, ?)
-		on conflict (workspace_id, installation_id) do update set
-		  account_login = excluded.account_login,
-		  account_type  = excluded.account_type`,
+		on conflict (workspace_id) do update set
+		  installation_id = excluded.installation_id,
+		  account_login   = excluded.account_login,
+		  account_type    = excluded.account_type,
+		  created_by      = excluded.created_by,
+		  created_at      = excluded.created_at`,
 		newID(), workspaceID, installationID, installation.Account.Login,
 		installation.Account.Type, callerUID, now,
 	); err != nil {
@@ -438,13 +476,25 @@ func (s *Server) resolveGithubTarget(
 	githubUserID int64,
 ) (string, string, bool) {
 	if stateOK {
+		// The state names a 6DX user; the browser proved a GitHub identity.
+		// They must be the same person, or anyone holding a state could send
+		// it to another org's admin and attach that org's installation to
+		// their own workspace.
 		var uid string
 		if err := s.store.db.QueryRowContext(r.Context(),
-			`select uid from users where uid = ?`, state.UserID,
+			`select uid from users where uid = ? and github_id = ?`, state.UserID, githubUserID,
 		).Scan(&uid); err != nil {
 			return "", "", false
 		}
-		return state.WorkspaceID, state.UserID, true
+		// The user must still be allowed to manage the workspace in the state.
+		var role string
+		if err := s.store.db.QueryRowContext(r.Context(),
+			`select role from workspace_members where workspace_id = ? and user_uid = ?`,
+			state.WorkspaceID, uid,
+		).Scan(&role); err != nil || !Role(role).IsAdmin() {
+			return "", "", false
+		}
+		return state.WorkspaceID, uid, true
 	}
 
 	var uid string
@@ -458,7 +508,7 @@ func (s *Server) resolveGithubTarget(
 	if err := s.store.db.QueryRowContext(r.Context(), `
 		select m.workspace_id
 		from workspace_members m
-		where m.user_uid = ?
+		where m.user_uid = ? and m.role in ('owner', 'admin')
 		order by (m.role = 'owner') desc, m.created_at
 		limit 1`, uid,
 	).Scan(&workspaceID); err != nil {
@@ -510,12 +560,12 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 25<<20))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unreadable_body"})
 		return
 	}
-	expected := bhex(s.github.hmac(string(raw)))
+	expected := bhex(s.github.webhookHMAC(raw))
 	provided := bhex(strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256="))
 	if !hmac.Equal(expected, provided) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid_signature"})
@@ -699,7 +749,7 @@ func (s *Server) handleGithubInstallURL(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	state := s.github.signState(ws.ID, caller.UID, 0)
+	state := s.github.signState(ws.ID, caller.UID, 0, time.Now())
 	writeJSON(w, http.StatusOK, map[string]string{
 		"url": fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s",
 			s.cfg.GitHubAppSlug, url.QueryEscape(state)),

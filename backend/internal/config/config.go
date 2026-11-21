@@ -139,7 +139,9 @@ func loadDotEnv(path string) {
 				value = value[1 : len(value)-1]
 			}
 		}
-		if key == "" {
+		// An empty value never wins: a placeholder like `GITHUB_CLIENT_ID=`
+		// must not shadow a filled-in line further down the file.
+		if key == "" || value == "" {
 			continue
 		}
 		if _, exists := os.LookupEnv(key); exists {

@@ -10,6 +10,7 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/entities/github_installation.dart';
 import '../providers/github_providers.dart';
+import '../../../../core/utils/trusted_url.dart';
 
 /// Picks the GitHub repository a project is linked to.
 ///
@@ -46,8 +47,11 @@ class _ConnectRepositoryPageState extends ConsumerState<ConnectRepositoryPage> {
     }
 
     AppLogger.action(_tag, 'opening the installation page');
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
+    final uri = trustedGithubUrl(url);
+    if (uri == null) {
+      _showSnack('رابط التثبيت غير موثوق.');
+      return;
+    }
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && mounted) {
       _showSnack('تعذّر فتح المتصفح — افتح الرابط يدويًا: $url');

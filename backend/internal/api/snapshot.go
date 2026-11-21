@@ -38,13 +38,18 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 		return nil, nil
 	}
 
-	members, err := s.snapshotMembers(ctx, workspaceID)
+	members, err := s.snapshotMembers(ctx, workspaceID, role)
 	if err != nil {
 		return nil, err
 	}
-	invites, err := s.snapshotInvites(ctx, workspaceID)
-	if err != nil {
-		return nil, err
+	// The invite list holds outsiders' e-mails and who invited them; only the
+	// people who manage invites need it.
+	invites := make([]any, 0)
+	if role.IsAdmin() {
+		invites, err = s.snapshotInvites(ctx, workspaceID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	tasks, taskNames, err := s.snapshotTasks(ctx, workspaceID)
 	if err != nil {
@@ -82,7 +87,7 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 	if err != nil {
 		return nil, err
 	}
-	clientReport, err := s.snapshotClientReport(ctx, workspaceID, callerUID)
+	clientReport, err := s.snapshotClientReport(ctx, workspaceID, callerUID, role)
 	if err != nil {
 		return nil, err
 	}
@@ -108,11 +113,14 @@ func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string) (ma
 	}, nil
 }
 
-func (s *store) snapshotMembers(ctx context.Context, wsID string) ([]any, error) {
+// snapshotMembers lists the team. A viewer is the external client: they see
+// names and roles, never the team's e-mail addresses.
+func (s *store) snapshotMembers(ctx context.Context, wsID string, viewerRole Role) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select m.user_uid, u.email, u.display_name, u.photo_url, m.role,
 		       (select count(*) from tasks t
-		         where t.assignee_uid = m.user_uid and t.status <> 'done')
+		         where t.workspace_id = m.workspace_id
+		           and t.assignee_uid = m.user_uid and t.status <> 'done')
 		from workspace_members m
 		left join users u on u.uid = m.user_uid
 		where m.workspace_id = ?
@@ -130,9 +138,14 @@ func (s *store) snapshotMembers(ctx context.Context, wsID string) ([]any, error)
 		if err := rows.Scan(&uid, &email, &displayName, &photoURL, &role, &openTasks); err != nil {
 			return nil, err
 		}
+		name := firstNonEmpty(displayName, email, &uid)
+		if viewerRole == RoleViewer {
+			email = nil
+			name = firstNonEmpty(displayName, &uid)
+		}
 		out = append(out, map[string]any{
 			"id":         uid,
-			"name":       firstNonEmpty(displayName, email, &uid),
+			"name":       name,
 			"role":       role,
 			"email":      email,
 			"avatar_url": photoURL,
@@ -638,7 +651,7 @@ func (s *store) snapshotUserSurfaces(ctx context.Context, wsID, uid string) ([]a
 	return notifications, digest, nil
 }
 
-func (s *store) snapshotClientReport(ctx context.Context, wsID, uid string) (any, error) {
+func (s *store) snapshotClientReport(ctx context.Context, wsID, uid string, role Role) (any, error) {
 	var (
 		clientName, projectName        string
 		period, nextMilestone          *string
@@ -681,7 +694,7 @@ func (s *store) snapshotClientReport(ctx context.Context, wsID, uid string) (any
 		})
 	}
 
-	return map[string]any{
+	report := map[string]any{
 		"client_name":       clientName,
 		"project_name":      projectName,
 		"period":            period,
@@ -699,7 +712,15 @@ func (s *store) snapshotClientReport(ctx context.Context, wsID, uid string) (any
 		"decision_choice":   decisionChoice,
 		"time_entries":      timeEntries,
 		"week_by_client":    weekByClient,
-	}, nil
+	}
+	// Rates and invoices are between the agency and the client: admins and
+	// the client (viewer) see them, the rest of the team does not.
+	if !role.IsAdmin() && role != RoleViewer {
+		report["invoice_lines"] = []any{}
+		report["hourly_rate"] = nil
+		report["invoice_number"] = nil
+	}
+	return report, nil
 }
 
 func (s *store) snapshotTimeEntries(ctx context.Context, wsID, uid string) ([]any, error) {

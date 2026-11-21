@@ -45,10 +45,10 @@ GoRoute(
 
 ## 🟠 الـ redirect مش بيتفاعل مع تغيّر الجلسة
 
-- [ ] [سطر 153](../../lib/routes/app_router.dart#L153): `ref.read(authNotifierProvider)` ومفيش `refreshListenable`.
+- [x] [سطر 153](../../lib/routes/app_router.dart#L153): `ref.read(authNotifierProvider)` ومفيش `refreshListenable`.
   - go_router بينفّذ الـ redirect بس عند التنقل، فلو التوكن انتهى أو السيرفر رجّع 401 المستخدم بيفضل جوه التطبيق.
   - تسجيل الخروج شغال بس لأن [`profile_page.dart`](../../lib/features/profile/presentation/pages/profile_page.dart) بيعمل `context.go(login)` يدوي.
-- [ ] الـ `ApiClient` بيحوّل الـ 401 لـ `UnauthorizedException`، بس محدش بيعمل `authNotifier.signOut()` / `invalidate` بعدها.
+- [x] الـ `ApiClient` بيحوّل الـ 401 لـ `UnauthorizedException`، بس محدش بيعمل `authNotifier.signOut()` / `invalidate` بعدها.
 - **الحل:**
 
 ```dart
@@ -77,7 +77,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 ## 🟡 مفيش errorBuilder، وصفحات الويب مش بتفتح
 
-- [ ] مفيش `errorBuilder` في `GoRouter(...)`، فأي مسار غلط بيطلع صفحة الخطأ الافتراضية بتاعة go_router (إنجليزي ورمادي). عندك صفحة جاهزة `NotFoundPage` في `state_pages.dart`، استخدمها:
+- [x] مفيش `errorBuilder` في `GoRouter(...)`، فأي مسار غلط بيطلع صفحة الخطأ الافتراضية بتاعة go_router (إنجليزي ورمادي). عندك صفحة جاهزة `NotFoundPage` في `state_pages.dart`، استخدمها:
 
 ```dart
 errorBuilder: (context, state) => const NotFoundPage(),
@@ -97,4 +97,5 @@ errorBuilder: (context, state) => const NotFoundPage(),
 - [ ] مسارات `/states/*` (offline, skeleton, not-found, push-permission...) شاشات تصميم معمولة routes. دي المفروض **حالات** بتظهر جوه الشاشات، مش صفحات المستخدم يقدر يروحلها بلينك. خليها widgets، أو حطها ورا `kDebugMode`.
 - [ ] الملف 600 سطر و 86 route في قائمة واحدة. قسّمه حسب الـ feature: `tasksRoutes`، `projectRoutes`، `reviewRoutes`... كل واحدة `List<RouteBase>` في ملف الـ feature بتاعها.
 - [ ] الـ deep link بيضيع بعد الدخول: لو المستخدم مش مسجّل وفتح `/tasks/123` بيروح `/login`، وبعد الدخول بيروح `/home` مش `/tasks/123`. ابعت المسار الأصلي كـ `?from=` وارجعله بعد الدخول.
+- [ ] **(المراجعة التانية) أي تطبيق تاني يقدر يفتح مسارات جوه التطبيق:** scheme الـ Supabase القديم (`io.supabase.flutter`) لسه متسجل في Android و iOS، والـ deep linking بتاع Flutter شغال تلقائي. يعني أي موقع أو تطبيق يقدر يبعت `/states/*` أو `/invite/accept` أو `/github/*`. ومع إن مفيش حراسة حسب الصلاحية (فوق)، ده بيكبّر المشكلة. تفاصيل في [06-platform-release.md](06-platform-release.md).
 - [ ] `auto_router_config.dart` فيه 13 route بس ومش متزامن مع go_router. احذفه (تفاصيل في [01-design.md](01-design.md)).

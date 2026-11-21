@@ -24,13 +24,16 @@ class CurrentWorkspace {
     if (id == null || id.isEmpty) {
       throw const ServerException('تعذّر تحديد مساحة العمل لهذا الحساب.');
     }
-    _activate(id);
+    activate(id);
     return id;
   }
 
+  /// The workspace currently active, or `null` before [resolve].
+  String? get id => _id;
+
   /// Switches the active workspace (after accepting an invite, or from the
   /// workspace switcher).
-  void _activate(String id) {
+  void activate(String id) {
     _id = id;
     _api.activeWorkspaceId = id;
   }

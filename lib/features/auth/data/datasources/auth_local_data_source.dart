@@ -12,7 +12,20 @@ class AuthLocalDataSource {
     if (user.accessToken != null) {
       await _secureStorage.writeAccessToken(user.accessToken!);
     }
-    await _secureStorage.writeUser(jsonEncode(user.toJson()));
+    // The token lives under its own key only; the cached profile never
+    // carries a second copy of it.
+    await _secureStorage
+        .writeUser(jsonEncode(user.copyWith(accessToken: null).toJson()));
+  }
+
+  /// The last confirmed session, for when GitHub cannot be reached: the cached
+  /// profile plus the stored grant. `null` unless both exist.
+  Future<UserModel?> readOfflineSession() async {
+    final token = await _secureStorage.readAccessToken();
+    if (token == null || token.isEmpty) return null;
+    final cached = await readCachedUser();
+    if (cached == null) return null;
+    return cached.copyWith(accessToken: token);
   }
 
   Future<UserModel?> readCachedUser() async {

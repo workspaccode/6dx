@@ -10,7 +10,8 @@ import '../../../../core/network/current_workspace.dart';
 /// checked the caller's role:
 ///
 ///   * it can only reach the repositories the GitHub App was granted,
-///   * it expires in an hour, so a leaked copy is worthless quickly,
+///   * it expires in an hour (the user's own OAuth grant is a separate,
+///     longer-lived credential — see docs/review/03-security.md #19),
 ///   * it is issued only to `owner`/`admin`/`developer`/`reviewer` — a `viewer`
 ///     gets a 403 and never sees a token,
 ///   * the App private key and client secret never leave the server.
@@ -27,15 +28,21 @@ class GithubSdk {
   GitHub? _client;
   DateTime? _expiresAt;
 
+  /// The workspace the cached token was minted for. A token is only reused
+  /// for the same workspace; switching workspace or account drops it.
+  String? _workspaceId;
+
   /// The authenticated client, refreshed before the installation token dies.
   Future<GitHub> client() async {
+    final workspaceId = await _workspace.resolve();
     if (_client != null &&
+        _workspaceId == workspaceId &&
         _expiresAt != null &&
         DateTime.now().isBefore(_expiresAt!)) {
       return _client!;
     }
+    reset();
 
-    await _workspace.resolve();
     final payload = await _api.run(
       'github.token',
       () => _api.post('/v1/github/token'),
@@ -51,6 +58,7 @@ class GithubSdk {
     // The API already subtracts a safety margin; keep the value as-is so a
     // long-running session refreshes in time.
     _expiresAt = expiresAt;
+    _workspaceId = workspaceId;
     return _client!;
   }
 
@@ -58,6 +66,7 @@ class GithubSdk {
   void reset() {
     _client = null;
     _expiresAt = null;
+    _workspaceId = null;
   }
 
   // --- conveniences over the package's services ---------------------------

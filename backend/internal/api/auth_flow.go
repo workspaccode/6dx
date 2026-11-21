@@ -60,8 +60,13 @@ func (s *Server) handleGithubDeviceToken(w http.ResponseWriter, r *http.Request)
 	var body struct {
 		DeviceCode string `json:"device_code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	// Public endpoint: cap the body before decoding it.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
 		writeError(w, httpx.BadRequest("invalid_body", "جسم الطلب غير صالح."))
+		return
+	}
+	if len(body.DeviceCode) > 256 {
+		writeError(w, httpx.BadRequest("invalid_device_code", "رمز الجهاز غير صالح."))
 		return
 	}
 	if strings.TrimSpace(body.DeviceCode) == "" {

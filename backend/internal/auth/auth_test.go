@@ -14,14 +14,48 @@ import (
 // ever reaches the network.
 func newGitHubVerifier(t *testing.T, handler http.HandlerFunc) *Verifier {
 	t.Helper()
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Every grant goes through the app check first; answer it for the
+		// tests that only care about the profile.
+		if r.Method == http.MethodPost && r.URL.Path == "/applications/"+testClientID+"/token" {
+			if appCheck != nil {
+				appCheck(w, r)
+				return
+			}
+			user, pass, _ := r.BasicAuth()
+			if user != testClientID || pass != testClientSecret {
+				http.Error(w, "bad app credentials", http.StatusUnauthorized)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"app":  map[string]any{"client_id": testClientID},
+				"user": map[string]any{"id": checkUserID},
+			})
+			return
+		}
+		handler(w, r)
+	}))
 	t.Cleanup(server.Close)
-	return &Verifier{
+	v := &Verifier{
 		githubAPIBase: server.URL,
 		httpClient:    server.Client(),
 		cache:         make(map[string]githubGrant),
 	}
+	v.SetGitHubApp(testClientID, testClientSecret)
+	return v
 }
+
+const (
+	testClientID     = "Ov23liTestClientId"
+	testClientSecret = "test-secret"
+)
+
+// checkUserID is the GitHub id the stub app check reports; appCheck, when set,
+// replaces the stub answer entirely.
+var (
+	checkUserID int64 = 4711
+	appCheck    http.HandlerFunc
+)
 
 func TestLooksLikeJWT(t *testing.T) {
 	cases := map[string]bool{
@@ -53,8 +87,8 @@ func TestVerifyGitHubGrantBuildsTheFirebaseCompatibleCaller(t *testing.T) {
 			})
 		case "/user/emails":
 			_ = json.NewEncoder(w).Encode([]map[string]any{
-				{"email": "other@example.test", "primary": false},
-				{"email": "sami@example.test", "primary": true},
+				{"email": "other@example.test", "primary": false, "verified": true},
+				{"email": "sami@example.test", "primary": true, "verified": true},
 			})
 		default:
 			http.NotFound(w, r)
@@ -89,20 +123,83 @@ func TestVerifyGitHubGrantCachesTheProfile(t *testing.T) {
 	calls := 0
 	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"id":    7,
-			"login": "sami",
-			"email": "sami@example.test",
-		})
+		if r.URL.Path == "/user" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 4711, "login": "sami"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]any{})
 	})
 
+	if _, err := verifier.Verify(context.Background(), "gho_cached"); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	first := calls
 	for i := 0; i < 3; i++ {
 		if _, err := verifier.Verify(context.Background(), "gho_cached"); err != nil {
 			t.Fatalf("Verify: %v", err)
 		}
 	}
-	if calls != 1 {
-		t.Errorf("GitHub was called %d times, want 1 (the grant is cached)", calls)
+	if calls != first {
+		t.Errorf("GitHub was called %d more times, want 0 (the grant is cached)", calls-first)
+	}
+}
+
+func TestVerifyGitHubGrantRejectsATokenFromAnotherApp(t *testing.T) {
+	appCheck = func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }
+	t.Cleanup(func() { appCheck = nil })
+	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("profile must not be fetched for a foreign grant (%s)", r.URL.Path)
+	})
+
+	if _, err := verifier.Verify(context.Background(), "ghp_personal_access_token"); err == nil {
+		t.Fatal("a token not issued to this app must be rejected")
+	}
+}
+
+func TestVerifyGitHubGrantRejectsAMismatchedClientID(t *testing.T) {
+	appCheck = func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"app":  map[string]any{"client_id": "someone-else"},
+			"user": map[string]any{"id": 4711},
+		})
+	}
+	t.Cleanup(func() { appCheck = nil })
+	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {})
+
+	if _, err := verifier.Verify(context.Background(), "gho_other"); err == nil {
+		t.Fatal("a grant reported for another client id must be rejected")
+	}
+}
+
+func TestVerifyGitHubGrantFailsClosedWithoutAppCredentials(t *testing.T) {
+	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {})
+	verifier.SetGitHubApp("", "")
+
+	if _, err := verifier.Verify(context.Background(), "gho_any"); err == nil {
+		t.Fatal("without app credentials no grant may be accepted")
+	}
+}
+
+func TestVerifyGitHubGrantIgnoresUnverifiedEmail(t *testing.T) {
+	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": 4711, "login": "mallory", "email": "victim@company.test",
+			})
+		case "/user/emails":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"email": "victim@company.test", "primary": true, "verified": false},
+			})
+		}
+	})
+
+	caller, err := verifier.Verify(context.Background(), "gho_unverified")
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if caller.Email != "" {
+		t.Errorf("Email = %q, want empty for an unverified address", caller.Email)
 	}
 }
 

@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS build
+FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 
@@ -11,7 +11,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
 # Runtime stage
-FROM alpine:3.20
+FROM alpine:3.22
 
 RUN apk add --no-cache ca-certificates tzdata wget && \
     adduser -D -u 10001 app

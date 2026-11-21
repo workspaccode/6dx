@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/workspaccode/6dx/backend/internal/auth"
@@ -107,7 +109,33 @@ func (s *store) requireOwner(ctx context.Context, workspaceID, uid string) (Role
 // upsertUser mirrors the caller into `users`. The uid is the identity the whole
 // schema keys on, so callers resolve it from `github_id` first (see
 // `withStoredIdentity`) instead of assuming one.
+//
+// The e-mail is unique across users. When another account already holds the
+// address it is left empty for this one instead of failing — otherwise a
+// single clash would turn every /v1 call of the caller into a 500.
 func (s *store) upsertUser(ctx context.Context, caller *auth.Caller) error {
+	email := caller.Email
+	if email != "" {
+		var owner string
+		err := s.db.QueryRowContext(ctx,
+			`select uid from users where lower(email) = lower(?) and uid <> ? limit 1`,
+			email, caller.UID,
+		).Scan(&owner)
+		if err == nil {
+			slog.Warn("email already belongs to another user — not stored", "uid", caller.UID)
+			email = ""
+		}
+	}
+	err := s.execUpsertUser(ctx, caller, email)
+	if err != nil && email != "" && strings.Contains(err.Error(), "UNIQUE") {
+		// Lost a race with another sign-in for the same address.
+		slog.Warn("email clash on upsert — retrying without email", "uid", caller.UID)
+		err = s.execUpsertUser(ctx, caller, "")
+	}
+	return err
+}
+
+func (s *store) execUpsertUser(ctx context.Context, caller *auth.Caller, email string) error {
 	now := nowString()
 	_, err := s.db.ExecContext(ctx, `
 		insert into users (uid, email, display_name, photo_url, github_id, created_at, updated_at)
@@ -118,7 +146,7 @@ func (s *store) upsertUser(ctx context.Context, caller *auth.Caller) error {
 			photo_url    = coalesce(nullif(excluded.photo_url, ''), users.photo_url),
 			github_id    = coalesce(excluded.github_id, users.github_id),
 			updated_at   = excluded.updated_at`,
-		caller.UID, caller.Email, caller.DisplayName, caller.PhotoURL,
+		caller.UID, email, caller.DisplayName, caller.PhotoURL,
 		caller.GitHubID, now, now)
 	return err
 }

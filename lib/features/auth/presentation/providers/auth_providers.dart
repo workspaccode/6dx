@@ -2,6 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/network/current_workspace.dart';
 import '../../../../core/storage/secure_storage_provider.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/result.dart';
@@ -74,6 +76,12 @@ final signOutProvider = Provider<SignOut>(
 class AuthNotifier extends AsyncNotifier<AuthUser?> {
   @override
   Future<AuthUser?> build() async {
+    // A 401 from the API means the stored grant may be revoked: rebuild,
+    // which re-validates it with GitHub (see AuthRepositoryImpl.currentUser).
+    ref.read(apiClientProvider).onUnauthorized = () {
+      AppLogger.action('AuthSession', 'API answered 401 — re-validating');
+      ref.invalidateSelf();
+    };
     final result = await ref.watch(getCurrentUserProvider).call();
     final user = result.dataOrNull;
     AppLogger.action(
@@ -108,6 +116,8 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
           onPending: onPending,
         );
     final user = result.dataOrNull;
+    // A new session must not inherit the previous account's workspace.
+    _resetSessionState();
     state = AsyncData(user);
     return user != null;
   }
@@ -115,7 +125,15 @@ class AuthNotifier extends AsyncNotifier<AuthUser?> {
   Future<void> signOut() async {
     AppLogger.action('AuthSession', 'sign-out requested');
     await ref.read(signOutProvider).call();
+    _resetSessionState();
     state = const AsyncData(null);
+  }
+
+  /// Forgets everything bound to the previous session: the active workspace
+  /// (and with it X-Workspace-Id). The GitHub installation token is dropped
+  /// by `githubSdkProvider`, which listens to the account id.
+  void _resetSessionState() {
+    ref.read(currentWorkspaceProvider).reset();
   }
 }
 

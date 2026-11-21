@@ -12,13 +12,16 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +54,9 @@ const (
 	githubGrantTTL = 5 * time.Minute
 
 	githubRequestTimeout = 10 * time.Second
+
+	// maxGitHubBody caps how much of a GitHub response is read.
+	maxGitHubBody = 1 << 20
 )
 
 type contextKey struct{}
@@ -61,6 +67,12 @@ type Verifier struct {
 
 	githubAPIBase string
 	httpClient    *http.Client
+
+	// githubClientID / githubClientSecret identify the OAuth app the device
+	// flow runs against. A grant is accepted only when GitHub confirms it was
+	// issued to this app — `GET /user` alone succeeds for any GitHub token.
+	githubClientID     string
+	githubClientSecret string
 
 	mu    sync.Mutex
 	cache map[string]githubGrant
@@ -103,6 +115,13 @@ func NewGitHubVerifier() *Verifier {
 	}
 }
 
+// SetGitHubApp sets the OAuth app whose grants are accepted. Without it every
+// GitHub grant is rejected (fail closed).
+func (v *Verifier) SetGitHubApp(clientID, clientSecret string) {
+	v.githubClientID = clientID
+	v.githubClientSecret = clientSecret
+}
+
 // Verify checks a bearer token and returns the caller it belongs to.
 //
 // A Firebase ID token is a JWT; a GitHub grant is an opaque string, so the
@@ -123,8 +142,12 @@ func (v *Verifier) verifyFirebase(ctx context.Context, idToken string) (*Caller,
 		return nil, err
 	}
 	caller := &Caller{UID: token.UID}
-	if email, ok := token.Claims["email"].(string); ok {
-		caller.Email = email
+	// An unverified address must never be trusted: invites are matched by
+	// e-mail, and anyone can type someone else's address into a new account.
+	if verified, _ := token.Claims["email_verified"].(bool); verified {
+		if email, ok := token.Claims["email"].(string); ok {
+			caller.Email = email
+		}
 	}
 	if name, ok := token.Claims["name"].(string); ok {
 		caller.DisplayName = name
@@ -164,6 +187,11 @@ func (v *Verifier) verifyGitHubGrant(ctx context.Context, token string) (*Caller
 		return cached, nil
 	}
 
+	appUserID, err := v.checkAppGrant(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
 	var profile struct {
 		ID        int64  `json:"id"`
 		Login     string `json:"login"`
@@ -178,20 +206,23 @@ func (v *Verifier) verifyGitHubGrant(ctx context.Context, token string) (*Caller
 		return nil, errors.New("github returned no account id")
 	}
 
-	email := profile.Email
-	if email == "" {
-		// The profile e-mail stays hidden unless it is public; the scopes the
-		// app asks for allow reading the verified primary address instead.
-		var emails []struct {
-			Email   string `json:"email"`
-			Primary bool   `json:"primary"`
-		}
-		if err := v.githubGet(ctx, token, "/user/emails", &emails); err == nil {
-			for _, candidate := range emails {
-				if candidate.Primary {
-					email = candidate.Email
-					break
-				}
+	if profile.ID != appUserID {
+		return nil, errors.New("github grant and profile disagree")
+	}
+
+	// Only a verified primary address is trusted (see verifyFirebase). The
+	// public profile e-mail is ignored: /user/emails says whether it is verified.
+	var email string
+	var emails []struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	if err := v.githubGet(ctx, token, "/user/emails", &emails); err == nil {
+		for _, candidate := range emails {
+			if candidate.Primary && candidate.Verified {
+				email = candidate.Email
+				break
 			}
 		}
 	}
@@ -210,6 +241,62 @@ func (v *Verifier) verifyGitHubGrant(ctx context.Context, token string) (*Caller
 
 	v.store(key, caller)
 	return caller, nil
+}
+
+// checkAppGrant asks GitHub whether the token was issued to this API's OAuth
+// app (POST /applications/{client_id}/token, Basic auth with the app
+// credentials) and returns the GitHub user id it belongs to.
+func (v *Verifier) checkAppGrant(ctx context.Context, token string) (int64, error) {
+	if v.githubClientID == "" || v.githubClientSecret == "" {
+		return 0, errors.New("github app credentials are not configured")
+	}
+	body, err := json.Marshal(map[string]string{"access_token": token})
+	if err != nil {
+		return 0, err
+	}
+	request, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		v.githubAPIBase+"/applications/"+url.PathEscape(v.githubClientID)+"/token",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return 0, err
+	}
+	request.SetBasicAuth(v.githubClientID, v.githubClientSecret)
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	response, err := v.httpClient.Do(request)
+	if err != nil {
+		return 0, fmt.Errorf("github token check: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	// 404 = the token is invalid or belongs to another app; 422 = malformed.
+	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusUnprocessableEntity {
+		return 0, errors.New("github grant was not issued to this app")
+	}
+	if response.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("github token check: unexpected status %d", response.StatusCode)
+	}
+
+	var payload struct {
+		App struct {
+			ClientID string `json:"client_id"`
+		} `json:"app"`
+		User struct {
+			ID int64 `json:"id"`
+		} `json:"user"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxGitHubBody)).Decode(&payload); err != nil {
+		return 0, err
+	}
+	if payload.App.ClientID != v.githubClientID || payload.User.ID == 0 {
+		return 0, errors.New("github grant was not issued to this app")
+	}
+	return payload.User.ID, nil
 }
 
 // githubGet performs an authenticated GET against the GitHub REST API.
@@ -239,7 +326,7 @@ func (v *Verifier) githubGet(ctx context.Context, token, path string, dst any) e
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("github %s: unexpected status %d", path, response.StatusCode)
 	}
-	return json.NewDecoder(response.Body).Decode(dst)
+	return json.NewDecoder(io.LimitReader(response.Body, maxGitHubBody)).Decode(dst)
 }
 
 func (v *Verifier) cached(key string) (*Caller, bool) {

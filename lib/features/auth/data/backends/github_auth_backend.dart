@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
+
 import '../../../../core/storage/secure_storage_service.dart';
 import '../../../../core/utils/logger.dart';
 import '../../domain/entities/auth_user.dart';
@@ -36,11 +38,18 @@ class GithubAuthBackend implements AuthBackend {
     }
     try {
       final payload = await _github.fetchUser(token);
-      AppLogger.action(_tag, 'restore session: ok (${payload['login']})');
+      AppLogger.action(_tag, 'restore session: ok');
       return _toUser(payload, token);
-    } catch (error) {
-      AppLogger.action(_tag, 'restore session: FAILED', error);
-      return null;
+    } on DioException catch (error) {
+      // Only GitHub saying "this grant is invalid" ends the session. No
+      // network, a timeout, a GitHub outage or a rate limit must not sign the
+      // user out — the caller falls back to the cached session.
+      if (error.response?.statusCode == 401) {
+        AppLogger.action(_tag, 'restore session: grant revoked');
+        return null;
+      }
+      AppLogger.action(_tag, 'restore session: GitHub unreachable', error.type);
+      throw SessionUnverifiedException(error);
     }
   }
 
@@ -48,7 +57,7 @@ class GithubAuthBackend implements AuthBackend {
   Future<GithubDeviceCode> requestDeviceCode() async {
     AppLogger.action(_tag, 'sign-in: requesting a device code');
     final code = await _github.requestDeviceCode();
-    AppLogger.action(_tag, 'sign-in: device code received (${code.userCode})');
+    AppLogger.action(_tag, 'sign-in: device code received');
     return GithubDeviceCode(
       deviceCode: code.deviceCode,
       userCode: code.userCode,
@@ -94,7 +103,7 @@ class GithubAuthBackend implements AuthBackend {
     AppLogger.action(_tag, 'loading the GitHub profile');
     final payload = await _github.fetchUser(token);
     final email = await _github.fetchPrimaryEmail(token);
-    AppLogger.action(_tag, 'sign-in: ok (${payload['login']})');
+    AppLogger.action(_tag, 'sign-in: ok');
     return _toUser(payload, token, email: email['email'] as String?);
   }
 

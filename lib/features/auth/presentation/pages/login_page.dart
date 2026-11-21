@@ -14,6 +14,7 @@ import '../../../../core/errors/failures.dart';
 import '../../../../core/utils/logger.dart';
 import '../../domain/entities/github_device_code.dart';
 import '../providers/auth_providers.dart';
+import '../../../../core/utils/trusted_url.dart';
 
 @RoutePage()
 class LoginPage extends ConsumerStatefulWidget {
@@ -71,8 +72,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<void> _openBrowser(String uri) async {
-    final url = Uri.tryParse(uri);
-    if (url == null) return;
+    final url = trustedGithubUrl(uri);
+    if (url == null) {
+      _showSnack('رابط التفعيل غير موثوق — افتح github.com/login/device يدويًا');
+      return;
+    }
     try {
       final opened =
           await launchUrl(url, mode: LaunchMode.externalApplication);

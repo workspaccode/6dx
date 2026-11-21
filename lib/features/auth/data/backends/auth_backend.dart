@@ -25,3 +25,13 @@ abstract interface class AuthBackend {
   /// Ends the session.
   Future<void> signOut();
 }
+
+/// The stored grant could not be checked with GitHub (offline, timeout,
+/// outage). The session is neither confirmed nor revoked.
+class SessionUnverifiedException implements Exception {
+  const SessionUnverifiedException(this.cause);
+  final Object cause;
+
+  @override
+  String toString() => 'SessionUnverifiedException($cause)';
+}

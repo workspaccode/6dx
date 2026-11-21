@@ -147,8 +147,20 @@ class AppRoutes {
 }
 
 final routerProvider = Provider<GoRouter>((ref) {
+  // go_router only runs `redirect` on navigation. Bumping this notifier on
+  // every session change re-runs it, so a revoked grant or a sign-out moves
+  // the user to /login from wherever they are.
+  final sessionChanged = ValueNotifier<int>(0);
+  ref.listen(
+    authNotifierProvider.select((state) => (state.isLoading, state.value?.id)),
+    (_, __) => sessionChanged.value++,
+  );
+  ref.onDispose(sessionChanged.dispose);
+
   return GoRouter(
     initialLocation: AppRoutes.splash,
+    refreshListenable: sessionChanged,
+    errorBuilder: (context, state) => const NotFoundPage(),
     redirect: (context, state) {
       final auth = ref.read(authNotifierProvider);
       final location = state.matchedLocation;

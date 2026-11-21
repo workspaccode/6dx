@@ -69,16 +69,28 @@ func (s *store) submitClientDecision(
 	if optionIndex < 0 || optionIndex >= len(decoded) {
 		return "", badRequest("option_out_of_range", "اختيار خارج النطاق.")
 	}
+	// The decision belongs to the client (viewer). Admins may correct it;
+	// developers and reviewers must not be able to decide on the client's
+	// behalf and lock the client out.
+	if role != RoleViewer && !role.IsAdmin() {
+		return "", forbidden("client_decision_only", "القرار ده خاص بالعميل.")
+	}
 	if decidedBy != nil && !role.IsAdmin() {
 		return "", conflict("decision_already_recorded", "قرار العميل اتسجّل بالفعل.")
 	}
 
 	chosen, _ := decoded[optionIndex].(string)
-	if _, err := s.db.ExecContext(ctx, `
+	// Conditional update: two simultaneous first decisions cannot both win.
+	result, err := s.db.ExecContext(ctx, `
 		update client_reports set decision_choice = ?, decided_by = ?, decided_at = ?
-		 where id = ?`, chosen, callerUID, nowString(), reportID,
-	); err != nil {
+		 where id = ? and (decided_by is null or ?)`,
+		chosen, callerUID, nowString(), reportID, role.IsAdmin(),
+	)
+	if err != nil {
 		return "", err
+	}
+	if updated, err := result.RowsAffected(); err == nil && updated == 0 {
+		return "", conflict("decision_already_recorded", "قرار العميل اتسجّل بالفعل.")
 	}
 	if err := s.logActivity(ctx, workspaceID, callerUID, "client_decision",
 		"قرار العميل: "+chosen, nil); err != nil {

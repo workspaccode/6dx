@@ -23,7 +23,8 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.store.db.QueryContext(r.Context(), `
 		select m.user_uid, u.email, u.display_name, u.photo_url, m.role,
 		       (select count(*) from tasks t
-		         where t.assignee_uid = m.user_uid and t.status <> 'done')
+		         where t.workspace_id = m.workspace_id
+		           and t.assignee_uid = m.user_uid and t.status <> 'done')
 		from workspace_members m
 		left join users u on u.uid = m.user_uid
 		where m.workspace_id = ?
@@ -42,6 +43,10 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&uid, &email, &displayName, &photoURL, &role, &openTasks); err != nil {
 			writeError(w, err)
 			return
+		}
+		// A viewer is the external client: no team e-mail addresses.
+		if ws.Role == RoleViewer {
+			email = nil
 		}
 		members = append(members, map[string]any{
 			"id":           uid,

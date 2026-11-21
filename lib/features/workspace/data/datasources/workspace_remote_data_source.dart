@@ -72,10 +72,10 @@ class WorkspaceRemoteDataSource {
         });
         final joined = payload['workspace_id'] as String?;
         if (joined != null && joined.isNotEmpty) {
-          // Act on the workspace that was just joined, not on the account's
-          // first membership.
-          _workspace.reset();
-          await _workspace.resolve();
+          // Act on the workspace that was just joined. `resolve()` would ask
+          // /v1/me without X-Workspace-Id, and the server then answers the
+          // account's *first* membership — usually its personal workspace.
+          _workspace.activate(joined);
         }
         return joined;
       });

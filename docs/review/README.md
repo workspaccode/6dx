@@ -11,11 +11,13 @@
 | [03-security.md](03-security.md) | مشاكل الحماية في التطبيق والـ backend مرتبة حسب الخطورة |
 | [04-backend.md](04-backend.md) | مشاكل الـ backend: الصلاحيات، البيانات، العقد بين التطبيق والسيرفر، الإعدادات |
 | [05-future-risks.md](05-future-risks.md) | مشاكل هتقابلك لما المشروع يكبر: الأداء، التوسع، الصيانة، الـ CI |
+| [06-platform-release.md](06-platform-release.md) | **(جديد)** إعدادات المنصات والنشر: توقيع Android، الـ deep links، الـ backup، iOS keychain، الويب CSP، macOS، Docker، تأمين الـ CI |
 
 ## إزاي اتعملت المراجعة
 
 - **Backend:** اتعمله `go build` و `go vet` و `go test -tags=integration ./...` — **كله نجح ✅**.
 - **Flutter:** Flutter مش متسطب في بيئة المراجعة، فالمراجعة بقراءة الكود فقط (من غير `flutter analyze` / `flutter test`).
+- **المراجعة التانية:** اتعملت مراجعة تانية بتدوّر على حاجات مش موجودة في المراجعة الأولى. البنود الجديدة عليها "(المراجعة التانية)" أو جوه قسم "إضافات المراجعة التانية"، وأرقام السطور الغلط اتصححت. `go build` و `go vet` و `go test -tags=integration` نجحوا مرة تانية.
 - كل مشكلة مكتوب جنبها الملف ورقم السطر. الأرقام صحيحة على commit `7c6a2d7`؛ لو عدّلت الملفات الأرقام هتتحرك.
 
 ## مستويات الخطورة
@@ -29,12 +31,14 @@
 
 ## ترتيب الإصلاح المقترح
 
-1. 🔴 الحماية: الاستيلاء على تثبيت GitHub، وقبول أي توكن GitHub، والإيميل غير المُوثّق → [03-security.md](03-security.md)
+1. 🔴 الحماية: الاستيلاء على تثبيت GitHub (**بمساريه**، بند 1)، وقبول أي توكن GitHub، والإيميل غير المُوثّق، وتوكن الـ `GithubSdk` اللي بيفضل بعد الخروج (بند 13) → [03-security.md](03-security.md)
 2. 🔴 الجلسة: الخروج التلقائي لما النت يقطع، ومساحة العمل بعد قبول الدعوة / تسجيل الخروج → [03-security.md](03-security.md) و [04-backend.md](04-backend.md)
 3. 🔴 الـ CI مش بيشتغل أصلًا → [05-future-risks.md](05-future-risks.md)
-4. 🟠 ربط الأزرار بالـ endpoints الموجودة في الـ backend وإظهار الأخطاء → [01-design.md](01-design.md)
-5. 🟠 اختلافات العقد بين التطبيق والسيرفر → [04-backend.md](04-backend.md)
-6. 🟡 ترتيب المسارات والـ errorBuilder وصفحات الويب → [02-routing.md](02-routing.md)
+4. 🟠 الأسرار في الـ Docker build، وتوقيع الـ release، و scheme الـ Supabase → [06-platform-release.md](06-platform-release.md)
+5. 🟠 بيانات الـ viewer، وقرار العميل، والحدود على الـ endpoints المفتوحة (بنود 15-18) → [03-security.md](03-security.md)
+6. 🟠 ربط الأزرار بالـ endpoints الموجودة في الـ backend وإظهار الأخطاء → [01-design.md](01-design.md)
+7. 🟠 اختلافات العقد بين التطبيق والسيرفر → [04-backend.md](04-backend.md)
+8. 🟡 ترتيب المسارات والـ errorBuilder وصفحات الويب → [02-routing.md](02-routing.md)
 
 ## اللي اتحسن من النسخة الأولى
 
