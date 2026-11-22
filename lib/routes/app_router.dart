@@ -44,6 +44,7 @@ import '../features/groups/presentation/pages/workflow_pages.dart';
 import '../features/groups/presentation/pages/hardware_detail_pages.dart';
 import '../features/groups/presentation/pages/inventory_pages.dart';
 import '../features/groups/presentation/pages/links_pages.dart';
+import '../features/groups/presentation/pages/bom_tree_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
@@ -562,6 +563,24 @@ final routerProvider = Provider<GoRouter>((ref) {
                   gid: state.pathParameters['gid']!,
                   pid: state.pathParameters['pid']!,
                   rid: state.pathParameters['rid']!,
+                ),
+                routes: [
+                  GoRoute(
+                    path: 'tree',
+                    builder: (_, state) => BomTreePage(
+                      gid: state.pathParameters['gid']!,
+                      pid: state.pathParameters['pid']!,
+                      rid: state.pathParameters['rid']!,
+                    ),
+                  ),
+                ],
+              ),
+              GoRoute(
+                path: 'parts/:partid',
+                builder: (_, state) => PartPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                  partId: state.pathParameters['partid']!,
                 ),
               ),
               GoRoute(

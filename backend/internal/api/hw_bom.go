@@ -208,6 +208,19 @@ func (s *Server) handleUpdatePart(w http.ResponseWriter, r *http.Request, h *hwC
 		return
 	}
 	id := r.PathValue("partid")
+	// An assembly in production keeps its structure: going back to draft
+	// would reopen its children. A changed assembly is a new revision.
+	if body.Lifecycle != nil && (*body.Lifecycle == "draft" || *body.Lifecycle == "prototype") {
+		var current string
+		var assembly bool
+		if err := s.store.db.QueryRowContext(r.Context(), `
+			select lifecycle, exists (select 1 from hw_part_children c where c.parent_part_id = hw_parts.id)
+			from hw_parts where id = ? and project_id = ?`, id, h.project).Scan(&current, &assembly); err == nil &&
+			assembly && (current == "production" || current == "obsolete") {
+			writeError(w, conflict("assembly_frozen", "الـ assembly في الإنتاج مش بيرجع draft. اعمل revision جديد."))
+			return
+		}
+	}
 	result, err := s.store.db.ExecContext(r.Context(), `
 		update hw_parts set description = coalesce(?, description),
 		       category = case when ? then null else coalesce(?, category) end,
@@ -295,7 +308,8 @@ func (s *store) bomRevision(ctx context.Context, projectID, revID string, prices
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		select l.part_id, l.quantity, l.ref_designators, p.part_number, p.revision, p.description,
-		       p.lifecycle, p.unit_cost_cents
+		       p.lifecycle, p.unit_cost_cents,
+		       exists (select 1 from hw_part_children x where x.parent_part_id = l.part_id)
 		from hw_bom_lines l join hw_parts p on p.id = l.part_id
 		where l.bom_rev_id = ? order by p.part_number`, revID)
 	if err != nil {
@@ -303,29 +317,49 @@ func (s *store) bomRevision(ctx context.Context, projectID, revID string, prices
 	}
 	defer rows.Close()
 	lines := make([]map[string]any, 0)
-	var total int64
 	for rows.Next() {
 		var partID, number, partRev, description, lifecycle string
 		var qty int64
 		var refs *string
 		var cost *int64
-		if err := rows.Scan(&partID, &qty, &refs, &number, &partRev, &description, &lifecycle, &cost); err != nil {
+		var assembly bool
+		if err := rows.Scan(&partID, &qty, &refs, &number, &partRev, &description, &lifecycle, &cost, &assembly); err != nil {
 			return nil, err
 		}
 		line := map[string]any{
 			"part_id": partID, "quantity": qty, "ref_designators": refs, "part_number": number,
 			"revision": partRev, "description": description, "lifecycle": lifecycle,
+			"is_assembly": assembly,
 		}
 		if prices {
 			line["unit_cost_cents"] = cost
-			if cost != nil {
-				total += *cost * qty
-			}
 		}
 		lines = append(lines, line)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	rows.Close()
+	// The cost of one unit: the leaves of the exploded tree (an assembly's
+	// own price is its children's).
+	var total *int64
+	if prices {
+		var sum float64
+		var count int
+		if err := s.db.QueryRowContext(ctx, explodeCTE+`
+			select (select count(*) from ex),
+			       coalesce(total(ex.qty * coalesce(p.unit_cost_cents, 0)), 0)
+			from ex join hw_parts p on p.id = ex.part_id
+			where not exists (select 1 from hw_part_children x where x.parent_part_id = ex.part_id)`,
+			revID).Scan(&count, &sum); err != nil {
+			return nil, err
+		}
+		// Too large to explode, or beyond int64: no number rather than a
+		// wrong one.
+		if count <= maxExplodedNodes && sum < 9e15 {
+			t := int64(sum)
+			total = &t
+		}
 	}
 	out := map[string]any{
 		"id": revID, "rev": rev, "status": status, "note": note, "eco_id": eco,

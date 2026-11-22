@@ -410,6 +410,7 @@ class _BomTab extends ConsumerWidget {
                     for (final p in list)
                       SettingsTile(
                         icon: Icons.developer_board_outlined,
+                        onTap: () => context.push('/g/${projectKey.gid}/p/${projectKey.pid}/parts/${p.id}'),
                         title: '${p.label} — ${p.description}',
                         subtitle: [
                           partLifecycleLabels[p.lifecycle] ?? p.lifecycle,

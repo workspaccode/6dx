@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../data/hardware_api.dart';
+import '../../domain/bom_tree_models.dart';
 import '../../domain/hardware_models.dart';
 import 'group_providers.dart';
 
@@ -67,6 +68,21 @@ final hwFirmwareProvider = FutureProvider.family<List<HwFirmwareLink>, ProjectKe
   return ref.watch(hardwareApiProvider).firmware(key.gid, key.pid);
 });
 
+final hwPartChildrenProvider = FutureProvider.family<HwPartChildren, HwItemKey>((ref, key) {
+  _bind(ref);
+  return ref.watch(hardwareApiProvider).partChildren(key.gid, key.pid, key.id);
+});
+
+final hwWhereUsedProvider = FutureProvider.autoDispose.family<HwWhereUsed, HwItemKey>((ref, key) {
+  _bind(ref);
+  return ref.watch(hardwareApiProvider).whereUsed(key.gid, key.pid, key.id);
+});
+
+final hwBomTreeProvider = FutureProvider.autoDispose.family<HwBomTree, HwItemKey>((ref, key) {
+  _bind(ref);
+  return ref.watch(hardwareApiProvider).bomTree(key.gid, key.pid, key.id);
+});
+
 final phaseTemplatesProvider = FutureProvider.family<PhaseTemplates, String>((ref, gid) {
   _bind(ref);
   return ref.watch(hardwareApiProvider).phaseTemplates(gid);
@@ -91,6 +107,9 @@ void refreshHardwareIn(ProviderContainer container, ProjectKey key) {
   container.invalidate(hwBomProvider);
   container.invalidate(hwEcoProvider);
   container.invalidate(hwUnitsProvider);
+  container.invalidate(hwPartChildrenProvider);
+  container.invalidate(hwWhereUsedProvider);
+  container.invalidate(hwBomTreeProvider);
 }
 
 final _containerProvider = Provider<ProviderContainer>((ref) => ref.container);

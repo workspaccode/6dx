@@ -868,20 +868,46 @@ func (s *Server) requireOpenBuild(r *http.Request, h *hwContext, buildID string)
 
 // --- demand ------------------------------------------------------------------------
 
+// demandCTE: the open builds' BOMs exploded down to every node, quantity
+// per build (one ? = the project).
+const demandCTE = `
+		with recursive ex(part_id, qty, planned_at, level) as (
+		  select l.part_id, l.quantity * b.quantity, b.planned_at, 0
+		  from hw_builds b join hw_bom_lines l on l.bom_rev_id = b.bom_rev_id
+		  where b.project_id = ? and b.status in ('planned', 'parts_ordered')
+		  union all
+		  select c.child_part_id, min(ex.qty * c.quantity, 1000000000000), ex.planned_at, ex.level + 1
+		  from hw_part_children c join ex on c.parent_part_id = ex.part_id
+		  where ex.level < 10
+		  limit 20001
+		)
+`
+
 // GET .../hw/demand — what the open builds need (BOM lines × build
 // quantity), what this project reserved, what the group has available, the
 // shortage, and "order now" when the lead time no longer fits before the
 // build date.
 func (s *Server) handleDemand(w http.ResponseWriter, r *http.Request, h *hwContext) {
-	rows, err := s.store.db.QueryContext(r.Context(), `
-		select p.part_number, sum(l.quantity * b.quantity), min(b.planned_at),
-		       max(v.default_lead_days)
-		from hw_builds b
-		join hw_bom_lines l on l.bom_rev_id = b.bom_rev_id
-		join hw_parts p on p.id = l.part_id
+	// Assemblies are exploded: what is bought is the leaves (a part with no
+	// children), quantity multiplied down the tree and by the build size.
+	// Too large to explode: refuse instead of a truncated (wrong) demand.
+	var exploded int
+	if err := s.store.db.QueryRowContext(r.Context(), demandCTE+`select count(*) from ex`,
+		h.project).Scan(&exploded); err != nil {
+		writeError(w, err)
+		return
+	}
+	if exploded > maxExplodedNodes {
+		writeError(w, bomTooLarge())
+		return
+	}
+	rows, err := s.store.db.QueryContext(r.Context(), demandCTE+`
+		select p.part_number, sum(ex.qty), min(ex.planned_at), max(v.default_lead_days)
+		from ex
+		join hw_parts p on p.id = ex.part_id
 		left join inv_vendors v on v.group_id = ? and lower(v.name) = lower(p.vendor) and v.archived = 0
-		where b.project_id = ? and b.status in ('planned', 'parts_ordered')
-		group by p.part_number order by p.part_number`, h.group(), h.project)
+		where not exists (select 1 from hw_part_children x where x.parent_part_id = ex.part_id)
+		group by p.part_number order by p.part_number`, h.project, h.group())
 	if err != nil {
 		writeError(w, err)
 		return

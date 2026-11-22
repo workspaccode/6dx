@@ -282,6 +282,7 @@ class HwBomLine {
     required this.quantity,
     this.refDesignators,
     this.unitCostCents,
+    this.isAssembly = false,
   });
 
   final String partId;
@@ -292,6 +293,9 @@ class HwBomLine {
   final String? refDesignators;
   final int? unitCostCents;
 
+  /// The part has its own children (a sub-BOM).
+  final bool isAssembly;
+
   factory HwBomLine.fromJson(Map<String, dynamic> json) => HwBomLine(
         partId: '${json['part_id']}',
         partNumber: '${json['part_number'] ?? ''}',
@@ -300,6 +304,7 @@ class HwBomLine {
         quantity: hwInt(json['quantity']),
         refDesignators: json['ref_designators'] as String?,
         unitCostCents: hwIntOrNull(json['unit_cost_cents']),
+        isAssembly: json['is_assembly'] == true,
       );
 }
 

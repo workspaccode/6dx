@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/network/current_workspace.dart';
+import '../domain/bom_tree_models.dart';
 import '../domain/hardware_models.dart';
 
 /// `/v1/groups/{gid}/projects/{pid}/hw/...` and the group's phase template.
@@ -106,6 +107,28 @@ class HardwareApi {
       _send('hw.bom_release', 'POST', '${_base(gid, pid)}/bom/${_seg(rid)}/release', {
         if (note != null && note.isNotEmpty) 'note': note,
       });
+
+  // --- assemblies (multi-level BOM) ------------------------------------------
+
+  Future<HwPartChildren> partChildren(String gid, String pid, String partId) async =>
+      HwPartChildren.fromJson(await _get('hw.part_children', '${_base(gid, pid)}/parts/${_seg(partId)}/children'));
+
+  Future<void> setPartChild(String gid, String pid, String partId, String childId,
+          {required int quantity, String? refDesignators}) =>
+      _send('hw.part_child', 'PUT', '${_base(gid, pid)}/parts/${_seg(partId)}/children/${_seg(childId)}', {
+        'quantity': quantity,
+        if (refDesignators != null && refDesignators.isNotEmpty) 'ref_designators': refDesignators,
+      });
+
+  Future<void> removePartChild(String gid, String pid, String partId, String childId) =>
+      _send('hw.part_child_remove', 'DELETE',
+          '${_base(gid, pid)}/parts/${_seg(partId)}/children/${_seg(childId)}');
+
+  Future<HwWhereUsed> whereUsed(String gid, String pid, String partId) async =>
+      HwWhereUsed.fromJson(await _get('hw.where_used', '${_base(gid, pid)}/parts/${_seg(partId)}/where-used'));
+
+  Future<HwBomTree> bomTree(String gid, String pid, String rid) async =>
+      HwBomTree.fromJson(await _get('hw.bom_tree', '${_base(gid, pid)}/bom/${_seg(rid)}/tree'));
 
   // --- ECO -------------------------------------------------------------------
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/app_states.dart';
@@ -80,10 +81,17 @@ class BomRevisionPage extends ConsumerWidget {
                   ]),
                 const SizedBox(height: 12),
                 if (b.lines.isEmpty) const HintBanner('الـ BOM فاضي.'),
+                if (b.lines.any((l) => l.isAssembly))
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.account_tree_outlined),
+                    label: const Text('الشجرة كاملة والقطع اللي بتتشتري'),
+                    onPressed: () => context.push('/g/$gid/p/$pid/bom/$rid/tree'),
+                  ),
                 for (final line in b.lines)
                   SettingsTile(
-                    icon: Icons.developer_board_outlined,
-                    title: '${line.partNumber} rev ${line.revision} × ${line.quantity}',
+                    icon: line.isAssembly ? Icons.account_tree_outlined : Icons.developer_board_outlined,
+                    onTap: () => context.push('/g/$gid/p/$pid/parts/${line.partId}'),
+                    title: '${line.partNumber} rev ${line.revision} × ${line.quantity}${line.isAssembly ? ' (assembly)' : ''}',
                     subtitle: [
                       line.description,
                       if (line.refDesignators != null) line.refDesignators!,
