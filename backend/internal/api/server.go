@@ -135,10 +135,10 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("PUT /v1/groups/{gid}/phases/order", s.handleReorderPhaseTemplates)
 	private.HandleFunc("PATCH /v1/groups/{gid}/phases/{tid}", s.handleUpdatePhaseTemplate)
 	hw := "/v1/groups/{gid}/projects/{pid}/hw/"
-	private.HandleFunc("GET "+hw+"phases", s.hwHandler(s.handleListPhases))
+	private.HandleFunc("GET "+hw+"phases", s.hwProgressHandler(s.handleListPhases))
 	private.HandleFunc("PATCH "+hw+"phases/{phid}", s.hwHandler(s.handleUpdatePhase))
 	private.HandleFunc("POST "+hw+"phases/{phid}/gate", s.hwHandler(s.handleGateDecision))
-	private.HandleFunc("GET "+hw+"overview", s.hwHandler(s.handleHWOverview))
+	private.HandleFunc("GET "+hw+"overview", s.hwProgressHandler(s.handleHWOverview))
 	private.HandleFunc("GET "+hw+"parts", s.hwHandler(s.handleListParts))
 	private.HandleFunc("POST "+hw+"parts", s.hwHandler(s.handleCreatePart))
 	private.HandleFunc("PATCH "+hw+"parts/{partid}", s.hwHandler(s.handleUpdatePart))

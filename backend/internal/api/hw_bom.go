@@ -197,6 +197,8 @@ func (s *Server) handleUpdatePart(w http.ResponseWriter, r *http.Request, h *hwC
 		writeError(w, badRequest("part_identity_fixed", "رقم القطعة والـ revision مش بيتغيروا. اعمل revision جديد."))
 		return
 	}
+	// "" clears a field; clean() turns it into nil, so remember it first.
+	rawCleared := []bool{cleared(body.Category), cleared(body.MPN), cleared(body.Vendor)}
 	if err := body.clean(false); err != nil {
 		writeError(w, err)
 		return
@@ -207,12 +209,15 @@ func (s *Server) handleUpdatePart(w http.ResponseWriter, r *http.Request, h *hwC
 	}
 	id := r.PathValue("partid")
 	result, err := s.store.db.ExecContext(r.Context(), `
-		update hw_parts set description = coalesce(?, description), category = coalesce(?, category),
-		       lifecycle = coalesce(?, lifecycle), mpn = coalesce(?, mpn), vendor = coalesce(?, vendor),
+		update hw_parts set description = coalesce(?, description),
+		       category = case when ? then null else coalesce(?, category) end,
+		       lifecycle = coalesce(?, lifecycle),
+		       mpn = case when ? then null else coalesce(?, mpn) end,
+		       vendor = case when ? then null else coalesce(?, vendor) end,
 		       unit_cost_cents = coalesce(?, unit_cost_cents), updated_at = ?
 		where id = ? and project_id = ?`,
-		body.Description, body.Category, body.Lifecycle, body.MPN, body.Vendor, body.UnitCostCents,
-		nowString(), id, h.project)
+		body.Description, rawCleared[0], body.Category, body.Lifecycle, rawCleared[1], body.MPN,
+		rawCleared[2], body.Vendor, body.UnitCostCents, nowString(), id, h.project)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -519,7 +524,7 @@ func (s *Server) handleSetBOMLine(w http.ResponseWriter, r *http.Request, h *hwC
 		on conflict (bom_rev_id, part_id) do update
 		  set quantity = excluded.quantity, ref_designators = excluded.ref_designators`,
 		rid, partID, body.Quantity, refs); err != nil {
-		writeError(w, err)
+		writeError(w, frozenBOM(err))
 		return
 	}
 	s.handleGetBOM(w, r, h)
@@ -538,7 +543,7 @@ func (s *Server) handleDeleteBOMLine(w http.ResponseWriter, r *http.Request, h *
 	}
 	if _, err := s.store.db.ExecContext(r.Context(),
 		`delete from hw_bom_lines where bom_rev_id = ? and part_id = ?`, rid, r.PathValue("partid")); err != nil {
-		writeError(w, err)
+		writeError(w, frozenBOM(err))
 		return
 	}
 	s.handleGetBOM(w, r, h)
@@ -585,9 +590,24 @@ func releaseBOM(ctx context.Context, q queryer, rid, uid string, note *string) e
 	if lines == 0 {
 		return conflict("bom_empty", "الـ BOM فاضي. ضيف قطع الأول.")
 	}
-	_, err := q.ExecContext(ctx, `
+	result, err := q.ExecContext(ctx, `
 		update hw_bom_revs set status = 'released', released_by = ?, released_at = ?,
 		       note = coalesce(?, note)
 		where id = ? and status = 'draft'`, uid, nowString(), note, rid)
+	if err != nil {
+		return err
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		return conflict("bom_revision_released", "الـ revision ده اتعمله release خلاص.")
+	}
+	return nil
+}
+
+// frozenBOM maps the database's "released revision" refusal (a release that
+// landed between the draft check and the write) to a conflict.
+func frozenBOM(err error) error {
+	if err != nil && strings.Contains(err.Error(), "bom_revision_released") {
+		return conflict("bom_revision_released", "الـ revision ده اتعمله release ومش بيتعدّل. اعمل draft جديد.")
+	}
 	return err
 }

@@ -50,16 +50,35 @@ func (s *Server) hwFromRequest(r *http.Request) (*hwContext, error) {
 }
 
 // hwHandler wraps the prologue so each handler starts with a checked context.
+//
+// A guest (the client) sees the project's progress only — phases and the
+// overview counters, with no names — never the BOM, prices, changes, units
+// or test notes (§5.4).
 func (s *Server) hwHandler(fn func(w http.ResponseWriter, r *http.Request, h *hwContext)) http.HandlerFunc {
+	return s.hwRoute(false, fn)
+}
+
+// hwProgressHandler is the guest-readable part: phases and the overview.
+func (s *Server) hwProgressHandler(fn func(w http.ResponseWriter, r *http.Request, h *hwContext)) http.HandlerFunc {
+	return s.hwRoute(true, fn)
+}
+
+func (s *Server) hwRoute(guestOK bool, fn func(w http.ResponseWriter, r *http.Request, h *hwContext)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		h, err := s.hwFromRequest(r)
 		if err != nil {
 			writeError(w, err)
 			return
 		}
+		if h.guest() && !guestOK {
+			writeError(w, forbidden("guest_progress_only", "العميل بيشوف تقدم المشروع بس."))
+			return
+		}
 		fn(w, r, h)
 	}
 }
+
+func (h *hwContext) guest() bool { return h.access.IsMember && h.access.GroupRole == GroupGuest }
 
 // hwOwned checks that id is a row of table in the project. The table names
 // are constants of this file, never request input.
@@ -104,6 +123,9 @@ func optionalText(v *string, max int, code, label string) (*string, error) {
 	}
 	return t, nil
 }
+
+// cleared: the client sent "" for a field, meaning "remove the value".
+func cleared(v *string) bool { return v != nil && strings.TrimSpace(*v) == "" }
 
 func oneOf(v string, allowed ...string) bool {
 	for _, a := range allowed {
@@ -417,6 +439,42 @@ func (s *Server) handleUpdatePhaseTemplate(w http.ResponseWriter, r *http.Reques
 		writeError(w, err)
 		return
 	}
+	if !nextArchived && archived == 1 {
+		var live int
+		if err := tx.QueryRowContext(r.Context(),
+			`select count(*) from phase_templates where group_id = ? and archived = 0`, access.ID,
+		).Scan(&live); err != nil {
+			writeError(w, err)
+			return
+		}
+		if live >= maxPhasesPerGroup {
+			writeError(w, conflict("phase_limit_reached", fmt.Sprintf("الحد الأقصى %d مرحلة.", maxPhasesPerGroup)))
+			return
+		}
+		// Restored: projects that lost their not-started copy get it back,
+		// last (where an added phase goes).
+		var tName, tChecklist string
+		if err := tx.QueryRowContext(r.Context(),
+			`select name, checklist from phase_templates where id = ?`, tid).Scan(&tName, &tChecklist); err != nil {
+			writeError(w, err)
+			return
+		}
+		items := []string{}
+		_ = json.Unmarshal([]byte(tChecklist), &items)
+		if _, err := tx.ExecContext(r.Context(), `
+			insert into hw_phases (id, project_id, template_id, name, ord, status, checklist, created_at)
+			select p.id || ':' || ? || ':' || ?, p.id, ?, ?,
+			       coalesce((select max(x.ord) from hw_phases x where x.project_id = p.id), -1) + 1,
+			       'not_started', ?, ?
+			from projects p
+			where p.group_id = ?
+			  and not exists (select 1 from hw_phases k where k.project_id = p.id and k.template_id = ?)
+			  and not exists (select 1 from hw_phases k where k.project_id = p.id and k.status = 'killed')`,
+			tid, newID(), tid, tName, copyChecklist(items), nowString(), access.ID, tid); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
 	if nextArchived {
 		if _, err := tx.ExecContext(r.Context(), `
 			delete from hw_phases
@@ -574,12 +632,27 @@ func (s *store) hwPhases(ctx context.Context, projectID string) ([]map[string]an
 
 // GET .../hw/phases
 func (s *Server) handleListPhases(w http.ResponseWriter, r *http.Request, h *hwContext) {
-	phases, err := s.store.hwPhases(r.Context(), h.project)
+	phases, err := s.hwPhasesFor(r, h)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"phases": phases})
+}
+
+// hwPhasesFor drops who decided each gate (and the notes) for a guest.
+func (s *Server) hwPhasesFor(r *http.Request, h *hwContext) ([]map[string]any, error) {
+	phases, err := s.store.hwPhases(r.Context(), h.project)
+	if err != nil || !h.guest() {
+		return phases, err
+	}
+	for _, p := range phases {
+		for _, d := range p["decisions"].([]map[string]any) {
+			delete(d, "by")
+			delete(d, "note")
+		}
+	}
+	return phases, nil
 }
 
 type phaseUpdateRequest struct {
@@ -627,6 +700,12 @@ func (s *Server) handleUpdatePhase(w http.ResponseWriter, r *http.Request, h *hw
 	if body.Check != nil {
 		if err := h.requireAny(CapEditTasks, CapManageBuilds, CapGateDecision); err != nil {
 			writeError(w, err)
+			return
+		}
+		// A not-started phase still follows the template, which would
+		// overwrite the ticks.
+		if status == "not_started" {
+			writeError(w, conflict("phase_not_started", "ابدأ المرحلة الأول وبعدين علّم على الـ checklist."))
 			return
 		}
 		items := []checklistItem{}
@@ -757,7 +836,7 @@ func (s *Server) handleGateDecision(w http.ResponseWriter, r *http.Request, h *h
 		if _, err := tx.ExecContext(r.Context(), `
 			update hw_phases set status = 'in_progress', started_at = ?
 			where id = (select id from hw_phases where project_id = ? and status = 'not_started'
-			             and ord > ? order by ord limit 1)`, now, h.project, ord); err != nil {
+			             order by ord, created_at limit 1)`, now, h.project); err != nil {
 			writeError(w, err)
 			return
 		}

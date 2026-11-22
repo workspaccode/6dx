@@ -284,6 +284,16 @@ func TestPhaseTemplates(t *testing.T) {
 			t.Fatalf("project phases %v, want %v", names, want)
 		}
 	}
+	// Archive then restore: the not-started copy leaves and comes back.
+	w.h.doWithWorkspace(t, http.MethodPatch, base+"/"+byName["PVT"], "hw-lead", w.ws, map[string]any{"archived": true})
+	if got := list(w.must(t, 200, "GET", "phases", "hw-ee", nil), "phases"); len(got) != 5 {
+		t.Fatalf("after archiving PVT: %d phases", len(got))
+	}
+	w.h.doWithWorkspace(t, http.MethodPatch, base+"/"+byName["PVT"], "hw-lead", w.ws, map[string]any{"archived": false})
+	if got := list(w.must(t, 200, "GET", "phases", "hw-ee", nil), "phases"); len(got) != 6 || got[5]["name"] != "PVT" {
+		t.Fatalf("after restoring PVT: %v", got)
+	}
+
 	// A project made now gets the new template.
 	_, project := w.h.doWithWorkspace(t, http.MethodPost, "/v1/projects", "hw-lead", w.ws,
 		map[string]any{"name": "PB-3", "group_id": w.gid})
@@ -291,5 +301,85 @@ func TestPhaseTemplates(t *testing.T) {
 	_, fresh := w.h.doWithWorkspace(t, http.MethodGet, "/v1/groups/"+w.gid+"/projects/"+pid+"/hw/phases", "hw-lead", w.ws, nil)
 	if got := list(fresh, "phases"); len(got) != 6 || got[0]["name"] != "Prototype" {
 		t.Errorf("new project phases: %v", got)
+	}
+}
+
+// Regressions from the phase 4a review.
+func TestHardwareReviewFixes(t *testing.T) {
+	w := newHWWorld(t)
+	phases := list(w.must(t, 200, "GET", "phases", "hw-lead", nil), "phases")
+	w.must(t, 200, "POST", "phases/"+phases[0]["id"].(string)+"/gate", "hw-lead",
+		map[string]any{"decision": "go", "note": "internal note"})
+
+	// The client sees progress only, and no names or notes.
+	w.must(t, 403, "GET", "parts", "hw-client", nil)
+	w.must(t, 403, "GET", "ecos", "hw-client", nil)
+	overview := w.must(t, 200, "GET", "overview", "hw-client", nil)
+	for _, p := range list(overview, "phases") {
+		for _, raw := range p["decisions"].([]any) {
+			d := raw.(map[string]any)
+			if _, ok := d["by"]; ok {
+				t.Error("the client sees who decided a gate")
+			}
+			if _, ok := d["note"]; ok {
+				t.Error("the client sees gate notes")
+			}
+		}
+	}
+
+	// Ticking a phase that has not started is refused (the template owns it).
+	w.must(t, 409, "PATCH", "phases/"+phases[2]["id"].(string), "hw-ee",
+		map[string]any{"check": map[string]any{"index": 0, "done": true}})
+
+	// Only the author edits an ECO; another engineer cannot slip items in.
+	part := w.must(t, 201, "POST", "parts", "hw-ee", map[string]any{"part_number": "C1", "description": "cap"})["part"].(map[string]any)
+	eco := w.must(t, 201, "POST", "ecos", "hw-ee", map[string]any{"title": "Add C1"})["eco"].(map[string]any)
+	eid := eco["id"].(string)
+	w.must(t, 403, "POST", "ecos/"+eid+"/items", "hw-fw", map[string]any{"action": "add", "to_part_id": part["id"]})
+	w.must(t, 200, "POST", "ecos/"+eid+"/items", "hw-ee", map[string]any{"action": "add", "to_part_id": part["id"]})
+	// A read-only override stops the author too.
+	w.h.doWithWorkspace(t, http.MethodPut, "/v1/groups/"+w.gid+"/projects/"+w.pid+"/members/hw-ee", "hw-lead", w.ws,
+		map[string]any{"access": "read"})
+	w.must(t, 403, "POST", "ecos/"+eid+"/submit", "hw-ee", nil)
+	w.must(t, 403, "POST", "ecos/"+eid+"/cancel", "hw-ee", nil)
+	w.h.doWithWorkspace(t, http.MethodDelete, "/v1/groups/"+w.gid+"/projects/"+w.pid+"/members/hw-ee", "hw-lead", w.ws, nil)
+
+	// Unit status by hand is the build manager's; clearing a field works.
+	draft := w.must(t, 201, "POST", "bom", "hw-ee", map[string]any{})["bom"].(map[string]any)
+	w.must(t, 200, "PUT", "bom/"+draft["id"].(string)+"/lines/"+part["id"].(string), "hw-ee", map[string]any{"quantity": 1})
+	w.must(t, 200, "POST", "bom/"+draft["id"].(string)+"/release", "hw-lead", nil)
+	w.must(t, 409, "POST", "bom/"+draft["id"].(string)+"/release", "hw-lead", nil)
+	b := w.must(t, 201, "POST", "builds", "hw-lead", map[string]any{"name": "EVT1", "bom_rev_id": draft["id"], "quantity": 1, "cm": "ACME"})["build"].(map[string]any)
+	units := list(w.must(t, 200, "POST", "builds/"+b["id"].(string)+"/units", "hw-lead", map[string]any{"count": 1, "prefix": "U"}), "units")
+	w.must(t, 403, "PATCH", "units/"+units[0]["id"].(string), "hw-tech", map[string]any{"status": "passed"})
+	w.must(t, 200, "PATCH", "units/"+units[0]["id"].(string), "hw-tech", map[string]any{"location": "Lab"})
+	w.must(t, 200, "PATCH", "units/"+units[0]["id"].(string), "hw-tech", map[string]any{"location": ""})
+	got := list(w.must(t, 200, "GET", "builds/"+b["id"].(string)+"/units", "hw-ee", nil), "units")[0]
+	if got["location"] != nil {
+		t.Errorf("location not cleared: %v", got["location"])
+	}
+	builds := list(w.must(t, 200, "PATCH", "builds/"+b["id"].(string), "hw-lead", map[string]any{"cm": ""}), "builds")
+	if builds[0]["cm"] != nil {
+		t.Errorf("cm not cleared: %v", builds[0]["cm"])
+	}
+
+	// Go after a template reorder still starts the next phase.
+	base := "/v1/groups/" + w.gid + "/phases"
+	_, tb := w.h.doWithWorkspace(t, http.MethodGet, base, "hw-lead", w.ws, nil)
+	ids := []string{}
+	for _, tp := range list(tb, "phases") {
+		ids = append(ids, tp["id"].(string))
+	}
+	// Proto, EVT, DVT, PVT, MP → Proto, EVT, MP, DVT, PVT
+	order := []string{ids[0], ids[1], ids[4], ids[2], ids[3]}
+	if status, body := w.h.doWithWorkspace(t, http.MethodPut, base+"/order", "hw-lead", w.ws,
+		map[string]any{"ids": order}); status != 200 {
+		t.Fatalf("reorder: %d %v", status, body)
+	}
+	evt := list(w.must(t, 200, "GET", "phases", "hw-lead", nil), "phases")[1]
+	after := list(w.must(t, 200, "POST", "phases/"+evt["id"].(string)+"/gate", "hw-lead",
+		map[string]any{"decision": "go"}), "phases")
+	if after[2]["name"] != "MP" || after[2]["status"] != "in_progress" {
+		t.Errorf("after go: %v %v", after[2]["name"], after[2]["status"])
 	}
 }

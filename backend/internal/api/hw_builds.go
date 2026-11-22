@@ -172,10 +172,12 @@ func (s *Server) handleUpdateBuild(w http.ResponseWriter, r *http.Request, h *hw
 		return
 	}
 	result, err := s.store.db.ExecContext(r.Context(), `
-		update hw_builds set status = coalesce(?, status), cm = coalesce(?, cm),
-		       planned_at = coalesce(?, planned_at), updated_at = ?
+		update hw_builds set status = coalesce(?, status),
+		       cm = case when ? then null else coalesce(?, cm) end,
+		       planned_at = case when ? then null else coalesce(?, planned_at) end, updated_at = ?
 		where id = ? and project_id = ?`,
-		body.Status, cm, planned, nowString(), r.PathValue("bid"), h.project)
+		body.Status, cleared(body.CM), cm, cleared(body.PlannedAt), planned, nowString(),
+		r.PathValue("bid"), h.project)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -352,6 +354,14 @@ func (s *Server) handleUpdateUnit(w http.ResponseWriter, r *http.Request, h *hwC
 		writeError(w, badRequest("invalid_status", "حالة الوحدة غير معروفة."))
 		return
 	}
+	// passed / failed come from a recorded result; setting a status by hand
+	// (rework, scrapped…) is the build manager's.
+	if body.Status != nil {
+		if err := h.require(CapManageBuilds); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
 	fw, err := optionalText(body.FirmwareVersion, 64, "firmware_too_long", "إصدار الـ firmware")
 	if err != nil {
 		writeError(w, err)
@@ -367,9 +377,12 @@ func (s *Server) handleUpdateUnit(w http.ResponseWriter, r *http.Request, h *hwC
 		return
 	}
 	if _, err := s.store.db.ExecContext(r.Context(), `
-		update hw_units set firmware_version = coalesce(?, firmware_version),
-		       location = coalesce(?, location), status = coalesce(?, status), updated_at = ?
-		where id = ?`, fw, location, body.Status, nowString(), r.PathValue("unid")); err != nil {
+		update hw_units set
+		       firmware_version = case when ? then null else coalesce(?, firmware_version) end,
+		       location = case when ? then null else coalesce(?, location) end,
+		       status = coalesce(?, status), updated_at = ?
+		where id = ?`, cleared(body.FirmwareVersion), fw, cleared(body.Location), location,
+		body.Status, nowString(), r.PathValue("unid")); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -689,7 +702,7 @@ func (s *Server) handleUnlinkFirmware(w http.ResponseWriter, r *http.Request, h 
 // BOM, open changes, builds and test numbers, plus the caller's
 // capabilities so the app knows which buttons to show.
 func (s *Server) handleHWOverview(w http.ResponseWriter, r *http.Request, h *hwContext) {
-	phases, err := s.store.hwPhases(r.Context(), h.project)
+	phases, err := s.hwPhasesFor(r, h)
 	if err != nil {
 		writeError(w, err)
 		return

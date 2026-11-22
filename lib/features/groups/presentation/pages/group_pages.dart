@@ -8,6 +8,7 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/group_models.dart';
 import '../../domain/workflow_models.dart';
+import 'hardware_pages.dart';
 import '../providers/group_providers.dart';
 import '../widgets/group_widgets.dart';
 import '../providers/active_group.dart';
@@ -270,9 +271,13 @@ class _HomeSummary extends ConsumerWidget {
 
 /// `/g/:gid/p/:pid` — a project's tasks, grouped by the group's states.
 class GroupProjectPage extends ConsumerStatefulWidget {
-  const GroupProjectPage({super.key, required this.gid, required this.pid});
+  const GroupProjectPage({super.key, required this.gid, required this.pid, this.tasksOnly = false});
   final String gid;
   final String pid;
+
+  /// A hardware project opens on its phases / BOM / builds screen; its task
+  /// list lives at `/g/:gid/p/:pid/tasks`.
+  final bool tasksOnly;
 
   @override
   ConsumerState<GroupProjectPage> createState() => _GroupProjectPageState();
@@ -327,6 +332,9 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
     return GroupScope(
       gid: widget.gid,
       builder: (context, access) {
+        if (access.type == GroupType.hardware && !widget.tasksOnly) {
+          return HardwareProjectPage(access: access, pid: widget.pid);
+        }
         final projects = ref.watch(groupProjectsProvider(widget.gid)).value ?? const [];
         GroupProject? project;
         for (final p in projects) {
@@ -538,6 +546,13 @@ class GroupSettingsPage extends ConsumerWidget {
                       await run(() => api.update(gid, name: name), 'اتغيّر الاسم');
                     },
             ),
+            if (access.can(Caps.manageWorkflow) && access.type == GroupType.hardware)
+              SettingsTile(
+                icon: Icons.flag_outlined,
+                title: 'مراحل المشاريع',
+                subtitle: 'القالب: Proto، EVT، DVT، PVT، MP وشروط الخروج',
+                onTap: () => context.push('/g/$gid/settings/phases'),
+              ),
             if (access.can(Caps.manageWorkflow))
               SettingsTile(
                 icon: Icons.view_column_outlined,

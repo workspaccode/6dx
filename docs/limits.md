@@ -24,6 +24,12 @@
 | حالات المهام في المجموعة | **20** حالة شغالة | `409 state_limit_reached` | `workflow.go` |
 | اسم حالة المهمة | **1 – 40** حرف، ومفيش اسمين زي بعض في نفس المجموعة | `400 invalid_state_name` / `409 state_name_taken` | `workflow.go` |
 | لون حالة المهمة | `#RRGGBB` | `400 invalid_color` | `workflow.go` |
+| مراحل قالب الـ Hardware | **15** مرحلة، والاسم **1 – 40** حرف | `409 phase_limit_reached` | `hw.go` |
+| بنود الـ checklist للمرحلة | **30** بند، كل بند ≤ **200** حرف | `400 checklist_too_long` | `hw.go` |
+| القطع في المشروع | **5000** قطعة. رقم القطعة ≤ 64، والوصف ≤ 200، والـ revision ≤ 8 | `409 part_limit_reached` | `hw_bom.go` |
+| كمية سطر الـ BOM أو الـ build | **1 – 100000** | `400 invalid_quantity` | `hw_bom.go` / `hw_builds.go` |
+| تسجيل وحدات في طلب واحد | **500**، والإجمالي ≤ كمية الـ build | `400 invalid_count` / `409 units_exceed_quantity` | `hw_builds.go` |
+| عنوان الـ ECO أو خطة الاختبار | **1 – 200** حرف. السبب والأثر والمعايير ≤ **5000** | `400` | `hw_eco.go` |
 | صلاحية الـ state في ربط GitHub | **10 دقايق**، ومش بتتجدد | "انتهت صلاحية الطلب" | `github.go` |
 
 **الحسابات بالحروف مش بالـ bytes:** الحرف العربي بياخد 2 bytes، فـ 80 حرف عربي مسموح زي 80 حرف إنجليزي.

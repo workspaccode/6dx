@@ -261,9 +261,16 @@ func (s *Server) ecoForEdit(r *http.Request, h *hwContext) (map[string]any, erro
 	if eco["status"] != "draft" {
 		return nil, conflict("eco_not_draft", "الـ ECO اتقدّم ومش بيتعدّل. لو اترفض رجّعه draft.")
 	}
+	// The content of a change is its author's: anyone else editing it
+	// would write a change they could then approve. And the author still
+	// needs the capability (a read-only override or an archived group
+	// stops them like everyone else).
+	if err := h.requireAny(CapSubmitECO, CapSubmitECR); err != nil {
+		return nil, err
+	}
 	author, _ := eco["created_by"].(*string)
-	if (author == nil || *author != h.caller.UID) && !h.access.can(CapSubmitECO) {
-		return nil, forbidden("missing_capability", "دورك مايسمحش بتعديل الـ ECO ده.")
+	if author == nil || *author != h.caller.UID {
+		return nil, forbidden("author_only", "اللي كتب الـ ECO هو بس اللي يعدّله ويقدّمه.")
 	}
 	return eco, nil
 }
@@ -465,9 +472,16 @@ func (s *Server) handleECOStatus(to string) func(http.ResponseWriter, *http.Requ
 			writeError(w, err)
 			return
 		}
+		if err := h.requireAny(CapSubmitECO, CapSubmitECR); err != nil {
+			writeError(w, err)
+			return
+		}
+		// Reopening rewrites the content: the author's. Cancelling is also
+		// open to whoever releases BOMs (a stuck change can be dropped).
 		author, _ := eco["created_by"].(*string)
-		if (author == nil || *author != h.caller.UID) && !h.access.can(CapSubmitECO) {
-			writeError(w, forbidden("missing_capability", "دورك مايسمحش بالعملية دي."))
+		isAuthor := author != nil && *author == h.caller.UID
+		if !isAuthor && (to == "draft" || !h.access.can(CapReleaseBOM)) {
+			writeError(w, forbidden("author_only", "العملية دي لكاتب الـ ECO."))
 			return
 		}
 		from := map[string][]string{

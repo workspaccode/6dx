@@ -41,6 +41,7 @@ import '../features/groups/presentation/pages/group_pages.dart';
 import '../features/groups/presentation/pages/groups_pages.dart';
 import '../features/groups/presentation/pages/invite_page.dart';
 import '../features/groups/presentation/pages/workflow_pages.dart';
+import '../features/groups/presentation/pages/hardware_detail_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
@@ -520,6 +521,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (_, state) =>
                     WorkflowSettingsPage(gid: state.pathParameters['gid']!),
               ),
+              GoRoute(
+                path: 'phases',
+                builder: (_, state) =>
+                    PhaseTemplatesPage(gid: state.pathParameters['gid']!),
+              ),
             ],
           ),
           GoRoute(
@@ -534,6 +540,38 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (_, state) => GroupProjectSettingsPage(
                   gid: state.pathParameters['gid']!,
                   pid: state.pathParameters['pid']!,
+                ),
+              ),
+              GoRoute(
+                path: 'tasks',
+                builder: (_, state) => GroupProjectPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                  tasksOnly: true,
+                ),
+              ),
+              GoRoute(
+                path: 'bom/:rid',
+                builder: (_, state) => BomRevisionPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                  rid: state.pathParameters['rid']!,
+                ),
+              ),
+              GoRoute(
+                path: 'eco/:eid',
+                builder: (_, state) => EcoPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                  eid: state.pathParameters['eid']!,
+                ),
+              ),
+              GoRoute(
+                path: 'builds/:bid',
+                builder: (_, state) => BuildPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                  bid: state.pathParameters['bid']!,
                 ),
               ),
             ],
