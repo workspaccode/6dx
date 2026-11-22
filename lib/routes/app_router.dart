@@ -45,6 +45,7 @@ import '../features/groups/presentation/pages/hardware_detail_pages.dart';
 import '../features/groups/presentation/pages/inventory_pages.dart';
 import '../features/groups/presentation/pages/links_pages.dart';
 import '../features/groups/presentation/pages/bom_tree_pages.dart';
+import '../features/groups/presentation/pages/certs_lab_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
@@ -530,6 +531,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                     PhaseTemplatesPage(gid: state.pathParameters['gid']!),
               ),
             ],
+          ),
+          GoRoute(
+            path: 'lab',
+            builder: (_, state) => LabPage(gid: state.pathParameters['gid']!),
           ),
           GoRoute(
             path: 'inventory',

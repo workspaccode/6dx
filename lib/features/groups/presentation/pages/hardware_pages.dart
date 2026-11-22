@@ -12,6 +12,7 @@ import '../providers/group_providers.dart';
 import '../providers/hardware_providers.dart';
 import '../widgets/group_widgets.dart';
 import '../widgets/hardware_widgets.dart';
+import 'certs_lab_pages.dart';
 import 'inventory_pages.dart';
 
 /// `/g/:gid/p/:pid` in a hardware group: phases and gates, BOM, ECO, builds
@@ -35,8 +36,14 @@ class HardwareProjectPage extends ConsumerWidget {
         isPrivate = p.isPrivate;
       }
     }
+    // The client follows progress: phases and certifications only (the
+    // API refuses the rest to a guest anyway).
+    final guest = access.groupRole == GroupRole.guest;
+    final tabs = guest
+        ? const ['المراحل', 'الشهادات']
+        : const ['المراحل', 'BOM', 'ECO', 'Builds', 'الاختبارات', 'الشهادات', 'المشتريات'];
     return DefaultTabController(
-      length: 6,
+      length: tabs.length,
       child: Scaffold(
         appBar: AppBar(
           title: Column(
@@ -68,17 +75,10 @@ class HardwareProjectPage extends ConsumerWidget {
                 onPressed: () => context.push('/g/${access.id}/p/$pid/settings'),
               ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            tabs: [
-              Tab(text: 'المراحل'),
-              Tab(text: 'BOM'),
-              Tab(text: 'ECO'),
-              Tab(text: 'Builds'),
-              Tab(text: 'الاختبارات'),
-              Tab(text: 'المشتريات'),
-            ],
+            tabs: [for (final t in tabs) Tab(text: t)],
           ),
         ),
         body: overview.when(
@@ -89,14 +89,20 @@ class HardwareProjectPage extends ConsumerWidget {
             onRetry: () => ref.invalidate(hwOverviewProvider(key)),
           ),
           data: (data) => TabBarView(
-            children: [
-              _PhasesTab(projectKey: key, overview: data),
-              _BomTab(projectKey: key, overview: data),
-              _EcoTab(projectKey: key, overview: data),
-              _BuildsTab(projectKey: key, overview: data),
-              _TestsTab(projectKey: key, overview: data),
-              ProjectPurchasingTab(projectKey: key, overview: data),
-            ],
+            children: guest
+                ? [
+                    _PhasesTab(projectKey: key, overview: data, showFirmware: false),
+                    CertificationsTab(projectKey: key),
+                  ]
+                : [
+                    _PhasesTab(projectKey: key, overview: data),
+                    _BomTab(projectKey: key, overview: data),
+                    _EcoTab(projectKey: key, overview: data),
+                    _BuildsTab(projectKey: key, overview: data),
+                    _TestsTab(projectKey: key, overview: data),
+                    CertificationsTab(projectKey: key),
+                    ProjectPurchasingTab(projectKey: key, overview: data),
+                  ],
           ),
         ),
       ),
@@ -140,13 +146,16 @@ class _TabList extends StatelessWidget {
 // --- phases ------------------------------------------------------------------
 
 class _PhasesTab extends ConsumerWidget {
-  const _PhasesTab({required this.projectKey, required this.overview});
+  const _PhasesTab({required this.projectKey, required this.overview, this.showFirmware = true});
   final ProjectKey projectKey;
   final HwOverview overview;
 
+  /// Off for a guest: the firmware list is the team's (and 403 for them).
+  final bool showFirmware;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final firmware = ref.watch(hwFirmwareProvider(projectKey));
+    final firmware = showFirmware ? ref.watch(hwFirmwareProvider(projectKey)) : null;
     return _TabList(
       onRefresh: () async => refreshHardware(ref, projectKey),
       children: [
@@ -168,6 +177,7 @@ class _PhasesTab extends ConsumerWidget {
         const SizedBox(height: 8),
         for (final phase in overview.phases)
           _PhaseCard(projectKey: projectKey, overview: overview, phase: phase),
+        if (firmware != null) ...[
         const SizedBox(height: 16),
         Row(
           children: [
@@ -197,6 +207,7 @@ class _PhasesTab extends ConsumerWidget {
                   ],
                 ),
         ),
+        ],
       ],
     );
   }

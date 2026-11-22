@@ -82,6 +82,8 @@ const (
 	CapApprovePO     Capability = "po.approve"
 	CapMoveInventory Capability = "inventory.move"
 	CapViewPrices    Capability = "prices.view"
+	CapManageCerts   Capability = "certs.manage" // certifications (FCC / CE / UL…)
+	CapManageLab     Capability = "lab.manage"   // lab equipment; anyone testing books it
 )
 
 // functionalRoles lists the valid functional roles per group type, with the
@@ -101,7 +103,8 @@ var functionalRoles = map[GroupType]map[string][]Capability{
 	GroupHardware: {
 		"hw_lead": {CapEditTasks, CapEditBOM, CapReleaseBOM, CapSubmitECO, CapApproveECO,
 			CapApproveECOPro, CapManageBuilds, CapRecordTests, CapApproveTests,
-			CapGateDecision, CapFirmwareLink, CapManageProjects, CapViewPrices, CapComment},
+			CapGateDecision, CapFirmwareLink, CapManageProjects, CapViewPrices, CapManageCerts,
+			CapManageLab, CapComment},
 		"electrical": {CapEditTasks, CapEditBOM, CapSubmitECO, CapApproveECO, CapManageBuilds,
 			CapRecordTests, CapFirmwareLink, CapViewPrices, CapComment},
 		"mechanical": {CapEditTasks, CapEditBOM, CapSubmitECO, CapApproveECO, CapManageBuilds,
@@ -109,10 +112,10 @@ var functionalRoles = map[GroupType]map[string][]Capability{
 		"firmware": {CapEditTasks, CapSubmitECO, CapApproveECO, CapRecordTests, CapFirmwareLink,
 			CapReviewPR, CapMergePR, CapComment},
 		"test": {CapEditTasks, CapSubmitECO, CapApproveECOPro, CapManageBuilds, CapRecordTests,
-			CapApproveTests, CapComment},
+			CapApproveTests, CapManageCerts, CapManageLab, CapComment},
 		"technician": {CapEditOwnTasks, CapSubmitECR, CapRecordTests, CapMoveInventory, CapComment},
 		"manufacturing": {CapEditTasks, CapEditBOM, CapSubmitECO, CapApproveECOPro, CapManageBuilds,
-			CapRecordTests, CapViewPrices, CapComment},
+			CapRecordTests, CapViewPrices, CapManageCerts, CapComment},
 		"procurement": {CapSubmitECO, CapApproveECOPro, CapManageVendors, CapCreatePO,
 			CapMoveInventory, CapViewPrices, CapComment},
 		"client": {CapViewFinance},
@@ -163,6 +166,7 @@ func capabilitiesFor(t GroupType, groupRole GroupRole, functionalRole string) ma
 			caps[c] = true
 		}
 		if t == GroupHardware {
+			caps[CapManageLab] = true
 			caps[CapManageVendors] = true
 			caps[CapCreatePO] = true
 			caps[CapApprovePO] = true

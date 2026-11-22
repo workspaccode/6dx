@@ -118,6 +118,13 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
                 subtitle: 'الرصيد المشترك والموردين',
                 onTap: () => context.push('/g/${widget.gid}/inventory'),
               ),
+            if (access.type == GroupType.hardware && access.groupRole != GroupRole.guest)
+              SettingsTile(
+                icon: Icons.science_outlined,
+                title: 'المعمل',
+                subtitle: 'أجهزة المعمل وحجزها',
+                onTap: () => context.push('/g/${widget.gid}/lab'),
+              ),
             if (access.type == GroupType.software)
               SettingsTile(
                 icon: Icons.dashboard_outlined,
