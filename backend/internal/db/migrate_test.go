@@ -263,3 +263,40 @@ func TestHardwareMigration(t *testing.T) {
 		t.Errorf("orphan BOM lines = %d", n)
 	}
 }
+
+// 0006: stock movements are append-only, yet deleting the group cascades.
+func TestInventoryMigration(t *testing.T) {
+	ctx := context.Background()
+	database, err := Open(ctx, filepath.Join(t.TempDir(), "i.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	for _, f := range []string{"0001_init.sql", "0002_security.sql", "0003_groups.sql", "0004_workflow.sql",
+		"0005_hardware.sql", "0006_inventory.sql"} {
+		applyFile(t, database, f)
+	}
+	for _, q := range []string{
+		`insert into users (uid, created_at, updated_at) values ('o','t','t')`,
+		`insert into workspaces (id, name, slug, owner_uid, created_at, updated_at) values ('w1', 'WS', 'ws', 'o', 't', 't')`,
+		`insert into groups (id, workspace_id, name, type, created_at, updated_at) values ('g', 'w1', 'HW', 'hardware', 't', 't')`,
+		`insert into inv_movements (id, group_id, part_number, qty, kind, at) values ('m1', 'g', 'R1', 5, 'receive', 't')`,
+	} {
+		if _, err := database.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%v\n%s", err, q)
+		}
+	}
+	if _, err := database.ExecContext(ctx, `update inv_movements set qty = 6 where id = 'm1'`); err == nil {
+		t.Error("a movement was rewritten")
+	}
+	if _, err := database.ExecContext(ctx, `delete from inv_movements where id = 'm1'`); err == nil {
+		t.Error("a movement was deleted")
+	}
+	if _, err := database.ExecContext(ctx, `delete from groups where id = 'g'`); err != nil {
+		t.Fatalf("group delete with movements: %v", err)
+	}
+	var n int
+	if err := database.QueryRowContext(ctx, `select count(*) from inv_movements`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("movements left: %d %v", n, err)
+	}
+}
