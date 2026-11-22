@@ -42,6 +42,7 @@ import '../features/groups/presentation/pages/groups_pages.dart';
 import '../features/groups/presentation/pages/invite_page.dart';
 import '../features/groups/presentation/pages/workflow_pages.dart';
 import '../features/groups/presentation/pages/hardware_detail_pages.dart';
+import '../features/groups/presentation/pages/inventory_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
@@ -529,6 +530,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
           GoRoute(
+            path: 'inventory',
+            builder: (_, state) => GroupInventoryPage(gid: state.pathParameters['gid']!),
+          ),
+          GoRoute(
             path: 'p/:pid',
             builder: (_, state) => GroupProjectPage(
               gid: state.pathParameters['gid']!,
@@ -564,6 +569,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                   gid: state.pathParameters['gid']!,
                   pid: state.pathParameters['pid']!,
                   eid: state.pathParameters['eid']!,
+                ),
+              ),
+              GoRoute(
+                path: 'po/:poid',
+                builder: (_, state) => PurchaseOrderPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                  poid: state.pathParameters['poid']!,
                 ),
               ),
               GoRoute(

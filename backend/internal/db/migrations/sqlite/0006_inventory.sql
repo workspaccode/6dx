@@ -44,8 +44,18 @@ create table inv_movements (
 );
 create index inv_movements_stock_idx on inv_movements (group_id, part_number, location);
 
--- Append-only: history is never rewritten.
+-- Append-only: history is never rewritten. Only the foreign keys' own
+-- "set null" (a deleted project, build or user) may touch a row: SQLite runs
+-- that as an UPDATE, so the trigger lets through updates that change
+-- nothing but those three columns to null.
 create trigger inv_movements_no_update before update on inv_movements
+when new.id is not old.id or new.group_id is not old.group_id
+  or new.part_number is not old.part_number or new.location is not old.location
+  or new.qty is not old.qty or new.kind is not old.kind or new.po_id is not old.po_id
+  or new.note is not old.note or new.at is not old.at
+  or (new.project_id is not old.project_id and new.project_id is not null)
+  or (new.build_id is not old.build_id and new.build_id is not null)
+  or (new.by_uid is not old.by_uid and new.by_uid is not null)
 begin select raise(abort, 'movements_are_append_only'); end;
 create trigger inv_movements_no_delete before delete on inv_movements
 when exists (select 1 from groups where id = old.group_id)

@@ -281,6 +281,9 @@ func TestInventoryMigration(t *testing.T) {
 		`insert into workspaces (id, name, slug, owner_uid, created_at, updated_at) values ('w1', 'WS', 'ws', 'o', 't', 't')`,
 		`insert into groups (id, workspace_id, name, type, created_at, updated_at) values ('g', 'w1', 'HW', 'hardware', 't', 't')`,
 		`insert into inv_movements (id, group_id, part_number, qty, kind, at) values ('m1', 'g', 'R1', 5, 'receive', 't')`,
+		`insert into projects (id, workspace_id, group_id, name, created_at, updated_at) values ('p', 'w1', 'g', 'P', 't', 't')`,
+		`insert into inv_movements (id, group_id, part_number, qty, kind, project_id, by_uid, at)
+		   values ('m2', 'g', 'R1', 2, 'receive', 'p', 'o', 't')`,
 	} {
 		if _, err := database.ExecContext(ctx, q); err != nil {
 			t.Fatalf("%v\n%s", err, q)
@@ -291,6 +294,19 @@ func TestInventoryMigration(t *testing.T) {
 	}
 	if _, err := database.ExecContext(ctx, `delete from inv_movements where id = 'm1'`); err == nil {
 		t.Error("a movement was deleted")
+	}
+	// Deleting a project the history points at keeps the movement and
+	// only forgets the project (the FK's set null must not trip the
+	// append-only rule).
+	if _, err := database.ExecContext(ctx, `delete from projects where id = 'p'`); err != nil {
+		t.Fatalf("project delete with movements: %v", err)
+	}
+	var qty int
+	if err := database.QueryRowContext(ctx, `select qty from inv_movements where id = 'm2' and project_id is null`).Scan(&qty); err != nil || qty != 2 {
+		t.Errorf("movement after project delete: %d %v", qty, err)
+	}
+	if _, err := database.ExecContext(ctx, `update inv_movements set note = 'x' where id = 'm2'`); err == nil {
+		t.Error("a movement note was rewritten")
 	}
 	if _, err := database.ExecContext(ctx, `delete from groups where id = 'g'`); err != nil {
 		t.Fatalf("group delete with movements: %v", err)

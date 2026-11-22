@@ -12,6 +12,7 @@ import '../providers/hardware_providers.dart';
 import '../widgets/group_widgets.dart';
 import '../widgets/hardware_widgets.dart';
 import 'hardware_pages.dart';
+import 'inventory_pages.dart';
 
 /// Loads the project's capabilities (from the overview) for a detail page.
 class _HwScope extends ConsumerWidget {
@@ -374,6 +375,18 @@ class BuildPage extends ConsumerWidget {
                 )
               : null,
           children: [
+            if (build != null &&
+                const {'planned', 'parts_ordered'}.contains(build.status) &&
+                (overview.can(HwCaps.manageBuilds) || overview.can('inventory.move'))) ...[
+              FilledButton.icon(
+                icon: const Icon(Icons.outbox_outlined),
+                label: const Text('صرف القطع المحجوزة وبدء التجميع'),
+                onPressed: () => invRun(context, ref, gid,
+                    (api) => api.issueBuild(gid, pid, bid),
+                    done: 'القطع اتصرفت والـ build بقى بيتجمّع'),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (build != null) ...[
               Row(children: [
                 Expanded(child: Text('الحالة', style: Theme.of(context).textTheme.titleSmall)),

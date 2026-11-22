@@ -12,6 +12,7 @@ import '../providers/group_providers.dart';
 import '../providers/hardware_providers.dart';
 import '../widgets/group_widgets.dart';
 import '../widgets/hardware_widgets.dart';
+import 'inventory_pages.dart';
 
 /// `/g/:gid/p/:pid` in a hardware group: phases and gates, BOM, ECO, builds
 /// and tests. The overview carries the caller's project capabilities; every
@@ -35,7 +36,7 @@ class HardwareProjectPage extends ConsumerWidget {
       }
     }
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: Column(
@@ -70,6 +71,7 @@ class HardwareProjectPage extends ConsumerWidget {
               Tab(text: 'ECO'),
               Tab(text: 'Builds'),
               Tab(text: 'الاختبارات'),
+              Tab(text: 'المشتريات'),
             ],
           ),
         ),
@@ -87,6 +89,7 @@ class HardwareProjectPage extends ConsumerWidget {
               _EcoTab(projectKey: key, overview: data),
               _BuildsTab(projectKey: key, overview: data),
               _TestsTab(projectKey: key, overview: data),
+              ProjectPurchasingTab(projectKey: key, overview: data),
             ],
           ),
         ),
@@ -423,7 +426,7 @@ class _BomTab extends ConsumerWidget {
       const FormFieldSpec('description', 'الوصف', required: true, maxLength: 200),
       const FormFieldSpec('mpn', 'MPN', maxLength: 80),
       const FormFieldSpec('vendor', 'المورّد', maxLength: 80),
-      if (prices) const FormFieldSpec('cost', 'تكلفة الوحدة', number: true),
+      if (prices) const FormFieldSpec('cost', 'تكلفة الوحدة', number: true, decimal: true),
     ]);
     if (values == null || !context.mounted) return;
     await hwRun(context, ref, projectKey,

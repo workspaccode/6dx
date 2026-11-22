@@ -111,6 +111,13 @@ class _GroupHomePageState extends ConsumerState<GroupHomePage> {
                 title: 'إعدادات المجموعة',
                 onTap: () => context.push('/g/${widget.gid}/settings'),
               ),
+            if (access.type == GroupType.hardware && access.groupRole != GroupRole.guest)
+              SettingsTile(
+                icon: Icons.inventory_2_outlined,
+                title: 'المخزن والمشتريات',
+                subtitle: 'الرصيد المشترك والموردين',
+                onTap: () => context.push('/g/${widget.gid}/inventory'),
+              ),
             if (access.type == GroupType.software)
               SettingsTile(
                 icon: Icons.dashboard_outlined,

@@ -10,6 +10,8 @@ class FormFieldSpec {
     this.required = false,
     this.maxLength,
     this.number = false,
+    this.decimal = false,
+    this.signed = false,
     this.multiline = false,
     this.initial,
     this.hint,
@@ -19,7 +21,11 @@ class FormFieldSpec {
   final String label;
   final bool required;
   final int? maxLength;
+  /// A number field: whole numbers unless [decimal] (prices); [signed]
+  /// shows the minus key (stock adjustments).
   final bool number;
+  final bool decimal;
+  final bool signed;
   final bool multiline;
   final String? initial;
   final String? hint;
@@ -73,8 +79,8 @@ class _FormSheetState extends State<_FormSheet> {
         setState(() => _error = '«${f.label}» مطلوب.');
         return;
       }
-      if (f.number && v.isNotEmpty && num.tryParse(v) == null) {
-        setState(() => _error = '«${f.label}» لازم يكون رقم.');
+      if (f.number && v.isNotEmpty && (f.decimal ? num.tryParse(v) : int.tryParse(v)) == null) {
+        setState(() => _error = f.decimal ? '«${f.label}» لازم يكون رقم.' : '«${f.label}» لازم يكون رقم صحيح.');
         return;
       }
     }
@@ -100,7 +106,7 @@ class _FormSheetState extends State<_FormSheet> {
                 minLines: f.multiline ? 2 : 1,
                 maxLines: f.multiline ? 5 : 1,
                 keyboardType: f.number
-                    ? const TextInputType.numberWithOptions(decimal: true)
+                    ? TextInputType.numberWithOptions(decimal: f.decimal, signed: f.signed)
                     : (f.multiline ? TextInputType.multiline : TextInputType.text),
                 decoration: InputDecoration(
                   labelText: f.required ? '${f.label} *' : f.label,

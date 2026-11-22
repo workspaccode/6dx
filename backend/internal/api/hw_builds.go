@@ -171,7 +171,13 @@ func (s *Server) handleUpdateBuild(w http.ResponseWriter, r *http.Request, h *hw
 		writeError(w, err)
 		return
 	}
-	result, err := s.store.db.ExecContext(r.Context(), `
+	tx, err := s.store.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(r.Context(), `
 		update hw_builds set status = coalesce(?, status),
 		       cm = case when ? then null else coalesce(?, cm) end,
 		       planned_at = case when ? then null else coalesce(?, planned_at) end, updated_at = ?
@@ -184,6 +190,21 @@ func (s *Server) handleUpdateBuild(w http.ResponseWriter, r *http.Request, h *hw
 	}
 	if n, _ := result.RowsAffected(); n == 0 {
 		writeError(w, notFound("build_not_found", "الـ build مش موجود في المشروع."))
+		return
+	}
+	// A cancelled build gives its reserved parts back to the group (else they
+	// would show as a shortage for everyone).
+	if body.Status != nil && *body.Status == "cancelled" {
+		if _, err := tx.ExecContext(r.Context(), `
+			update inv_reservations set status = 'released', updated_at = ?
+			where build_id = ? and project_id = ? and status = 'active'`,
+			nowString(), r.PathValue("bid"), h.project); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, err)
 		return
 	}
 	s.handleListBuilds(w, r, h)

@@ -125,6 +125,9 @@ func (s *Server) handleUpdateInvSettings(w http.ResponseWriter, r *http.Request)
 		writeError(w, err)
 		return
 	}
+	// Raising the threshold lets bigger POs skip approval: keep a trace.
+	_ = s.store.logActivity(r.Context(), access.WorkspaceID, access.UID, "po_threshold_changed",
+		fmt.Sprintf("حد اعتماد أوامر الشراء: %d %s (سنت)", st.ThresholdCents, st.Currency), nil)
 	writeJSON(w, http.StatusOK, map[string]any{"settings": st, "can_manage": true})
 }
 
@@ -364,9 +367,19 @@ func (s *Server) handleListStock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reserved parts with no stock at all still show (a shortage).
-	resRows, err := s.store.db.QueryContext(r.Context(), `
+	// A private project's reservations are its own business: a caller who
+	// cannot see the project does not see what it holds either (the API
+	// still enforces the real availability when they reserve).
+	scope := scopeOf(access)
+	resQuery := `
 		select rv.part_number, sum(rv.qty) from inv_reservations rv join projects p on p.id = rv.project_id
-		where p.group_id = ? and rv.status = 'active' group by rv.part_number`, access.ID)
+		where p.group_id = ? and rv.status = 'active'`
+	resArgs := []any{access.ID}
+	if !scope.SeesPrivate {
+		resQuery += ` and rv.project_id not in (` + hiddenProjects + `)`
+		resArgs = append(resArgs, scope.UID)
+	}
+	resRows, err := s.store.db.QueryContext(r.Context(), resQuery+` group by rv.part_number`, resArgs...)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -381,7 +394,7 @@ func (s *Server) handleListStock(w http.ResponseWriter, r *http.Request) {
 		}
 		e, ok := byPart[part]
 		if !ok {
-			if p := r.URL.Query().Get("part"); p != "" && p != part {
+			if p := strings.TrimSpace(r.URL.Query().Get("part")); p != "" && p != part {
 				continue
 			}
 			e = &entry{Part: part, Locations: []map[string]any{}}
@@ -414,17 +427,17 @@ func (s *Server) handleListMovements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scope := scopeOf(access)
-	projectCol := `m.project_id`
-	args := []any{}
-	if !scope.SeesPrivate {
-		projectCol = `case when m.project_id in (` + hiddenProjects + `) then null else m.project_id end`
-		args = append(args, scope.UID)
-	}
 	query := `
-		select m.id, m.part_number, m.location, m.qty, m.kind, ` + projectCol + `, m.po_id, m.note, m.at,
+		select m.id, m.part_number, m.location, m.qty, m.kind, m.project_id, m.po_id, m.note, m.at,
 		       (select coalesce(nullif(u.display_name, ''), u.uid) from users u where u.uid = m.by_uid)
 		from inv_movements m where m.group_id = ?`
-	args = append(args, access.ID)
+	args := []any{access.ID}
+	if !scope.SeesPrivate {
+		// A private project's receipts and issues stay out of the log for
+		// those who cannot see it (part, qty, note and who would tell).
+		query += ` and (m.project_id is null or m.project_id not in (` + hiddenProjects + `))`
+		args = append(args, scope.UID)
+	}
 	if part := strings.TrimSpace(r.URL.Query().Get("part")); part != "" {
 		query += ` and m.part_number = ?`
 		args = append(args, part)
@@ -665,7 +678,7 @@ func (s *Server) handleCreateReservation(w http.ResponseWriter, r *http.Request,
 	}
 	var build any
 	if body.BuildID != nil && *body.BuildID != "" {
-		if err := s.store.hwOwned(r.Context(), s.store.db, "hw_builds", *body.BuildID, h.project, "build_not_found"); err != nil {
+		if err := s.requireOpenBuild(r, h, *body.BuildID); err != nil {
 			writeError(w, err)
 			return
 		}
@@ -683,8 +696,7 @@ func (s *Server) handleCreateReservation(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if total-reserved < body.Qty {
-		writeError(w, conflict("insufficient_stock", fmt.Sprintf(
-			"المتاح من %s هو %d (الرصيد %d، والمحجوز %d).", part, total-reserved, total, reserved)))
+		writeError(w, conflict("insufficient_stock", "المتاح من "+part+" مش كفاية للحجز ده."))
 		return
 	}
 	now := nowString()
@@ -730,7 +742,7 @@ func (s *Server) handleIssueBuild(w http.ResponseWriter, r *http.Request, h *hwC
 		return
 	}
 	bid := r.PathValue("bid")
-	if err := s.store.hwOwned(r.Context(), s.store.db, "hw_builds", bid, h.project, "build_not_found"); err != nil {
+	if err := s.requireOpenBuild(r, h, bid); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -833,6 +845,25 @@ func (s *Server) handleIssueBuild(w http.ResponseWriter, r *http.Request, h *hwC
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"issued": issued})
+}
+
+// requireOpenBuild: parts are reserved for and issued to a build that has not
+// started assembly (planned / parts ordered) — not one that is done or
+// cancelled.
+func (s *Server) requireOpenBuild(r *http.Request, h *hwContext, buildID string) error {
+	var status string
+	err := s.store.db.QueryRowContext(r.Context(),
+		`select status from hw_builds where id = ? and project_id = ?`, buildID, h.project).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return notFound("build_not_found", "الـ build مش موجود في المشروع.")
+	}
+	if err != nil {
+		return err
+	}
+	if status != "planned" && status != "parts_ordered" {
+		return conflict("build_not_open", "الحجز والصرف لـ build لسه مابدأش التجميع بس.")
+	}
+	return nil
 }
 
 // --- demand ------------------------------------------------------------------------

@@ -324,7 +324,7 @@ func (s *Server) handleDeletePOLine(w http.ResponseWriter, r *http.Request, h *h
 		return
 	}
 	if _, err := s.store.db.ExecContext(r.Context(),
-		`delete from inv_po_lines where po_id = ? and part_number = ?`, poID, r.PathValue("part")); err != nil {
+		`delete from inv_po_lines where po_id = ? and part_number = ?`, poID, strings.TrimSpace(r.PathValue("part"))); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -357,6 +357,17 @@ func (s *Server) handleSubmitPO(w http.ResponseWriter, r *http.Request, h *hwCon
 	}
 	if lines == 0 {
 		writeError(w, conflict("po_empty", "أمر الشراء فاضي."))
+		return
+	}
+	var vendorArchived int
+	if err := tx.QueryRowContext(r.Context(), `
+		select v.archived from inv_pos po join inv_vendors v on v.id = po.vendor_id where po.id = ?`,
+		poID).Scan(&vendorArchived); err != nil {
+		writeError(w, err)
+		return
+	}
+	if vendorArchived == 1 {
+		writeError(w, conflict("vendor_archived", "المورّد اتأرشف. غيّر المورّد أو استرجعه."))
 		return
 	}
 	var unpriced int

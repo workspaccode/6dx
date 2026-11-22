@@ -150,3 +150,60 @@ func TestProcurementAndInventory(t *testing.T) {
 	foreign := list(ov, "vendors")[0]["id"]
 	w.must(t, 404, "POST", "pos", "hw-buy", map[string]any{"vendor_id": foreign})
 }
+
+// Regressions from the phase 4b review: private projects stay private on
+// the shared shelf, and cancelled builds give their parts back.
+func TestInventoryReviewFixes(t *testing.T) {
+	w := newHWWorld(t)
+	joinGroupAs(t, w.h, "hw-lead", w.ws, w.gid, "hw-buy", "member", "procurement")
+	group := "/v1/groups/" + w.gid
+	gget := func(path, uid string) map[string]any {
+		t.Helper()
+		status, out := w.h.doWithWorkspace(t, http.MethodGet, group+path, uid, w.ws, nil)
+		if status != 200 {
+			t.Fatalf("GET %s as %s: %d %v", path, uid, status, out)
+		}
+		return out
+	}
+	w.h.doWithWorkspace(t, http.MethodPost, group+"/stock/movements", "hw-buy", w.ws,
+		map[string]any{"part_number": "R1", "qty": 10, "kind": "receive"})
+
+	part := w.must(t, 201, "POST", "parts", "hw-ee", map[string]any{"part_number": "R1", "description": "r"})["part"].(map[string]any)
+	draft := w.must(t, 201, "POST", "bom", "hw-ee", map[string]any{})["bom"].(map[string]any)
+	w.must(t, 200, "PUT", "bom/"+draft["id"].(string)+"/lines/"+part["id"].(string), "hw-ee", map[string]any{"quantity": 1})
+	w.must(t, 200, "POST", "bom/"+draft["id"].(string)+"/release", "hw-lead", nil)
+	build := w.must(t, 201, "POST", "builds", "hw-lead", map[string]any{"name": "B1", "bom_rev_id": draft["id"], "quantity": 4})["build"].(map[string]any)
+	bid := build["id"].(string)
+	w.must(t, 200, "POST", "reservations", "hw-lead", map[string]any{"build_id": bid, "part_number": "R1", "qty": 4})
+
+	// Make the project private: an engineer outside it no longer sees what
+	// it reserved or moved.
+	w.h.doWithWorkspace(t, http.MethodPatch, "/v1/groups/"+w.gid+"/projects/"+w.pid, "hw-lead", w.ws,
+		map[string]any{"visibility": "private"})
+	if s := list(gget("/stock?part=R1", "hw-ee"), "stock")[0]; s["reserved"] != float64(0) {
+		t.Errorf("outsider sees the private reservation: %v", s)
+	}
+	if s := list(gget("/stock?part=R1", "hw-lead"), "stock")[0]; s["reserved"] != float64(4) {
+		t.Errorf("lead's stock view: %v", s)
+	}
+	// …and its issue movement is out of the log.
+	w.must(t, 200, "POST", "builds/"+bid+"/issue", "hw-lead", nil)
+	for _, m := range list(gget("/stock/movements", "hw-ee"), "movements") {
+		if m["kind"] == "issue" {
+			t.Error("outsider sees the private project's issue")
+		}
+	}
+	w.h.doWithWorkspace(t, http.MethodPatch, "/v1/groups/"+w.gid+"/projects/"+w.pid, "hw-lead", w.ws,
+		map[string]any{"visibility": "group"})
+
+	// A build in assembly takes no new reservation; a cancelled build
+	// releases what it held.
+	w.must(t, 409, "POST", "reservations", "hw-lead", map[string]any{"build_id": bid, "part_number": "R1", "qty": 1})
+	b2 := w.must(t, 201, "POST", "builds", "hw-lead", map[string]any{"name": "B2", "bom_rev_id": draft["id"], "quantity": 2})["build"].(map[string]any)
+	w.must(t, 200, "POST", "reservations", "hw-lead", map[string]any{"build_id": b2["id"], "part_number": "R1", "qty": 2})
+	w.must(t, 200, "PATCH", "builds/"+b2["id"].(string), "hw-lead", map[string]any{"status": "cancelled"})
+	if s := list(gget("/stock?part=R1", "hw-lead"), "stock")[0]; s["reserved"] != float64(0) || s["available"] != float64(6) {
+		t.Errorf("after cancelling B2: %v", s)
+	}
+	w.must(t, 409, "POST", "builds/"+b2["id"].(string)+"/issue", "hw-lead", nil)
+}
