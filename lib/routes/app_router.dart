@@ -16,7 +16,6 @@ import '../features/profile/presentation/pages/profile_page.dart';
 import '../features/projects/presentation/pages/create_project_page.dart';
 import '../features/projects/presentation/pages/project_settings_pages.dart';
 import '../features/projects/presentation/pages/projects_page.dart';
-import '../features/setup/presentation/pages/setup_checklist_page.dart';
 import '../features/sprints/presentation/pages/sprint_pages.dart';
 import '../features/tasks/domain/entities/task.dart';
 import '../features/tasks/presentation/pages/task_board_page.dart';
@@ -29,13 +28,8 @@ import '../features/members/presentation/pages/member_pages.dart';
 import '../features/reviews/presentation/pages/review_pages.dart';
 import '../features/team/presentation/pages/team_pages.dart';
 import '../features/account/presentation/pages/account_pages.dart';
-import '../features/workspace/presentation/pages/github_flow_pages.dart';
-import '../features/workspace/presentation/pages/insight_pages.dart';
 import '../features/workspace/presentation/pages/state_pages.dart';
 import '../features/workspace/presentation/pages/workspace_flow_pages.dart';
-import '../features/tasks/presentation/pages/task_flow_pages.dart';
-import '../features/web/presentation/pages/web_routes.dart';
-import '../features/web/presentation/pages/web_shell_page.dart';
 import '../features/groups/presentation/pages/group_members_pages.dart';
 import '../features/groups/presentation/pages/group_pages.dart';
 import '../features/groups/presentation/pages/groups_pages.dart';
@@ -234,10 +228,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.login,
         builder: (_, __) => const LoginPage(),
       ),
-      GoRoute(
-        path: AppRoutes.setup,
-        builder: (_, __) => const SetupChecklistPage(),
-      ),
 
       // Bottom navigation shell — each branch keeps its own navigation stack.
       StatefulShellRoute.indexedStack(
@@ -352,22 +342,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const SprintPlanPage(),
       ),
       GoRoute(
-        path: AppRoutes.sprintSummary,
-        builder: (_, __) => const SprintSummaryPage(),
-      ),
-      GoRoute(
         path: AppRoutes.prDetail,
         builder: (context, state) => PrDetailPage(
           prNumber: int.tryParse(state.pathParameters['number'] ?? '') ?? 58,
         ),
-      ),
-      GoRoute(
-        path: AppRoutes.ciFailure,
-        builder: (_, __) => const CiFailurePage(),
-      ),
-      GoRoute(
-        path: AppRoutes.reviewSla,
-        builder: (_, __) => const ReviewSlaPage(),
       ),
       GoRoute(
         path: AppRoutes.projectSettings,
@@ -427,26 +405,6 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, __) => const AccountSettingsPage(),
       ),
       GoRoute(
-        path: AppRoutes.notifSettings,
-        builder: (_, __) => const NotifSettingsPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.focusMode,
-        builder: (_, __) => const FocusModePage(),
-      ),
-      GoRoute(
-        path: AppRoutes.help,
-        builder: (_, __) => const HelpPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.workspaceCreate,
-        builder: (_, __) => const WorkspaceCreatePage(),
-      ),
-      GoRoute(
-        path: AppRoutes.workload,
-        builder: (_, __) => const WorkloadPage(),
-      ),
-      GoRoute(
         path: AppRoutes.digest,
         builder: (_, __) => const DigestPage(),
       ),
@@ -464,20 +422,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       GoRoute(
-        path: AppRoutes.workspaceSwitch,
-        builder: (_, __) => const WorkspaceSwitchPage(),
-      ),
-      GoRoute(
         path: AppRoutes.acceptInvite,
         builder: (_, __) => const AcceptInvitePage(),
-      ),
-      GoRoute(
-        path: AppRoutes.linkGitHub,
-        builder: (_, __) => const LinkGitHubPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.inviteExpired,
-        builder: (_, __) => const InviteExpiredPage(),
       ),
       // After the fixed /invite/* paths, so "accept" is never read as an id.
       GoRoute(
@@ -632,185 +578,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
-      ),
-      GoRoute(
-        path: AppRoutes.joinRequests,
-        builder: (_, __) => const JoinRequestsPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.bulkInvite,
-        builder: (_, __) => const ActiveGroupGuard(
-          requires: Caps.manageMembers,
-          child: BulkInvitePage(),
-        ),
-      ),
-      GoRoute(
-        path: AppRoutes.regionalCalendar,
-        builder: (_, __) => const RegionalCalendarPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.billing,
-        builder: (_, __) => const ActiveGroupGuard(
-          requires: Caps.manageGroup,
-          child: BillingPage(),
-        ),
-      ),
-      GoRoute(
-        path: AppRoutes.exportData,
-        builder: (_, __) => const ActiveGroupGuard(
-          requires: Caps.manageGroup,
-          child: ExportDataPage(),
-        ),
-      ),
-      GoRoute(
-        path: AppRoutes.ghAppInstall,
-        builder: (_, __) => const GhAppInstallPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.ghInstalling,
-        builder: (_, __) => const GhInstallingPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.importIssues,
-        builder: (_, __) => const ImportIssuesPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.mapContributors,
-        builder: (_, __) => const MapContributorsPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.multiProvider,
-        builder: (_, __) => const MultiProviderPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.agentsTeam,
-        builder: (_, __) => const AgentsTeamPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.assignAgent,
-        builder: (_, __) => const AssignAgentPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.knowledgeMap,
-        builder: (_, __) => const KnowledgeMapPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.askProject,
-        builder: (_, __) => const AskProjectPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.projectReport,
-        builder: (_, __) => const ProjectReportPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.estimateLearning,
-        builder: (_, __) => const EstimateLearningPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.sprintHistory,
-        builder: (_, __) => const SprintHistoryPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.reviewerPick,
-        builder: (_, __) => const ReviewerPickPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.bigPrWarning,
-        builder: (_, __) => const BigPrWarningPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.mergeFromApp,
-        builder: (_, __) => const MergeFromAppPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.commits,
-        builder: (_, __) => const CommitsPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.releaseTracker,
-        builder: (_, __) => const ReleaseTrackerPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.weeklySummary,
-        builder: (_, __) => const WeeklyClientSummaryPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.editTask,
-        builder: (_, __) => const EditTaskPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.taskStatus,
-        builder: (_, __) => const StatusSheetPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.taskDependencies,
-        builder: (_, __) => const DependenciesPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.taskContext,
-        builder: (_, __) => const TaskContextPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.bugReport,
-        builder: (_, __) => const BugReportPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.bulkActions,
-        builder: (_, __) => const BulkActionsPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.offline,
-        builder: (_, __) => const OfflinePage(),
-      ),
-      GoRoute(
-        path: AppRoutes.syncFailed,
-        builder: (_, __) => const SyncFailedPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.accessRevoked,
-        builder: (_, __) => const AccessRevokedPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.noPermission,
-        builder: (_, __) => const NoPermissionPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.notFound,
-        builder: (_, __) => const NotFoundPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.emptyProjects,
-        builder: (_, __) => const EmptyProjectsPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.skeleton,
-        builder: (_, __) => const SkeletonPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.pushPermission,
-        builder: (_, __) => const PushPermissionPage(),
-      ),
-      GoRoute(
-        path: AppRoutes.richNotification,
-        builder: (_, __) => const RichNotificationPage(),
-      ),
-      // The whole website + web app: one route per design screen.
-      GoRoute(
-        path: AppRoutes.web,
-        builder: (context, state) {
-          final path = state.uri.path
-              .replaceFirst(AppRoutes.web, '')
-              .replaceFirst(RegExp(r'^/'), '');
-          final route = webRouteFor(path);
-          return WebShellPage(
-            route: route ??
-                const WebRoute(
-                  path: '',
-                  title: 'الصفحة غير موجودة',
-                  section: 'الحالات والنسخ',
-                ),
-          );
-        },
       ),
     ],
   );
