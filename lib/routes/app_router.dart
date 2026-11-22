@@ -43,6 +43,7 @@ import '../features/groups/presentation/pages/invite_page.dart';
 import '../features/groups/presentation/pages/workflow_pages.dart';
 import '../features/groups/presentation/pages/hardware_detail_pages.dart';
 import '../features/groups/presentation/pages/inventory_pages.dart';
+import '../features/groups/presentation/pages/links_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
@@ -570,6 +571,23 @@ final routerProvider = Provider<GoRouter>((ref) {
                   pid: state.pathParameters['pid']!,
                   eid: state.pathParameters['eid']!,
                 ),
+              ),
+              GoRoute(
+                path: 'links',
+                builder: (_, state) => ProjectLinksPage(
+                  gid: state.pathParameters['gid']!,
+                  pid: state.pathParameters['pid']!,
+                ),
+                routes: [
+                  GoRoute(
+                    path: ':lid',
+                    builder: (_, state) => LinkSummaryPage(
+                      gid: state.pathParameters['gid']!,
+                      pid: state.pathParameters['pid']!,
+                      lid: state.pathParameters['lid']!,
+                    ),
+                  ),
+                ],
               ),
               GoRoute(
                 path: 'po/:poid',

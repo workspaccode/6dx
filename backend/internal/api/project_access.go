@@ -176,11 +176,29 @@ func (s *Server) handleUpdateGroupProject(w http.ResponseWriter, r *http.Request
 		}
 	}
 	pid := r.PathValue("pid")
-	if _, err := s.store.db.ExecContext(r.Context(), `
+	tx, err := s.store.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(r.Context(), `
 		update projects set name = coalesce(?, name), description = coalesce(?, description),
 		       visibility = coalesce(?, visibility), updated_at = ?
 		where id = ? and group_id = ? and workspace_id = ?`,
 		body.Name, body.Description, body.Visibility, nowString(), pid, group.ID, ws.ID); err != nil {
+		writeError(w, err)
+		return
+	}
+	// A private project is seen by its own people only: links to other
+	// groups end with it (and their dependencies).
+	if body.Visibility != nil && *body.Visibility == "private" {
+		if err := revokeProjectLinks(r.Context(), tx, pid, caller.UID); err != nil {
+			writeError(w, err)
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		writeError(w, err)
 		return
 	}

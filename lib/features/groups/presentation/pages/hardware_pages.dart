@@ -50,6 +50,12 @@ class HardwareProjectPage extends ConsumerWidget {
             ],
           ),
           actions: [
+            if (access.groupRole != GroupRole.guest)
+              IconButton(
+                tooltip: 'المشاريع المرتبطة',
+                icon: const Icon(Icons.link_rounded),
+                onPressed: () => context.push('/g/${access.id}/p/$pid/links'),
+              ),
             IconButton(
               tooltip: 'المهام',
               icon: const Icon(Icons.checklist_rounded),

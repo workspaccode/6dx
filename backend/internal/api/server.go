@@ -128,6 +128,17 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("GET /v1/groups/{gid}/projects/{pid}/members", s.handleListProjectMembers)
 	private.HandleFunc("PUT /v1/groups/{gid}/projects/{pid}/members/{uid}", s.handleSetProjectMember)
 	private.HandleFunc("DELETE /v1/groups/{gid}/projects/{pid}/members/{uid}", s.handleRemoveProjectMember)
+	// Links between projects of different groups (§3.1).
+	lk := "/v1/groups/{gid}/projects/{pid}/links"
+	private.HandleFunc("GET "+lk, s.handleListLinks)
+	private.HandleFunc("POST "+lk, s.handleRequestLink)
+	private.HandleFunc("GET "+lk+"/candidates", s.handleLinkCandidates)
+	private.HandleFunc("POST "+lk+"/{lid}/approve", s.handleApproveLink)
+	private.HandleFunc("POST "+lk+"/{lid}/revoke", s.handleRevokeLink)
+	private.HandleFunc("GET "+lk+"/{lid}/summary", s.handleLinkSummary)
+	private.HandleFunc("GET "+lk+"/{lid}/tasks", s.handleLinkTasks)
+	private.HandleFunc("POST "+lk+"/{lid}/deps", s.handleAddLinkDep)
+	private.HandleFunc("DELETE "+lk+"/{lid}/deps/{did}", s.handleDeleteLinkDep)
 	// Hardware (docs/design/groups-and-roles.md §7): every route goes through
 	// hwHandler — hardware group, project access, private projects.
 	private.HandleFunc("GET /v1/groups/{gid}/phases", s.handleListPhaseTemplates)

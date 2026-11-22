@@ -383,6 +383,13 @@ class _GroupProjectPageState extends ConsumerState<GroupProjectPage> {
                 )
               : null,
           children: [
+            if (access.groupRole != GroupRole.guest)
+              SettingsTile(
+                icon: Icons.link_rounded,
+                title: 'المشاريع المرتبطة',
+                subtitle: 'مشاريع في مجموعات تانية (ملخص واعتماديات)',
+                onTap: () => context.push('/g/${widget.gid}/p/${widget.pid}/links'),
+              ),
             if (canEdit)
               Row(
                 children: [
