@@ -505,7 +505,8 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapSco
 		       pr.last_commit,
 		       (select t.key from tasks t where t.id = pr.task_id`+g.tasks("t")+`),
 		       (select p.name from projects p where p.id = pr.project_id),
-		       (select r.full_name from repositories r where r.project_id = pr.project_id order by r.id limit 1)
+		       coalesce(nullif(pr.repository, ''),
+		         (select r.full_name from repositories r where r.project_id = pr.project_id order by r.id limit 1))
 		from pull_requests pr
 		where pr.workspace_id = ?`+g.tasks("pr"), append(g.args(), g.withArgs(wsID)...)...)
 	if err != nil {

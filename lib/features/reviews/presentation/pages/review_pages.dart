@@ -173,7 +173,7 @@ class PrDetailPage extends ConsumerWidget {
               child: OutlinedButton.icon(
                 onPressed: () => runAction(
                   context,
-                  () => ref.read(workspaceActionsProvider).reviewPullRequest(pr.number, approve: false),
+                  () => ref.read(workspaceActionsProvider).reviewPullRequest(pr.number, approve: false, repository: pr.repository),
                   done: 'اتطلبت تعديلات',
                 ),
                 icon: const Icon(Icons.edit_note_rounded),
@@ -185,7 +185,7 @@ class PrDetailPage extends ConsumerWidget {
               child: FilledButton.icon(
                 onPressed: () => runAction(
                   context,
-                  () => ref.read(workspaceActionsProvider).reviewPullRequest(pr.number, approve: true),
+                  () => ref.read(workspaceActionsProvider).reviewPullRequest(pr.number, approve: true, repository: pr.repository),
                   done: 'اتعتمد',
                 ),
                 icon: const Icon(Icons.check_rounded),

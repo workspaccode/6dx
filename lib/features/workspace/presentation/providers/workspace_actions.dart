@@ -19,8 +19,10 @@ class WorkspaceActions {
   Future<void> markAllNotificationsRead() => _run((api) => api.markAllNotificationsRead());
   Future<void> changeMemberRole(String uid, String role) => _run((api) => api.changeMemberRole(uid, role));
   Future<void> removeMember(String uid) => _run((api) => api.removeMember(uid));
-  Future<void> reviewPullRequest(int number, {required bool approve}) =>
-      _run((api) => api.reviewPullRequest(number, approve: approve));
+  Future<void> reviewPullRequest(int number,
+          {required bool approve, String? repository}) =>
+      _run((api) => api.reviewPullRequest(number,
+          approve: approve, repository: repository));
   Future<void> approveTimeEntries() => _run((api) => api.approveTimeEntries());
   Future<void> submitClientDecision(int optionIndex) => _run((api) => api.submitClientDecision(optionIndex));
   Future<void> declineInvite(String inviteId) => _run((api) => api.declineInvite(inviteId));

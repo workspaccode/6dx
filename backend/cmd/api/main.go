@@ -73,6 +73,24 @@ func main() {
 		MaxHeaderBytes: 64 << 10,
 	}
 
+	// Housekeeping: the activity log keeps a year (at start, then daily).
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			if n, err := server.PruneActivity(ctx); err != nil {
+				slog.Error("prune activity", "error", err)
+			} else if n > 0 {
+				slog.Info("pruned activity", "rows", n)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
 	go func() {
 		slog.Info("listening", "addr", cfg.Addr)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

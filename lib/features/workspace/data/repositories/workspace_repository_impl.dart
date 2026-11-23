@@ -41,8 +41,10 @@ class WorkspaceRepositoryImpl implements WorkspaceRepository {
   }
 
   @override
-  Future<void> reviewPullRequest(int number, {required bool approve}) async {
-    await _remote.reviewPullRequest(number, approve: approve);
+  Future<void> reviewPullRequest(int number,
+      {required bool approve, String? repository}) async {
+    await _remote.reviewPullRequest(number,
+        approve: approve, repository: repository);
   }
 
   @override

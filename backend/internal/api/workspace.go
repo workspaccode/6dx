@@ -119,6 +119,18 @@ func (s *Server) activeWorkspace(r *http.Request, caller *authCaller) (*Workspac
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Two first requests at once (the app sends several on launch): the
+	// second finds the workspace the first just made instead of a second one.
+	err = tx.QueryRowContext(r.Context(), `
+		select w.id, w.name, m.role from workspace_members m join workspaces w on w.id = m.workspace_id
+		where m.user_uid = ? order by m.created_at limit 1`, caller.UID).Scan(&ws.ID, &ws.Name, &role)
+	if err == nil {
+		ws.Role = Role(role)
+		return &ws, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
 
 	workspaceID := newID()
 	slug := "ws-" + caller.UID

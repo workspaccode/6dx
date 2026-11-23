@@ -36,10 +36,16 @@ class WorkspaceRemoteDataSource {
       });
 
   /// Records the review verdict on the pull request.
-  Future<void> reviewPullRequest(int number, {required bool approve}) =>
+  /// [repository] names the PR when the same number exists in more than one
+  /// repository (the server refuses an ambiguous number).
+  Future<void> reviewPullRequest(int number,
+          {required bool approve, String? repository}) =>
       _api.run('workspace.pr_review', () async {
         await _workspace.resolve();
-        await _api.post('/v1/pull-requests/$number/review',
+        final repo = (repository == null || repository.isEmpty)
+            ? ''
+            : '?repository=${Uri.encodeQueryComponent(repository)}';
+        await _api.post('/v1/pull-requests/$number/review$repo',
             body: {'approve': approve});
       });
 

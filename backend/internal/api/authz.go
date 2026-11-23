@@ -183,9 +183,28 @@ func newID() string {
 
 // nowString is the single timestamp format the schema stores: RFC3339 in UTC,
 // so string ordering and comparison are chronological.
-func nowString() string { return time.Now().UTC().Format(time.RFC3339Nano) }
+// timeLayout is fixed width (milliseconds, UTC) so that string order is time
+// order; RFC3339Nano trims trailing zeros and sorted ".1Z" after ".12Z"
+// (migration 0010 normalised the stored values).
+const timeLayout = "2006-01-02T15:04:05.000Z"
+
+func nowString() string { return time.Now().UTC().Format(timeLayout) }
+
+// activityRetention: the activity log keeps a year; older rows go so the
+// table (scanned for every snapshot) does not grow forever.
+const activityRetention = 365 * 24 * time.Hour
+
+// PruneActivity removes activity older than activityRetention.
+func (s *Server) PruneActivity(ctx context.Context) (int64, error) {
+	cutoff := time.Now().UTC().Add(-activityRetention).Format(timeLayout)
+	result, err := s.store.db.ExecContext(ctx, `delete from activity_events where created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
 
 // timeAhead returns now+ttl in the same format.
 func timeAhead(ttl time.Duration) string {
-	return time.Now().UTC().Add(ttl).Format(time.RFC3339Nano)
+	return time.Now().UTC().Add(ttl).Format(timeLayout)
 }

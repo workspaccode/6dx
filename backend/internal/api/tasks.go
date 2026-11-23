@@ -398,19 +398,47 @@ func (s *Server) handleReviewPullRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	scope := scopeOf(access)
-	var prID string
+	// The same number exists in every repository: ?repository= names it
+	// (required when the number is ambiguous in the active group).
+	repo := strings.TrimSpace(r.URL.Query().Get("repository"))
+	var prID, prState string
 	var projectID, prGroup sql.NullString
-	err = s.store.db.QueryRowContext(r.Context(), `
-		select pull_requests.id, pull_requests.project_id, p.group_id
+	var authorID sql.NullInt64
+	rows, err := s.store.db.QueryContext(r.Context(), `
+		select pull_requests.id, pull_requests.project_id, p.group_id, pull_requests.state,
+		       pull_requests.author_github_id
 		from pull_requests left join projects p on p.id = pull_requests.project_id
-		where pull_requests.workspace_id = ? and pull_requests.number = ?`+scope.tasks("pull_requests"),
-		scope.withArgs(ws.ID, r.PathValue("number"))...).Scan(&prID, &projectID, &prGroup)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, notFound("pull_request_not_found", "طلب السحب غير موجود."))
-		return
-	}
+		where pull_requests.workspace_id = ? and pull_requests.number = ?
+		  and (? = '' or lower(pull_requests.repository) = lower(?))`+scope.tasks("pull_requests"),
+		append([]any{ws.ID, r.PathValue("number"), repo, repo}, scope.args()...)...)
 	if err != nil {
 		writeError(w, err)
+		return
+	}
+	found := 0
+	for rows.Next() {
+		found++
+		if err := rows.Scan(&prID, &projectID, &prGroup, &prState, &authorID); err != nil {
+			rows.Close()
+			writeError(w, err)
+			return
+		}
+	}
+	rows.Close()
+	switch {
+	case found == 0:
+		writeError(w, notFound("pull_request_not_found", "طلب السحب غير موجود."))
+		return
+	case found > 1:
+		writeError(w, conflict("pull_request_ambiguous", "في أكتر من PR بنفس الرقم. حدد الـ repository."))
+		return
+	}
+	if prState == "merged" || prState == "closed" {
+		writeError(w, conflict("pull_request_closed", "الـ PR اتقفل أو اتدمج، مفيش مراجعة عليه."))
+		return
+	}
+	if authorID.Valid && caller.GitHubID != nil && authorID.Int64 == *caller.GitHubID {
+		writeError(w, forbidden("own_pull_request", "صاحب الـ PR مايراجعوش."))
 		return
 	}
 	if projectID.Valid {
@@ -451,18 +479,20 @@ func (s *Server) handleApproveTimeEntries(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var count int
-	if err := s.store.db.QueryRowContext(r.Context(),
-		`select count(*) from time_entries where workspace_id = ? and user_uid = ?`,
-		ws.ID, caller.UID,
-	).Scan(&count); err != nil {
+	// The caller approves their own pending entries (the auto-tracked time
+	// is theirs to confirm; an entry is approved once).
+	result, err := s.store.db.ExecContext(r.Context(), `
+		update time_entries set approved_at = ?, approved_by = ?
+		where workspace_id = ? and user_uid = ? and approved_at is null`,
+		nowString(), caller.UID, ws.ID, caller.UID)
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	if err := s.store.logActivity(r.Context(), ws.ID, caller.UID, "time_approved",
-		"تم اعتماد السجلات", nil); err != nil {
-		writeError(w, err)
-		return
+	count, _ := result.RowsAffected()
+	if count > 0 {
+		_ = s.store.logActivity(r.Context(), ws.ID, caller.UID, "time_approved",
+			fmt.Sprintf("تم اعتماد %d سجل وقت", count), nil)
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"approved": count})
+	writeJSON(w, http.StatusOK, map[string]int64{"approved": count})
 }

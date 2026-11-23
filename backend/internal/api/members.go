@@ -119,6 +119,12 @@ func (s *Server) handleChangeMemberRole(w http.ResponseWriter, r *http.Request) 
 		writeError(w, forbidden("cannot_modify_owner", "لا يمكن تعديل صف المالك."))
 		return
 	}
+	// An admin manages members, not other admins (they could demote each
+	// other in turn); that is the owner's.
+	if currentRole == RoleAdmin && callerRole != RoleOwner {
+		writeError(w, forbidden("admin_requires_owner", "تغيير دور مدير خاص بمالك المساحة."))
+		return
+	}
 
 	if _, err := s.store.db.ExecContext(r.Context(),
 		`update workspace_members set role = ? where workspace_id = ? and user_uid = ?`,

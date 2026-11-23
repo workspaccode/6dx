@@ -174,6 +174,49 @@ func joinGroup(ctx context.Context, tx *sql.Tx, groupID, uid string, role GroupR
 	return err
 }
 
+// DELETE /v1/invites/{id} — cancel a pending invite. A group invite needs
+// members.manage in that group; a workspace invite a workspace admin.
+func (s *Server) handleCancelInvite(w http.ResponseWriter, r *http.Request) {
+	caller, ws, err := s.callerAndWorkspace(r)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var groupID sql.NullString
+	err = s.store.db.QueryRowContext(r.Context(), `
+		select group_id from workspace_invites where id = ? and workspace_id = ? and status = 'pending'`,
+		r.PathValue("id"), ws.ID).Scan(&groupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, notFound("invite_not_found", "الدعوة مش موجودة أو اتقبلت."))
+		return
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if groupID.Valid && groupID.String != "" {
+		access, err := s.store.loadGroupAccess(r.Context(), ws, caller.UID, groupID.String)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if err := access.require(CapManageMembers); err != nil {
+			writeError(w, err)
+			return
+		}
+	} else if _, err := s.store.requireAdmin(r.Context(), ws.ID, caller.UID); err != nil {
+		writeError(w, err)
+		return
+	}
+	if _, err := s.store.db.ExecContext(r.Context(),
+		`update workspace_invites set status = 'revoked' where id = ? and status = 'pending'`,
+		r.PathValue("id")); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 // GET /v1/invites/{id} — what the invite screen shows before accepting. Only
 // the invitee may read it: the address must match the caller's verified
 // e-mail, so an invite id alone reveals nothing.

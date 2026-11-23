@@ -93,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	private.HandleFunc("POST /v1/tasks", s.handleCreateTask)
 	private.HandleFunc("PATCH /v1/tasks/{id}/status", s.handleUpdateTaskStatus)
 	private.HandleFunc("DELETE /v1/tasks/{id}", s.handleDeleteTask)
+	private.HandleFunc("DELETE /v1/invites/{id}", s.handleCancelInvite)
 	private.HandleFunc("POST /v1/tasks/{id}/comments", s.handleAddComment)
 	private.HandleFunc("POST /v1/tasks/{id}/subtasks", s.handleAddSubtask)
 	private.HandleFunc("PATCH /v1/subtasks/{sid}", s.handleToggleSubtask)

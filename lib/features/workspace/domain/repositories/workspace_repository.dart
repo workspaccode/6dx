@@ -12,7 +12,8 @@ abstract interface class WorkspaceRepository {
   });
 
   /// Updates the status of a pull request (approve / merge).
-  Future<void> reviewPullRequest(int number, {required bool approve});
+  Future<void> reviewPullRequest(int number,
+      {required bool approve, String? repository});
 
   /// Acknowledges the daily time entries.
   Future<void> approveTimeEntries();

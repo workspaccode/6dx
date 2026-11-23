@@ -70,18 +70,26 @@
 
 ### المرحلة ب: السيرفر
 
-- [ ] **المفتاح الفريد للـ PRs** يبقى `(workspace_id, repository_full_name, number)`، وده migration جديد.
-- [ ] **الـ developer مايعتمدش الـ PR بتاعه**، ومفيش اعتماد فوق `merged`/`closed`.
-- [ ] **الـ webhook:**
+- [x] **المفتاح الفريد للـ PRs** يبقى `(workspace_id, repository, number)` (migration `0010`). الـ PR بيتربط بالمشروع من الـ repository، والتطبيق بيبعت `?repository=` لو الرقم متكرر.
+- [x] **الـ developer مايعتمدش الـ PR بتاعه**، ومفيش اعتماد فوق `merged`/`closed`.
+- [x] **الـ webhook:**
   - dedupe بـ `X-GitHub-Delivery` (جدول `github_deliveries`).
   - مفيش كتابة فوق حالة أحدث (`updated_at`).
   - أحداث `installation` (لو الـ App اتشال أو اتعمله suspend) تتعامل صح.
-- [ ] **إلغاء الدعوة:** `DELETE /v1/invites/{id}`.
-- [ ] **`handleApproveTimeEntries`** يعتمد فعلًا.
-- [ ] **الوقت يتخزن بصيغة ثابتة** (`2006-01-02T15:04:05.000000Z`) علشان الترتيب يبقى صح. وده محتاج migration لتطبيع القيم القديمة.
-- [ ] **الأدمن مايقدرش ينزّل أدمن تاني** في الـ workspace، والـ bootstrap يتعمل جوه transaction.
-- [ ] **indexes ناقصة:** `tasks(assignee_uid)`، و `task_comments(task_id)`، و `task_subtasks(task_id)`.
-- [ ] **سياسة تنضيف** لـ `activity_events`.
+- [x] **إلغاء الدعوة:** `DELETE /v1/invites/{id}`.
+- [x] **`handleApproveTimeEntries`** يعتمد فعلًا.
+- [x] **الوقت يتخزن بصيغة ثابتة** (`2006-01-02T15:04:05.000Z`) علشان الترتيب يبقى صح. وده محتاج migration لتطبيع القيم القديمة.
+- [x] **الأدمن مايقدرش ينزّل أدمن تاني** في الـ workspace، والـ bootstrap يتعمل جوه transaction.
+- [x] **indexes ناقصة:** `tasks(assignee_uid)`، و `task_comments(task_id)`، و `task_subtasks(task_id)`.
+- [x] **سياسة تنضيف** لـ `activity_events`: بتتمسح بعد سنة، مرة كل يوم.
+
+اتعمل (2026-11-23): الاختبارات في `backend/internal/api/stability_integration_test.go`، والـ migration اتجرب على نسخة من `6dx.db` الحقيقية ونجح (`integrity_check` = ok).
+- الـ delivery بيتسجل بعد ما يتعالج بنجاح بس، علشان لو فشل (500) GitHub يعيده ويتعالج.
+- PR قديم من قبل `0010` الـ repository بتاعه مش معروف (`''`)، وأول webhook بنفس الرقم بيستلمه بدل ما يعمل صف تاني. الـ `suspend` مابيمسحش ربط الـ App، الـ `deleted` بس اللي بيمسحه.
+- **حدود معروفة:**
+  - PR قديم لسه ماجالوش webhook مالوش `author_github_id`، فقاعدة «صاحب الـ PR مايراجعوش» مش بتشتغل عليه لحد أول تحديث.
+  - حدثين على نفس الـ PR في نفس الثانية ممكن يتطبقوا بالعكس، لأن `updated_at` بتاع GitHub دقته ثانية.
+- دور المجموعة منفصل عن دور الـ workspace: لو أدمن اتنزّل developer، دوره في المجموعة الافتراضية بيفضل زي ما هو (والدعوة اللي على المجموعة دي بيقدر يلغيها لو عنده `members.manage`).
 
 ### المرحلة ج: الحماية
 

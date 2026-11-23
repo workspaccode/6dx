@@ -573,29 +573,63 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event := r.Header.Get("X-GitHub-Event")
-	if event != "pull_request" {
+	// Each delivery once: GitHub retries, and a redelivery from the settings
+	// page would replay an old state over a newer one.
+	// It is recorded once handled: a delivery that failed here (500) is
+	// retried by GitHub and must then be processed.
+	delivery := r.Header.Get("X-GitHub-Delivery")
+	if len(delivery) > 100 {
+		delivery = ""
+	}
+	if delivery != "" {
+		var seen int
+		_ = s.store.db.QueryRowContext(r.Context(),
+			`select count(*) from github_deliveries where delivery_id = ?`, delivery).Scan(&seen)
+		if seen > 0 {
+			writeJSON(w, http.StatusOK, map[string]string{"ignored": "duplicate_delivery"})
+			return
+		}
+	}
+	switch event {
+	case "installation":
+		if s.handleInstallationEvent(w, r, raw) {
+			s.markDelivered(r, delivery, event)
+		}
+		return
+	case "pull_request":
+	default:
 		writeJSON(w, http.StatusOK, map[string]string{"ignored": event})
 		return
 	}
 
 	var payload struct {
-		Action       string `json:"action"`
-		Number       int    `json:"number"`
-		Repository   struct{ FullName string `json:"full_name"` } `json:"repository"`
-		Installation struct{ ID int64 `json:"id"` } `json:"installation"`
-		PullRequest  struct {
+		Action     string `json:"action"`
+		Number     int    `json:"number"`
+		Repository struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+		Installation struct {
+			ID int64 `json:"id"`
+		} `json:"installation"`
+		PullRequest struct {
 			Number    int    `json:"number"`
 			Title     string `json:"title"`
 			State     string `json:"state"`
 			Merged    bool   `json:"merged"`
 			Additions int    `json:"additions"`
 			Deletions int    `json:"deletions"`
-			User      struct{ Login string `json:"login"` } `json:"user"`
-			Head      struct {
+			UpdatedAt string `json:"updated_at"`
+			User      struct {
+				Login string `json:"login"`
+				ID    int64  `json:"id"`
+			} `json:"user"`
+			Head struct {
 				Ref string `json:"ref"`
 				SHA string `json:"sha"`
 			} `json:"head"`
-			Base struct{ Ref string `json:"ref"` } `json:"base"`
+			Base struct {
+				Ref string `json:"ref"`
+			} `json:"base"`
 		} `json:"pull_request"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
@@ -625,34 +659,122 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 		number = payload.Number
 	}
 
+	// The project whose repository this is (in this workspace): the PR then
+	// belongs to that project's group. An unknown repository keeps no project.
+	repo := payload.Repository.FullName
+	var projectID any
+	var pid string
+	if err := s.store.db.QueryRowContext(r.Context(), `
+		select r.project_id from repositories r join projects p on p.id = r.project_id
+		where lower(r.full_name) = lower(?) and p.workspace_id = ? order by r.id limit 1`,
+		repo, workspaceID).Scan(&pid); err == nil {
+		projectID = pid
+	}
+	// GitHub's own timestamp orders the events: an older one (retried late)
+	// never overwrites a newer state.
+	var updated any
+	if t, err := time.Parse(time.RFC3339, payload.PullRequest.UpdatedAt); err == nil {
+		updated = t.UTC().Format(timeLayout)
+	}
+	var authorID any
+	if payload.PullRequest.User.ID != 0 {
+		authorID = payload.PullRequest.User.ID
+	}
+
+	// A PR from before 0010 whose repository was unknown ('') is this one
+	// (the old key allowed one row per number): claim it instead of adding a
+	// second row next to it.
+	if _, err := s.store.db.ExecContext(r.Context(), `
+		update pull_requests set repository = ?
+		where workspace_id = ? and number = ? and repository = ''
+		  and not exists (select 1 from pull_requests p2
+		                  where p2.workspace_id = ? and p2.number = ? and p2.repository = ?)`,
+		repo, workspaceID, number, workspaceID, number, repo); err != nil {
+		slog.Error("claim legacy pull request", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "sync_failed"})
+		return
+	}
+
 	now := nowString()
 	if _, err := s.store.db.ExecContext(r.Context(), `
 		insert into pull_requests
-		  (id, workspace_id, number, title, author, branch, base_branch, state,
-		   additions, deletions, last_commit, created_at)
-		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		on conflict (workspace_id, number) do update set
-		  title      = excluded.title,
-		  author     = excluded.author,
-		  branch     = excluded.branch,
+		  (id, workspace_id, project_id, repository, number, title, author, author_github_id,
+		   branch, base_branch, state, additions, deletions, last_commit, gh_updated_at, created_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		on conflict (workspace_id, repository, number) do update set
+		  project_id  = coalesce(excluded.project_id, pull_requests.project_id),
+		  title       = excluded.title,
+		  author      = excluded.author,
+		  author_github_id = coalesce(excluded.author_github_id, pull_requests.author_github_id),
+		  branch      = excluded.branch,
 		  base_branch = excluded.base_branch,
-		  state      = excluded.state,
-		  additions  = excluded.additions,
-		  deletions  = excluded.deletions,
-		  last_commit = excluded.last_commit`,
-		newID(), workspaceID, number, payload.PullRequest.Title,
-		payload.PullRequest.User.Login, payload.PullRequest.Head.Ref,
+		  state       = excluded.state,
+		  additions   = excluded.additions,
+		  deletions   = excluded.deletions,
+		  last_commit = excluded.last_commit,
+		  gh_updated_at = excluded.gh_updated_at
+		where pull_requests.gh_updated_at is null or excluded.gh_updated_at is null
+		   or excluded.gh_updated_at >= pull_requests.gh_updated_at`,
+		newID(), workspaceID, projectID, repo, number, payload.PullRequest.Title,
+		payload.PullRequest.User.Login, authorID, payload.PullRequest.Head.Ref,
 		payload.PullRequest.Base.Ref, state, payload.PullRequest.Additions,
-		payload.PullRequest.Deletions, payload.PullRequest.Head.SHA, now,
+		payload.PullRequest.Deletions, payload.PullRequest.Head.SHA, updated, now,
 	); err != nil {
 		slog.Error("upsert pull request", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "sync_failed"})
 		return
 	}
 
+	s.markDelivered(r, delivery, event)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"synced": number, "repository": payload.Repository.FullName,
 	})
+}
+
+// markDelivered records a handled delivery (best effort: a failure only means
+// a later redelivery is processed again, which the updated_at check makes
+// harmless).
+func (s *Server) markDelivered(r *http.Request, delivery, event string) {
+	if delivery == "" {
+		return
+	}
+	if _, err := s.store.db.ExecContext(r.Context(), `
+		insert into github_deliveries (delivery_id, event, received_at) values (?, ?, ?)
+		on conflict (delivery_id) do nothing`, delivery, event, nowString()); err != nil {
+		slog.Error("record delivery", "error", err)
+	}
+}
+
+// handleInstallationEvent: the App was uninstalled or suspended on GitHub —
+// the workspace's link goes, so the app stops showing a dead installation
+// and asks to connect again. Other actions are informational.
+func (s *Server) handleInstallationEvent(w http.ResponseWriter, r *http.Request, raw []byte) bool {
+	var payload struct {
+		Action       string `json:"action"`
+		Installation struct {
+			ID int64 `json:"id"`
+		} `json:"installation"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil || payload.Installation.ID == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payload"})
+		return false
+	}
+	switch payload.Action {
+	// Only an uninstall removes the link: a suspended App comes back with
+	// "unsuspend" and must still map to its workspace (GitHub sends nothing
+	// while it is suspended).
+	case "deleted":
+		if _, err := s.store.db.ExecContext(r.Context(),
+			`delete from github_installations where installation_id = ?`, payload.Installation.ID); err != nil {
+			slog.Error("drop installation", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "sync_failed"})
+			return false
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"installation": payload.Action})
+	default:
+		writeJSON(w, http.StatusOK, map[string]string{"ignored": "installation." + payload.Action})
+	}
+	return true
 }
 
 func bhex(value string) []byte {
@@ -801,9 +923,9 @@ func (s *Server) handleGithubToken(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().UTC().Add(55 * time.Minute).Format(time.RFC3339)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"token":       token,
-		"expires_at":  expiresAt,
-		"account":     installationAccount(r, s, ws.ID),
+		"token":           token,
+		"expires_at":      expiresAt,
+		"account":         installationAccount(r, s, ws.ID),
 		"installation_id": installationID,
 	})
 }

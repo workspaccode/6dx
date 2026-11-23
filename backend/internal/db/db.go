@@ -135,4 +135,5 @@ func Migrate(ctx context.Context, database *DB) error {
 	return nil
 }
 
-func nowString() string { return time.Now().UTC().Format(time.RFC3339Nano) }
+// Fixed width, as api.nowString (string order = time order).
+func nowString() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000Z") }
