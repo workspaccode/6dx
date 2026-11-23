@@ -36,11 +36,16 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The client sees names, never the team's e-mails.
+	nameFallback := `u.email`
+	if access.IsMember && access.GroupRole == GroupGuest {
+		nameFallback = `'عضو في الفريق'`
+	}
 	query := `
 		select t.id, t.title, t.description, t.status, t.priority,
 		       t.project_id, p.name, t.label, t.branch, t.pr_number,
 		       t.due_at, t.created_at, t.state_id, t.assignee_uid,
-		       (select coalesce(nullif(u.display_name, ''), u.email) from users u where u.uid = t.assignee_uid)
+		       (select coalesce(nullif(u.display_name, ''), ` + nameFallback + `) from users u where u.uid = t.assignee_uid)
 		from tasks t
 		left join projects p on p.id = t.project_id
 		where t.workspace_id = ?`

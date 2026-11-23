@@ -20,7 +20,8 @@ const (
 )
 
 // POST /v1/tasks/{id}/comments {body} — any member who can see the task and
-// comment; the client (viewer / guest) reads only.
+// comment — the client too (decided 2026-11-23: comments are how a client
+// asks the team; everything else stays read-only for them).
 func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	caller, ws, err := s.callerAndWorkspace(r)
 	if err != nil {
@@ -37,11 +38,6 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	text := strings.TrimSpace(body.Body)
 	if text == "" || tooLong(text, maxCommentLength) {
 		writeError(w, badRequest("invalid_comment", fmt.Sprintf("التعليق لازم يكون من 1 لـ %d حرف.", maxCommentLength)))
-		return
-	}
-	// A workspace viewer is the client: read-only, as in a group (§4.5).
-	if !ws.Role.IsEditor() {
-		writeError(w, forbidden("viewer_read_only", "العميل بيتابع بس."))
 		return
 	}
 	taskID := r.PathValue("id")

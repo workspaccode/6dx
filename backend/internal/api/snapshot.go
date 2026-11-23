@@ -16,6 +16,15 @@ import (
 // SQLite has no plpgsql, so the projection is assembled here — and the JSON
 // shape is byte-for-byte the one `WorkspaceSnapshotMapper` already consumes, so
 // no screen changed.
+// emailFallback is what names a person without a display name: their
+// e-mail for the team, never for the client (a viewer sees no addresses).
+func (g snapScope) emailFallback() string {
+	if g.Role == RoleViewer {
+		return `'عضو في الفريق'`
+	}
+	return `u.email`
+}
+
 func (s *store) snapshot(ctx context.Context, workspaceID, callerUID string, g snapScope) (map[string]any, error) {
 	var (
 		name string
@@ -226,7 +235,7 @@ func (s *store) snapshotTasks(ctx context.Context, wsID string, g snapScope) ([]
 	rows, err := s.db.QueryContext(ctx, `
 		select t.id, t.key, t.title, t.description, t.status, t.priority, t.points,
 		       t.project_id, p.name, t.assignee_uid,
-		       (select coalesce(nullif(u.display_name, ''), u.email)
+		       (select coalesce(nullif(u.display_name, ''), `+g.emailFallback()+`)
 		          from users u where u.uid = t.assignee_uid),
 		       t.label, t.branch, t.pr_number, t.due_at, t.created_at, t.state_id
 		from tasks t
@@ -288,7 +297,7 @@ type taskInfo struct {
 func (s *store) snapshotTaskDetails(ctx context.Context, wsID string, g snapScope) ([]any, []any, error) {
 	commentRows, err := s.db.QueryContext(ctx, `
 		select c.id, c.task_id,
-		       (select coalesce(nullif(u.display_name, ''), u.email)
+		       (select coalesce(nullif(u.display_name, ''), `+g.emailFallback()+`)
 		          from users u where u.uid = c.author_uid),
 		       c.body, c.attachment, c.code, c.created_at
 		from task_comments c
@@ -380,7 +389,7 @@ func (s *store) snapshotDependencies(ctx context.Context, wsID string, tasks map
 func (s *store) snapshotActivity(ctx context.Context, wsID string, g snapScope) ([]any, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		select a.id, a.type, a.text,
-		       (select coalesce(nullif(u.display_name, ''), u.email)
+		       (select coalesce(nullif(u.display_name, ''), `+g.emailFallback()+`)
 		          from users u where u.uid = a.actor_uid),
 		       a.created_at
 		from activity_events a
@@ -491,7 +500,7 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapSco
 	rows, err := s.db.QueryContext(ctx, `
 		select pr.id, pr.number, pr.title, pr.author, pr.branch, pr.base_branch,
 		       pr.state, pr.checks, pr.files, pr.additions, pr.deletions,
-		       (select coalesce(nullif(u.display_name, ''), u.email)
+		       (select coalesce(nullif(u.display_name, ''), `+g.emailFallback()+`)
 		          from users u where u.uid = pr.reviewer_uid),
 		       pr.last_commit,
 		       (select t.key from tasks t where t.id = pr.task_id`+g.tasks("t")+`),

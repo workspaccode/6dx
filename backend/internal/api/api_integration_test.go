@@ -395,9 +395,9 @@ func TestTaskCommentsAndSubtasks(t *testing.T) {
 		map[string]any{"title": "T", "project_id": project["project"].(map[string]any)["id"]})
 	tid := task["task"].(map[string]any)["id"].(string)
 
-	// The client follows progress read-only (matrix §4.5): no comments.
-	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-client", ws, map[string]any{"body": "متى؟"}); status != 403 {
-		t.Errorf("client comment: %d, want 403", status)
+	// The client may ask on a task (and nothing more).
+	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-client", ws, map[string]any{"body": "متى؟"}); status != 201 {
+		t.Errorf("client comment: %d, want 201", status)
 	}
 	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-lead", ws, map[string]any{"body": "تمام"}); status != 201 {
 		t.Errorf("lead comment: %d", status)
@@ -416,8 +416,15 @@ func TestTaskCommentsAndSubtasks(t *testing.T) {
 	if status, _ := h.doWithWorkspace(t, http.MethodPatch, "/v1/subtasks/"+sid, "cs-lead", ws, map[string]any{"done": true}); status != 200 {
 		t.Errorf("toggle: %d", status)
 	}
+	// The client's view names people without their e-mails.
+	_, guestSnap := h.doInGroup(t, http.MethodGet, "/v1/workspace/snapshot", "cs-client", ws, gid, nil)
+	for _, raw := range guestSnap["comments"].([]any) {
+		if author, _ := raw.(map[string]any)["author"].(string); strings.Contains(author, "@") {
+			t.Errorf("the client sees an e-mail: %q", author)
+		}
+	}
 	_, snap := h.doInGroup(t, http.MethodGet, "/v1/workspace/snapshot", "cs-lead", ws, gid, nil)
-	if len(snap["comments"].([]any)) != 1 || len(snap["subtasks"].([]any)) != 1 ||
+	if len(snap["comments"].([]any)) != 2 || len(snap["subtasks"].([]any)) != 1 ||
 		snap["subtasks"].([]any)[0].(map[string]any)["is_done"] != true {
 		t.Errorf("snapshot comments/subtasks: %v %v", snap["comments"], snap["subtasks"])
 	}

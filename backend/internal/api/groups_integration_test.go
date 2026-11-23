@@ -173,8 +173,8 @@ func TestHardwareRolesGetTheirCapabilities(t *testing.T) {
 		[]string{"bom.release", "gate.decide", "members.manage"})
 	check("hw-tech", []string{"tests.record", "ecr.submit", "inventory.move"},
 		[]string{"eco.submit", "bom.edit", "gate.decide"})
-	check("hw-client", []string{"group.view"},
-		[]string{"tasks.edit", "comments.write", "bom.edit", "members.manage"})
+	check("hw-client", []string{"group.view", "comments.write"},
+		[]string{"tasks.edit", "bom.edit", "members.manage"})
 
 	// A guest sees names, not the team's e-mails.
 	_, members := h.doWithWorkspace(t, http.MethodGet, "/v1/groups/"+gid+"/members", "hw-client", wsID, nil)

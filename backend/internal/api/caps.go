@@ -150,13 +150,16 @@ func capabilitiesFor(t GroupType, groupRole GroupRole, functionalRole string) ma
 		caps[c] = true
 	}
 	if groupRole == GroupGuest {
-		// A guest never edits, whatever functional role was stored.
-		allowed := map[Capability]bool{CapViewGroup: true, CapClientDecide: true, CapViewFinance: true}
+		// A guest never edits, whatever functional role was stored. They may
+		// comment on tasks: that is how a client asks the team a question.
+		allowed := map[Capability]bool{CapViewGroup: true, CapClientDecide: true, CapViewFinance: true,
+			CapComment: true}
 		for c := range caps {
 			if !allowed[c] {
 				delete(caps, c)
 			}
 		}
+		caps[CapComment] = true
 		return caps
 	}
 	caps[CapComment] = true
