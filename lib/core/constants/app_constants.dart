@@ -10,6 +10,7 @@ class AppConstants {
   static const String keyAccessToken = 'access_token';
   static const String keyUser = 'user';
   static const String keyOnboardingDone = 'onboarding_done';
+  static const String keyInstallMarker = 'install_marker';
   static const String keyLocale = 'locale';
   static const String keyThemeMode = 'theme_mode';
   static const String keyLastGroup = 'last_group_id';

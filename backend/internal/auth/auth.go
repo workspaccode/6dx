@@ -76,6 +76,9 @@ type Verifier struct {
 
 	mu    sync.Mutex
 	cache map[string]githubGrant
+	// epoch counts revocations: a grant checked before one (still valid at
+	// GitHub then) is not cached after it, so it cannot outlive the revoke.
+	epoch uint64
 }
 
 type githubGrant struct {
@@ -186,6 +189,7 @@ func (v *Verifier) verifyGitHubGrant(ctx context.Context, token string) (*Caller
 	if cached, ok := v.cached(key); ok {
 		return cached, nil
 	}
+	epoch := v.currentEpoch()
 
 	appUserID, err := v.checkAppGrant(ctx, token)
 	if err != nil {
@@ -239,7 +243,7 @@ func (v *Verifier) verifyGitHubGrant(ctx context.Context, token string) (*Caller
 		caller.DisplayName = profile.Login
 	}
 
-	v.store(key, caller)
+	v.storeAt(key, caller, epoch)
 	return caller, nil
 }
 
@@ -345,6 +349,10 @@ func (v *Verifier) cached(key string) (*Caller, bool) {
 func (v *Verifier) store(key string, caller *Caller) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.storeLocked(key, caller)
+}
+
+func (v *Verifier) storeLocked(key string, caller *Caller) {
 	// Drop expired entries so a long-running server does not grow forever.
 	now := time.Now()
 	for candidate, grant := range v.cache {
@@ -353,6 +361,83 @@ func (v *Verifier) store(key string, caller *Caller) {
 		}
 	}
 	v.cache[key] = githubGrant{caller: caller, expires: now.Add(githubGrantTTL)}
+}
+
+// RevokeGitHubToken signs a device out for good: GitHub deletes the token
+// (DELETE /applications/{client_id}/token, Basic auth with the app
+// credentials), and the cached grant goes with it, so the token stops working
+// here at once instead of after githubGrantTTL. A token GitHub no longer knows
+// (404) counts as revoked. A Firebase ID token has nothing to revoke.
+func (v *Verifier) RevokeGitHubToken(ctx context.Context, token string) error {
+	if token == "" || looksLikeJWT(token) {
+		return nil
+	}
+	v.forget(hashToken(token))
+	// A request verified while the DELETE is in flight must not re-cache it.
+	defer v.forget(hashToken(token))
+	if v.githubClientID == "" || v.githubClientSecret == "" {
+		return errors.New("github app credentials are not configured")
+	}
+	body, err := json.Marshal(map[string]string{"access_token": token})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		v.githubAPIBase+"/applications/"+url.PathEscape(v.githubClientID)+"/token",
+		bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.SetBasicAuth(v.githubClientID, v.githubClientSecret)
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	response, err := v.httpClient.Do(request)
+	if err != nil {
+		return fmt.Errorf("github token revoke: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	switch response.StatusCode {
+	case http.StatusNoContent, http.StatusOK, http.StatusNotFound:
+		return nil
+	}
+	return fmt.Errorf("github token revoke: unexpected status %d", response.StatusCode)
+}
+
+// EvictGitHubUser drops every cached grant of a GitHub account: the user
+// revoked the app on GitHub (the github_app_authorization webhook), so their
+// tokens must stop working now, not when the cache entry expires.
+func (v *Verifier) EvictGitHubUser(githubID int64) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.epoch++
+	for key, grant := range v.cache {
+		if grant.caller != nil && grant.caller.GitHubID != nil && *grant.caller.GitHubID == githubID {
+			delete(v.cache, key)
+		}
+	}
+}
+
+func (v *Verifier) forget(key string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.epoch++
+	delete(v.cache, key)
+}
+
+func (v *Verifier) currentEpoch() uint64 {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.epoch
+}
+
+// storeAt caches the grant unless a revocation happened since epoch was read.
+func (v *Verifier) storeAt(key string, caller *Caller, epoch uint64) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.epoch == epoch {
+		v.storeLocked(key, caller)
+	}
 }
 
 // looksLikeJWT reports whether the token is a Firebase ID token (three

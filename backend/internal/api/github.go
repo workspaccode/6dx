@@ -134,6 +134,44 @@ func (b *githubBroker) verifyState(state string) (*statePayload, bool) {
 	}, true
 }
 
+// spendState consumes a non-empty state and writes the error page when it
+// was used before (or the database fails). It reports whether to go on.
+func (s *Server) spendState(w http.ResponseWriter, r *http.Request, rawState string) bool {
+	if rawState == "" {
+		return true
+	}
+	fresh, err := s.consumeState(r, rawState)
+	if err != nil {
+		slog.Error("consume github state", "error", err)
+		githubHTML(w, "حصل خطأ — أعد المحاولة من التطبيق.")
+		return false
+	}
+	if !fresh {
+		githubHTML(w, "الرابط ده اتستخدم قبل كده — ابدأ الربط من التطبيق تاني.")
+		return false
+	}
+	return true
+}
+
+// consumeState records a state as used and reports whether it was fresh.
+// States expire after stateTTL, so older rows are no longer needed.
+func (s *Server) consumeState(r *http.Request, rawState string) (bool, error) {
+	sum := sha256.Sum256([]byte(rawState))
+	cutoff := time.Now().UTC().Add(-2 * stateTTL).Format(timeLayout)
+	if _, err := s.store.db.ExecContext(r.Context(),
+		`delete from github_state_uses where used_at < ?`, cutoff); err != nil {
+		return false, err
+	}
+	result, err := s.store.db.ExecContext(r.Context(), `
+		insert into github_state_uses (state_hash, used_at) values (?, ?)
+		on conflict (state_hash) do nothing`, hex.EncodeToString(sum[:]), nowString())
+	if err != nil {
+		return false, err
+	}
+	n, err := result.RowsAffected()
+	return n == 1, err
+}
+
 func (b *githubBroker) signRecovery(installationID int64) string {
 	payload := fmt.Sprintf("r1.%d.%d", installationID, time.Now().UnixMilli())
 	return payload + "." + b.hmac(payload)
@@ -281,6 +319,11 @@ func (s *Server) handleGithubSetup(w http.ResponseWriter, r *http.Request) {
 	// A missing state is not fatal: GitHub does not promise to echo it back.
 	var next, stateKind string
 	if state, ok := s.github.verifyState(r.URL.Query().Get("state")); ok {
+		// The app's state is spent here: re-signing it must not mint any
+		// number of fresh callback states from one link.
+		if !s.spendState(w, r, r.URL.Query().Get("state")) {
+			return
+		}
 		next = s.github.signState(state.WorkspaceID, state.UserID, installationID, state.IssuedAt)
 		stateKind = "signed"
 	} else {
@@ -340,7 +383,6 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 		githubHTML(w, "انتهت صلاحية الطلب — أعد المحاولة من التطبيق.")
 		return
 	}
-
 	userToken, err := s.exchangeCode(r, code)
 	if err != nil {
 		slog.Error("github code exchange failed",
@@ -348,6 +390,13 @@ func (s *Server) handleGithubCallback(w http.ResponseWriter, r *http.Request) {
 			"redirect_uri", s.cfg.GitHubOAuthRedirect,
 		)
 		githubHTML(w, "تعذّر استبدال رمز التفويض.")
+		return
+	}
+	// A state is spent by the first callback whose code GitHub accepted: the
+	// state paired with another code (a leaked link) is refused. It is spent
+	// only after the exchange, so a network failure before it can be retried.
+	// Without a state only the code's own single use at GitHub protects it.
+	if !s.spendState(w, r, rawState) {
 		return
 	}
 
@@ -435,7 +484,7 @@ func (s *Server) exchangeCode(r *http.Request, code string) (string, error) {
 		"redirect_uri":  {s.cfg.GitHubOAuthRedirect},
 	}
 	request, err := http.NewRequest(http.MethodPost,
-		githubOAuth+"/access_token", strings.NewReader(form.Encode()))
+		s.githubOAuthBase+"/login/oauth/access_token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
 	}
@@ -591,6 +640,27 @@ func (s *Server) handleGithubWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	switch event {
+	case "github_app_authorization":
+		// The user revoked the app on GitHub: their tokens stop working here
+		// now instead of when the cached grant expires.
+		var payload struct {
+			Action string `json:"action"`
+			Sender struct {
+				ID int64 `json:"id"`
+			} `json:"sender"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_payload"})
+			return
+		}
+		if payload.Action == "revoked" && payload.Sender.ID != 0 {
+			if ev, ok := s.verifier.(githubRevoker); ok {
+				ev.EvictGitHubUser(payload.Sender.ID)
+			}
+		}
+		s.markDelivered(r, delivery, event)
+		writeJSON(w, http.StatusOK, map[string]string{"authorization": payload.Action})
+		return
 	case "installation":
 		if s.handleInstallationEvent(w, r, raw) {
 			s.markDelivered(r, delivery, event)

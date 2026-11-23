@@ -21,6 +21,7 @@ import '../features/tasks/presentation/pages/task_detail_page.dart';
 import '../features/tasks/presentation/pages/task_extras_page.dart';
 import '../features/tasks/presentation/pages/task_views_page.dart';
 import '../features/tasks/presentation/pages/new_task_page.dart';
+import '../core/security/secure_screen.dart';
 import '../features/members/presentation/pages/member_pages.dart';
 import '../features/reviews/presentation/pages/review_pages.dart';
 import '../features/team/presentation/pages/team_pages.dart';
@@ -224,7 +225,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.login,
-        builder: (_, __) => const LoginPage(),
+        builder: (_, __) => const SecureScreen(child: LoginPage()),
       ),
 
       // Bottom navigation shell — each branch keeps its own navigation stack.
@@ -379,9 +380,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.members,
-        builder: (_, __) => const ActiveGroupGuard(
-          requires: Caps.manageMembers,
-          child: MembersPage(),
+        builder: (_, __) => const SecureScreen(
+          child: ActiveGroupGuard(
+            requires: Caps.manageMembers,
+            child: MembersPage(),
+          ),
         ),
       ),
       GoRoute(
@@ -445,7 +448,9 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: 'members',
-            builder: (_, state) => GroupMembersPage(gid: state.pathParameters['gid']!),
+            builder: (_, state) => SecureScreen(
+              child: GroupMembersPage(gid: state.pathParameters['gid']!),
+            ),
             routes: [
               GoRoute(
                 path: 'invite',

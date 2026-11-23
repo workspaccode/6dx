@@ -252,3 +252,70 @@ func TestMiddlewareRejectsAMissingHeader(t *testing.T) {
 		t.Errorf("body = %q", recorder.Body.String())
 	}
 }
+
+func TestRevokeGitHubTokenDeletesAndForgets(t *testing.T) {
+	revoked := false
+	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/applications/"+testClientID+"/token" {
+			if user, pass, _ := r.BasicAuth(); user != testClientID || pass != testClientSecret {
+				http.Error(w, "bad app credentials", http.StatusUnauthorized)
+				return
+			}
+			revoked = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.URL.Path == "/user" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 4711, "login": "sami"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]any{})
+	})
+	if _, err := verifier.Verify(context.Background(), "gho_out"); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifier.RevokeGitHubToken(context.Background(), "gho_out"); err != nil || !revoked {
+		t.Fatalf("revoke: %v (called %v)", err, revoked)
+	}
+	if _, ok := verifier.cached(hashToken("gho_out")); ok {
+		t.Error("revoked token still cached")
+	}
+}
+
+func TestEvictGitHubUserDropsOnlyThatAccount(t *testing.T) {
+	verifier := newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {})
+	a, b := int64(1), int64(2)
+	verifier.store("ka", &Caller{UID: "1", GitHubID: &a})
+	verifier.store("ka2", &Caller{UID: "1", GitHubID: &a})
+	verifier.store("kb", &Caller{UID: "2", GitHubID: &b})
+	verifier.EvictGitHubUser(1)
+	if _, ok := verifier.cached("ka"); ok {
+		t.Error("evicted account still cached")
+	}
+	if _, ok := verifier.cached("ka2"); ok {
+		t.Error("second token of the account still cached")
+	}
+	if _, ok := verifier.cached("kb"); !ok {
+		t.Error("another account was evicted")
+	}
+}
+
+// A revoke that lands while a grant is being checked (still valid at GitHub
+// at that moment) must not leave the grant cached.
+func TestRevokeDuringVerifyIsNotCached(t *testing.T) {
+	var verifier *Verifier
+	verifier = newGitHubVerifier(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/user" {
+			verifier.EvictGitHubUser(4711)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 4711, "login": "sami"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode([]any{})
+	})
+	if _, err := verifier.Verify(context.Background(), "gho_race"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := verifier.cached(hashToken("gho_race")); ok {
+		t.Error("grant checked before the revoke was cached after it")
+	}
+}

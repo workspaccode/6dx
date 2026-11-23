@@ -5,6 +5,9 @@ on:
     branches: [master, 'v*']
   pull_request:
 
+# Actions are pinned to a commit SHA (a moved tag cannot swap the code that
+# runs); Dependabot (.github/dependabot.yml) proposes the updates.
+
 # Least privilege for the default GITHUB_TOKEN: the jobs only read the code.
 permissions:
   contents: read
@@ -14,9 +17,9 @@ jobs:
   app:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           # pubspec.lock requires flutter >= 3.47.0 / dart >= 3.13.0.
           flutter-version: '3.47.x'
@@ -24,7 +27,7 @@ jobs:
           cache: true
 
       - run: flutter pub get
-      - run: flutter analyze
+      - run: flutter analyze --fatal-infos
       - run: flutter test
 
   # Go backend: build, vet and the integration suite. The tests create their
@@ -35,9 +38,9 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           # Latest stable patch release: go.mod's `go 1.26.0` is the
           # minimum, and older patch releases carry standard-library CVEs.

@@ -93,16 +93,18 @@
 
 ### المرحلة ج: الحماية
 
-- [ ] **الـ `state` بتاع ربط GitHub يستخدم مرة واحدة** (nonce في جدول).
-- [ ] **الخروج يعمل revoke للتوكن على GitHub** (`POST /v1/auth/signout`).
-- [ ] **التوكن بعد ما صلاحيته تتسحب** مايفضلش شغال 5 دقايق (الكاش).
-- [ ] **`FLAG_SECURE`** على شاشة الـ device code والأعضاء والفواتير.
-- [ ] **iOS:** الـ keychain يتمسح مع التطبيق.
-- [ ] **الويب:** CSP في `index.html`، وتخزين التوكن فيه.
-- [ ] **CI:**
-  - الـ actions تتثبّت بالـ SHA.
+- [x] **الـ `state` بتاع ربط GitHub يستخدم مرة واحدة**: جدول `github_state_uses` (migration `0011`). الـ `/github/setup` بيصرف state التطبيق، والـ callback بيصرف الـ state بعد ما GitHub يقبل الـ code (فلو النت وقع قبلها، إعادة المحاولة تشتغل). **حد معروف:** الـ callback من غير state (مسار التثبيت المباشر) حمايته الوحيدة إن الـ `code` بيستخدم مرة واحدة على GitHub.
+- [x] **الخروج يعمل revoke للتوكن على GitHub** (`POST /v1/auth/signout`). التطبيق بيطلبه قبل ما يمسح التوكن، ولو فشل أو مفيش نت بيخرج محليًا برضه.
+- [x] **التوكن بعد ما صلاحيته تتسحب** مايفضلش شغال 5 دقايق: الخروج بيشيله من الكاش، والـ webhook `github_app_authorization` (revoked) بيشيل كل توكنات الحساب. وفيه عدّاد (epoch)، فالتوكن اللي كان بيتراجع لحظة الـ revoke مابيرجعش الكاش. الـ TTL فضل 5 دقايق، لأن تقليله بيصرف حد الـ API بتاع الـ app على GitHub.
+- [x] **`FLAG_SECURE`** (Android) على شاشة الدخول (الـ device code) وشاشتين الأعضاء، عن طريق `SecureScreen`. شاشة الفواتير متوقفة (parked)، ولما ترجع تتلف بـ `SecureScreen`.
+- [x] **iOS / macOS:** أول تشغيل بعد التثبيت بيمسح الـ keychain، لأنه بيفضل بعد حذف التطبيق. ولو الـ keychain عمل error، التشغيل بيكمل عادي. الترقية مابتعملش خروج (لو فيه أي إعداد محفوظ يبقى ترقية). Android مش محتاج حاجة: التخزين بيتمسح مع التطبيق، والـ backup مقفول.
+- [x] **الويب:** CSP في `index.html` (مفيش scripts inline ولا من برة، و`wasm-unsafe-eval` للـ CanvasKit)، واتجرب على build حقيقي من غير أي violation. **حد معروف:** التوكن على الويب في الـ browser storage، والـ CSP هو الحماية. الحل الكامل (session بـ cookie `HttpOnly` من السيرفر) مع نسخة الويب بعد الخطة.
+- [x] **CI:**
+  - الـ actions متثبّتة بالـ SHA (checkout v4.4.0، flutter-action v2.23.0، setup-go v5.6.0).
   - `flutter analyze --fatal-infos`.
   - Dependabot.
+
+اتعمل (2026-11-24): الاختبارات في `backend/internal/auth/auth_test.go` و `backend/internal/api/stagec_integration_test.go`. الـ migration اتجرب على نسخة من `6dx.db`، والـ APK بيتبني.
 
 ### المرحلة د: جاهزية الإصدار
 

@@ -11,6 +11,14 @@ class LocalStorageService {
   static Future<LocalStorageService> create() async =>
       LocalStorageService(await SharedPreferences.getInstance());
 
+  /// False only on the first launch after an install: the app's preferences
+  /// go with the app, unlike the iOS keychain. Any existing preference means
+  /// an upgrade of an installed app, which counts as marked.
+  bool get installMarked =>
+      _prefs.getBool(AppConstants.keyInstallMarker) ?? _prefs.getKeys().isNotEmpty;
+
+  Future<void> markInstalled() => _prefs.setBool(AppConstants.keyInstallMarker, true);
+
   bool get onboardingDone => _prefs.getBool(AppConstants.keyOnboardingDone) ?? false;
 
   Future<void> setOnboardingDone(bool value) =>

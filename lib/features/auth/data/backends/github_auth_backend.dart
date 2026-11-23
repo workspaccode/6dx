@@ -110,8 +110,18 @@ class GithubAuthBackend implements AuthBackend {
   @override
   Future<void> signOut() async {
     AppLogger.action(_tag, 'sign-out');
-    // The grant is deleted locally only: revoking it on GitHub needs the OAuth
-    // app **client secret**, which by design never ships inside the app.
+    // The API revokes the token at GitHub (it holds the client secret, which
+    // never ships in the app), so a copy left on the device or in a backup
+    // stops working. Offline or failing, the local sign-out still happens.
+    final token = await _secureStorage.readAccessToken();
+    if (token != null && token.isNotEmpty) {
+      try {
+        await _github.revokeToken(token);
+        AppLogger.action(_tag, 'sign-out: token revoked');
+      } catch (error) {
+        AppLogger.action(_tag, 'sign-out: revoke failed, signing out locally', error);
+      }
+    }
     await _secureStorage.deleteAccessToken();
   }
 

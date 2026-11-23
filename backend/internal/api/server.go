@@ -83,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	// --- authenticated -----------------------------------------------------
 	private := http.NewServeMux()
 	private.HandleFunc("GET /v1/me", s.handleMe)
+	private.HandleFunc("POST /v1/auth/signout", s.handleSignOut)
 	private.HandleFunc("GET /v1/workspace/snapshot", s.handleSnapshot)
 
 	private.HandleFunc("GET /v1/projects", s.handleListProjects)

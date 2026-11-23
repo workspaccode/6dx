@@ -24,6 +24,11 @@ const testWebhookSecret = "hook-secret"
 // newGitHubHarness is newHarness with a GitHub App configured (a throwaway
 // key), so the webhook endpoint is live.
 func newGitHubHarness(t *testing.T) *harness {
+	h, _ := newGitHubServer(t)
+	return h
+}
+
+func newGitHubServer(t *testing.T) (*harness, *Server) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -44,12 +49,22 @@ func newGitHubHarness(t *testing.T) *harness {
 		GitHubClientID: "cid", GitHubClientSecret: "csecret",
 	}
 	srv := New(cfg, database, fakeVerifier{})
+	// GitHub's OAuth host is a stub that refuses every code: the tests here
+	// stop before a real exchange.
+	oauth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The code exchange succeeds; the next GitHub call (the profile) then
+		// fails, after the state was spent.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"gho_stub"}`))
+	}))
+	srv.githubOAuthBase = oauth.URL
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(func() {
 		ts.Close()
+		oauth.Close()
 		database.Close()
 	})
-	return &harness{server: ts, database: database}
+	return &harness{server: ts, database: database}, srv
 }
 
 func (h *harness) webhook(t *testing.T, event, delivery string, payload any) (int, map[string]any) {

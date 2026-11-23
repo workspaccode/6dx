@@ -117,6 +117,19 @@ class GithubAuthDataSource {
     return const <String, dynamic>{};
   }
 
+  /// Asks the API to revoke [token] at GitHub (it holds the app secret the
+  /// revoke needs). Best effort: sign-out never waits on it for long.
+  Future<void> revokeToken(String token) async {
+    await _dio.post<dynamic>(
+      '/v1/auth/signout',
+      options: Options(
+        headers: {'Authorization': 'Bearer $token'},
+        sendTimeout: const Duration(seconds: 5),
+        receiveTimeout: const Duration(seconds: 5),
+      ),
+    );
+  }
+
   Map<String, String> _githubHeaders(String token) => {
         'Authorization': 'Bearer $token',
         'Accept': 'application/vnd.github+json',

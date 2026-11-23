@@ -17,6 +17,15 @@
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
+  <!--
+    Content Security Policy. On the web the GitHub token sits in browser
+    storage, so an injected script is the main threat: no inline or foreign
+    scripts run. 'wasm-unsafe-eval' is what CanvasKit/skwasm need; gstatic
+    serves CanvasKit and the fallback fonts. connect-src allows any HTTPS host
+    because the API address is set at build time (API_BASE_URL).
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="6DX is a mobile and web project management app with GitHub integration.">
 

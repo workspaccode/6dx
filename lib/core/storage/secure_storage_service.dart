@@ -25,6 +25,17 @@ class SecureStorageService {
 
   Future<void> writeUser(String user) => _write(AppConstants.keyUser, user);
 
+  /// Removes everything this app stored. Run on the first launch after an
+  /// install: the iOS keychain outlives an uninstall, and a reinstalled app
+  /// must not sign in with the previous owner's token.
+  Future<void> wipe() async {
+    try {
+      await _storage.deleteAll();
+    } catch (e) {
+      AppLogger.w(_tag, 'Failed to wipe', e);
+    }
+  }
+
   Future<String?> _read(String key) async {
     try {
       return await _storage.read(key: key);

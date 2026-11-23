@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +9,7 @@ import 'app/app_providers.dart';
 import 'core/config/app_config.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/storage/local_storage_service.dart';
+import 'core/storage/secure_storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +23,7 @@ Future<void> main() async {
   // the Go backend verifies the resulting grant, so nothing here depends on a
   // platform specific auth plugin.
   final localStorage = await LocalStorageService.create();
+  await _wipeKeychainAfterReinstall(localStorage);
 
   runApp(
     ProviderScope(
@@ -35,6 +38,24 @@ Future<void> main() async {
   // launch: on a slow device (or when the app is started by the
   // BOOT_COMPLETED broadcast) it would ANR the whole process.
   unawaited(_initNotifications());
+}
+
+/// The iOS/macOS keychain outlives an uninstall: the first launch of a fresh
+/// install clears it, so the app never signs in with a previous owner's token.
+/// Android needs nothing (its storage goes with the app, and backup is off).
+/// Never blocks the launch: a keychain error only skips the wipe.
+Future<void> _wipeKeychainAfterReinstall(LocalStorageService localStorage) async {
+  final apple = !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+  try {
+    if (apple && !localStorage.installMarked) {
+      await SecureStorageService().wipe();
+    }
+    await localStorage.markInstalled();
+  } catch (error) {
+    debugPrint('6DX: install check failed — $error');
+  }
 }
 
 Future<void> _initNotifications() async {
