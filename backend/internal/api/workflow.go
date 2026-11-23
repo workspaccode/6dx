@@ -356,26 +356,22 @@ func (s *Server) handleUpdateWorkflowState(w http.ResponseWriter, r *http.Reques
 }
 
 // requireCoreStates: a group always has a live backlog state and a live done
-// state, or creating and finishing tasks would have nowhere to go. And every
-// column of the classic board (todo / in_progress / review / done) keeps a
-// live state: old code writes a status only, and without one the trigger
-// would park the task in a state that shows another column.
+// state, or creating and finishing tasks would have nowhere to go.
+//
+// (Until v15.0 every legacy board column also had to keep a state; the
+// board now shows the group's states by state_id, and a status-only write
+// from old code lands in the first state of the matching category.)
 func requireCoreStates(ctx context.Context, q queryer, groupID string) error {
-	var backlog, done, legacy int
+	var backlog, done int
 	if err := q.QueryRowContext(ctx, `
-		select coalesce(sum(category = 'backlog'), 0), coalesce(sum(category = 'done'), 0),
-		       count(distinct legacy_status)
+		select coalesce(sum(category = 'backlog'), 0), coalesce(sum(category = 'done'), 0)
 		from workflow_states where group_id = ? and entity = 'task' and archived = 0`,
-		groupID).Scan(&backlog, &done, &legacy); err != nil {
+		groupID).Scan(&backlog, &done); err != nil {
 		return err
 	}
 	if backlog == 0 || done == 0 {
 		return conflict("core_state_required",
 			"لازم يفضل في المجموعة حالة واحدة على الأقل من فئة «قائمة الانتظار» وواحدة من فئة «تم».")
-	}
-	if legacy < 4 {
-		return conflict("board_column_required",
-			"الـ board الكامل محتاج حالة لكل عمود (للتنفيذ، جاري، مراجعة، تم). غيّر الاسم أو اللون بدل الأرشفة.")
 	}
 	return nil
 }

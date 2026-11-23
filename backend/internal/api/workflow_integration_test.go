@@ -122,12 +122,6 @@ func TestEditableWorkflowStates(t *testing.T) {
 		map[string]any{"category": "active"}); status != http.StatusConflict {
 		t.Errorf("removing the last done state: %d, want 409", status)
 	}
-	// The classic board keeps a state per column: the only «review» state
-	// can be renamed, not recategorised away.
-	if status, body := h.doWithWorkspace(t, http.MethodPatch, "/v1/groups/"+gid+"/workflow/"+review, "wf-lead", wsID,
-		map[string]any{"category": "done"}); status != http.StatusConflict || body["error"] == nil {
-		t.Errorf("recategorising the last review state: %d %v", status, body)
-	}
 	if status, _ := h.doWithWorkspace(t, http.MethodPatch, "/v1/groups/"+gid+"/workflow/"+review, "wf-lead", wsID,
 		map[string]any{"name": "معتمد"}); status != http.StatusOK {
 		t.Errorf("rename review: %d", status)

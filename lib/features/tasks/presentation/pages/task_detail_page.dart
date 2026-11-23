@@ -9,6 +9,9 @@ import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/task.dart';
 import '../../../../core/utils/feedback.dart';
 import '../../../workspace/domain/entities/workspace_snapshot.dart';
+import '../../../groups/domain/workflow_models.dart';
+import '../../../groups/presentation/providers/active_group.dart';
+import '../../../groups/presentation/providers/group_providers.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 import 'task_board_page.dart';
@@ -113,15 +116,28 @@ class TaskDetailPage extends ConsumerWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final status in TaskStatus.values)
-                ChoiceChip(
-                  label: Text(statusLabel(status)),
-                  selected: status == task.status,
-                  onSelected: (_) => runAction(
-                    context,
-                    () => ref.read(tasksNotifierProvider.notifier).updateStatus(task.id, status),
+              // The group's own states once they load; the four legacy
+              // statuses before that.
+              if (_flow(ref) case final flow? when flow.live.isNotEmpty)
+                for (final state in flow.live)
+                  ChoiceChip(
+                    label: Text(state.name),
+                    selected: state.id == task.stateId,
+                    onSelected: (_) => runAction(context, () async {
+                      await ref.read(groupsApiProvider).setTaskState(task.id, state.id);
+                      await ref.read(tasksNotifierProvider.notifier).refresh();
+                    }),
+                  )
+              else
+                for (final status in TaskStatus.values)
+                  ChoiceChip(
+                    label: Text(statusLabel(status)),
+                    selected: status == task.status,
+                    onSelected: (_) => runAction(
+                      context,
+                      () => ref.read(tasksNotifierProvider.notifier).updateStatus(task.id, status),
+                    ),
                   ),
-                ),
             ],
           ),
           const SizedBox(height: 24),
@@ -261,4 +277,9 @@ Future<void> _delete(BuildContext context, WidgetRef ref, Task task) async {
   final done = await runAction(context, () => ref.read(tasksNotifierProvider.notifier).remove(task.id),
       done: 'المهمة اتحذفت');
   if (done) navigator.maybePop();
+}
+
+GroupWorkflow? _flow(WidgetRef ref) {
+  final gid = ref.watch(effectiveGroupIdProvider);
+  return gid == null ? null : ref.watch(groupWorkflowProvider(gid)).value;
 }
