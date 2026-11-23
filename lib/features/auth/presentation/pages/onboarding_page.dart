@@ -1,12 +1,11 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
+import '../../../../app/app_providers.dart';
 
-@RoutePage()
 class OnboardingPage extends ConsumerStatefulWidget {
   const OnboardingPage({super.key});
 
@@ -51,9 +50,14 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     super.dispose();
   }
 
+  void _finish() {
+    ref.read(localStorageServiceProvider).setOnboardingDone(true);
+    context.go(AppRoutes.login);
+  }
+
   void _next() {
     if (_index == _slides.length - 1) {
-      context.go(AppRoutes.login);
+      _finish();
       return;
     }
     _controller.nextPage(
@@ -73,7 +77,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                 child: TextButton(
-                  onPressed: () => context.go(AppRoutes.login),
+                  onPressed: _finish,
                   child: const Text('تخطٍّ'),
                 ),
               ),

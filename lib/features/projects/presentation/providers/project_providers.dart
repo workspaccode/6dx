@@ -1,6 +1,7 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+﻿import '../../../../core/errors/exceptions.dart';
 import '../../../../core/errors/failures.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/network/current_workspace.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/utils/logger.dart';
@@ -52,18 +53,19 @@ class ProjectsNotifier extends AsyncNotifier<List<Project>> {
     ref.watch(activeGroupProvider);
     final result = await ref.watch(getProjectsProvider).call();
     _logResult('load', result);
-    return result.dataOrNull ?? const [];
+    return result.orThrow();
   }
 
   Future<bool> refresh() async {
     state = const AsyncLoading();
     final result = await ref.read(getProjectsProvider).call();
+    if (!ref.mounted) return false;
     _logResult('refresh', result);
     if (result.isSuccess) {
       state = AsyncData(result.dataOrNull ?? const []);
       return true;
     }
-    state = AsyncError(result.failureOrNull!, StackTrace.current);
+    state = AsyncError(ServerException(result.failureOrNull!.message), StackTrace.current);
     return false;
   }
 

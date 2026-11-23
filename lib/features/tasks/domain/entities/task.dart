@@ -19,7 +19,10 @@ abstract class Task with _$Task {
     String? projectId,
     String? projectName,
     String? assigneeName,
+    String? assigneeUid,
     String? assigneeAvatar,
+    /// The group workflow state (the board's column).
+    String? stateId,
     String? label,
     String? prNumber,
     String? branchName,

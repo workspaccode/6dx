@@ -495,7 +495,8 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapSco
 		          from users u where u.uid = pr.reviewer_uid),
 		       pr.last_commit,
 		       (select t.key from tasks t where t.id = pr.task_id`+g.tasks("t")+`),
-		       (select p.name from projects p where p.id = pr.project_id)
+		       (select p.name from projects p where p.id = pr.project_id),
+		       (select r.full_name from repositories r where r.project_id = pr.project_id order by r.id limit 1)
 		from pull_requests pr
 		where pr.workspace_id = ?`+g.tasks("pr"), append(g.args(), g.withArgs(wsID)...)...)
 	if err != nil {
@@ -518,10 +519,11 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapSco
 			reviewerName     *string
 			issueKey         *string
 			projectName      *string
+			repository       *string
 		)
 		if err := rows.Scan(&id, &number, &title, &author, &branch, &baseBranch,
 			&state, &checks, &files, &additions, &deletions, &reviewerName,
-			&lastCommit, &issueKey, &projectName); err != nil {
+			&lastCommit, &issueKey, &projectName, &repository); err != nil {
 			return nil, err
 		}
 		out = append(out, map[string]any{
@@ -534,6 +536,7 @@ func (s *store) snapshotPullRequests(ctx context.Context, wsID string, g snapSco
 			"state":              state,
 			"issue_key":          issueKey,
 			"project_name":       projectName,
+			"repository":         repository,
 			"checks":             decodeJSONArray(checks),
 			"files":              decodeJSONArray(files),
 			"additions":          additions,

@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,11 +9,12 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/project.dart';
+import '../../../workspace/domain/entities/workspace_snapshot.dart';
+import '../../../workspace/presentation/providers/workspace_actions.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/project_providers.dart';
 import '../../../groups/presentation/widgets/group_widgets.dart';
 
-@RoutePage()
 class ProjectsPage extends ConsumerStatefulWidget {
   const ProjectsPage({super.key});
 
@@ -37,9 +37,16 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
     final filter = ref.watch(projectFilterProvider);
     final allProjects = ref.watch(projectsNotifierProvider).value ?? const [];
     final query = _searchController.text.trim().toLowerCase();
+    final active = allProjects.where((p) => !p.isArchived).toList(growable: false);
+    final archived = allProjects.where((p) => p.isArchived).toList(growable: false);
+    final shown = switch (filter) {
+      ProjectFilter.active => active,
+      ProjectFilter.archived => archived,
+      _ => allProjects,
+    };
     final projects = query.isEmpty
-        ? allProjects
-        : allProjects
+        ? shown
+        : shown
             .where((p) =>
                 p.name.toLowerCase().contains(query) ||
                 (p.repositoryFullName ?? '').toLowerCase().contains(query))
@@ -105,8 +112,8 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
                     ),
                     const SizedBox(width: 8),
                     _FilterChip(
-                      label: 'أنا المالك',
-                      count: allProjects.length,
+                      label: 'النشطة',
+                      count: active.length,
                       selected: filter == ProjectFilter.active,
                       onTap: () => ref
                           .read(projectFilterProvider.notifier)
@@ -114,8 +121,8 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
                     ),
                     const SizedBox(width: 8),
                     _FilterChip(
-                      label: 'مشارك',
-                      count: 0,
+                      label: 'المؤرشفة',
+                      count: archived.length,
                       selected: filter == ProjectFilter.archived,
                       onTap: () => ref
                           .read(projectFilterProvider.notifier)
@@ -124,9 +131,9 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
                   ],
                 ),
               ),
-              if (ref.watch(workspaceInvitesProvider).isNotEmpty) ...[
+              if (ref.watch(pendingInvitesProvider).value case [final invite, ...]) ...[
                 const SizedBox(height: 12),
-                const _PendingInviteCard(),
+                _PendingInviteCard(invite: invite),
                 const SizedBox(height: 8),
               ],
               if (projectsState.isLoading && projects.isEmpty)
@@ -194,11 +201,14 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _PendingInviteCard extends StatelessWidget {
-  const _PendingInviteCard();
+/// An invite addressed to the signed-in account. Accepting goes through the
+/// invite screen (it shows the group and the role first).
+class _PendingInviteCard extends ConsumerWidget {
+  const _PendingInviteCard({required this.invite});
+  final WorkspaceInvite invite;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
       padding: const EdgeInsets.all(16),
@@ -217,28 +227,35 @@ class _PendingInviteCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'لديك دعوة للانضمام إلى مشروع',
+                  invite.invitedBy == null ? 'عندك دعوة' : 'عندك دعوة من ${invite.invitedBy}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          const StatusBadge(label: 'بصلاحية · مطوّر', color: AppColors.info),
+          StatusBadge(label: 'بصلاحية · ${invite.role}', color: AppColors.info),
           const SizedBox(height: 12),
           Row(
             children: [
               FilledButton(
-                onPressed: () {},
+                onPressed: () => context.push('/invite/${Uri.encodeComponent(invite.id)}'),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 40),
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                 ),
-                child: const Text('قبول الدعوة'),
+                child: const Text('عرض الدعوة'),
               ),
               const SizedBox(width: 8),
               OutlinedButton(
-                onPressed: () {},
+                onPressed: () async {
+                  final ok = await runAction(
+                    context,
+                    () => ref.read(workspaceActionsProvider).declineInvite(invite.id),
+                    done: 'الدعوة اترفضت',
+                  );
+                  if (ok) ref.invalidate(pendingInvitesProvider);
+                },
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(0, 40),
                   padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -307,13 +324,8 @@ class _ProjectCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (hasRepository)
-                const StatusBadge(
-                  label: 'متزامن',
-                  color: AppColors.success,
-                  icon: Icons.sync_rounded,
-                  dense: true,
-                ),
+              if (project.isArchived)
+                const StatusBadge(label: 'مؤرشف', color: AppColors.textMuted, dense: true),
             ],
           ),
           const SizedBox(height: 12),
@@ -347,15 +359,7 @@ class _ProjectCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(Icons.merge_type_rounded,
-                  size: 14, color: AppColors.textDim),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '3 PR مفتوحة · 2 بانتظار مراجعتك',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
+              const Spacer(),
               TextButton(
                 onPressed: () => context.push(AppRoutes.taskBoard),
                 child: const Text('لوحة المهام'),

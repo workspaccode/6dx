@@ -39,7 +39,9 @@ class TaskRepositoryImpl implements TaskRepository {
     String? description,
     String? projectId,
     TaskPriority priority = TaskPriority.medium,
-    String? assigneeName,
+    String? assigneeUid,
+    int? points,
+    DateTime? dueDate,
   }) =>
       _guard(() async {
         final model = await _remote.createTask(
@@ -47,7 +49,9 @@ class TaskRepositoryImpl implements TaskRepository {
           description: description,
           projectId: projectId,
           priority: priority.name,
-          assigneeName: assigneeName,
+          assigneeUid: assigneeUid,
+          points: points,
+          dueDate: dueDate,
         );
         _cache.insert(0, model);
         return model.toEntity();

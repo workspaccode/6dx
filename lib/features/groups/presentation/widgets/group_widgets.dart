@@ -3,26 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/errors/exceptions.dart';
+import '../../../../core/utils/feedback.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/group_models.dart';
 import '../providers/group_providers.dart';
 import '../providers/active_group.dart';
 
+export '../../../../core/utils/feedback.dart' show describeError, showSnack, runAction;
+
 /// Human message for an API failure.
-String describeError(Object error, {String fallback = 'حصل خطأ، حاول تاني.'}) {
-  if (error is ServerException && error.message.isNotEmpty) return error.message;
-  if (error is UnauthorizedException) return 'انتهت الجلسة، سجّل الدخول تاني.';
-  return fallback;
-}
-
-void showSnack(BuildContext context, String message) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
-}
-
 /// Wraps every group screen: loads the caller's access, and renders the
 /// not-a-member / missing-capability states instead of the screen.
 ///

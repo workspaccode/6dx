@@ -29,14 +29,18 @@ class CreateTask {
     String? description,
     String? projectId,
     TaskPriority priority = TaskPriority.medium,
-    String? assigneeName,
+    String? assigneeUid,
+    int? points,
+    DateTime? dueDate,
   }) =>
       _repository.createTask(
         title: title,
         description: description,
         projectId: projectId,
         priority: priority,
-        assigneeName: assigneeName,
+        assigneeUid: assigneeUid,
+        points: points,
+        dueDate: dueDate,
       );
 }
 

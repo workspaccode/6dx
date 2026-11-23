@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,7 +7,6 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 
 /// بدون إنترنت
-@RoutePage()
 class OfflinePage extends StatelessWidget {
   const OfflinePage({super.key});
 
@@ -71,7 +69,6 @@ class _CapabilityRow extends StatelessWidget {
 }
 
 /// فشل المزامنة
-@RoutePage()
 class SyncFailedPage extends StatelessWidget {
   const SyncFailedPage({super.key});
 
@@ -98,7 +95,6 @@ class SyncFailedPage extends StatelessWidget {
 }
 
 /// سحب الوصول للمستودع
-@RoutePage()
 class AccessRevokedPage extends StatelessWidget {
   const AccessRevokedPage({super.key, this.repositoryName});
 
@@ -162,7 +158,6 @@ class _ReasonRow extends StatelessWidget {
 }
 
 /// لا تملك صلاحية
-@RoutePage()
 class NoPermissionPage extends StatelessWidget {
   const NoPermissionPage({super.key, this.role});
 
@@ -219,7 +214,6 @@ class _PermissionRow extends StatelessWidget {
 }
 
 /// العنصر محذوف
-@RoutePage()
 class NotFoundPage extends StatelessWidget {
   const NotFoundPage({super.key, this.itemKey});
 
@@ -262,7 +256,6 @@ class NotFoundPage extends StatelessWidget {
 }
 
 /// لا توجد مشاريع
-@RoutePage()
 class EmptyProjectsPage extends StatelessWidget {
   const EmptyProjectsPage({super.key});
 
@@ -300,7 +293,6 @@ class EmptyProjectsPage extends StatelessWidget {
 }
 
 /// حالة التحميل
-@RoutePage()
 class SkeletonPage extends StatelessWidget {
   const SkeletonPage({super.key});
 
@@ -335,7 +327,6 @@ class SkeletonPage extends StatelessWidget {
 }
 
 /// طلب إذن الإشعارات
-@RoutePage()
 class PushPermissionPage extends StatelessWidget {
   const PushPermissionPage({super.key});
 
@@ -368,7 +359,6 @@ class PushPermissionPage extends StatelessWidget {
 }
 
 /// إشعار بأزرار (معاينة إشعار القفل)
-@RoutePage()
 class RichNotificationPage extends StatelessWidget {
   const RichNotificationPage({super.key});
 

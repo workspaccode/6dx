@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +7,6 @@ import '../../../../shared/widgets/ui_kit.dart';
 import '../providers/workspace_providers.dart';
 
 /// صلاحيات GitHub App
-@RoutePage()
 class GhAppInstallPage extends StatelessWidget {
   const GhAppInstallPage({super.key});
 
@@ -71,7 +69,6 @@ class _ScopeRow extends StatelessWidget {
 }
 
 /// التثبيت وموافقة الأدمن
-@RoutePage()
 class GhInstallingPage extends ConsumerWidget {
   const GhInstallingPage({super.key});
 
@@ -131,7 +128,6 @@ class GhInstallingPage extends ConsumerWidget {
 }
 
 /// استيراد الـ Issues
-@RoutePage()
 class ImportIssuesPage extends ConsumerWidget {
   const ImportIssuesPage({super.key, this.repositoryName});
 
@@ -191,7 +187,6 @@ class ImportIssuesPage extends ConsumerWidget {
 }
 
 /// ربط مساهمي GitHub
-@RoutePage()
 class MapContributorsPage extends ConsumerWidget {
   const MapContributorsPage({super.key, this.repositoryName});
 
@@ -251,7 +246,6 @@ class MapContributorsPage extends ConsumerWidget {
 }
 
 /// أكثر من منصة
-@RoutePage()
 class MultiProviderPage extends ConsumerWidget {
   const MultiProviderPage({super.key});
 

@@ -56,6 +56,15 @@ class WorkspaceSnapshotMapper {
 
   static int? _int(Object? value) => value is num ? value.toInt() : null;
 
+  /// Label colours come as '#RRGGBB' (or an int from older payloads);
+  /// anything else is the muted grey.
+  static int _color(Object? value) {
+    if (value is num) return value.toInt();
+    final hex = '$value'.replaceFirst('#', '');
+    final parsed = hex.length == 6 ? int.tryParse(hex, radix: 16) : null;
+    return parsed == null ? 0xFF9AA3B2 : 0xFF000000 | parsed;
+  }
+
   static DateTime? _date(Object? value) =>
       value is String ? DateTime.tryParse(value) : null;
 
@@ -143,6 +152,7 @@ class WorkspaceSnapshotMapper {
         baseBranch: _str(json['base_branch']) ?? 'main',
         state: _str(json['state']) ?? 'open',
         issueKey: _str(json['issue_key']),
+        repository: _str(json['repository']),
         projectName: _str(json['project_name']),
         checks: _list(json['checks']).map(_check).toList(growable: false),
         files: _list(json['files']).map(_file).toList(growable: false),
@@ -173,7 +183,7 @@ class WorkspaceSnapshotMapper {
   ProjectLabel _label(Map<String, dynamic> json) => ProjectLabel(
         id: _str(json['id']) ?? '',
         name: _str(json['name']) ?? '',
-        color: _int(json['color']) ?? 0xFF9AA3B2,
+        color: _color(json['color']),
       );
 
   ProjectIntegration _integration(Map<String, dynamic> json) => ProjectIntegration(

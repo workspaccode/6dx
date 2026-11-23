@@ -1,14 +1,14 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
+import '../../../../core/utils/feedback.dart';
+import '../../../workspace/presentation/providers/workspace_actions.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 
 /// بوابة العميل
-@RoutePage()
 class ClientPortalPage extends ConsumerWidget {
   const ClientPortalPage({super.key});
 
@@ -74,23 +74,22 @@ class ClientPortalPage extends ConsumerWidget {
                 Text(report.decisionQuestion!,
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 14),
-                Row(
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
                   children: [
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () {},
-                        child: Text(report.decisionOptions.isEmpty
-                            ? 'موافقة'
-                            : 'موافقة على ${report.decisionOptions.first}'),
+                    for (final (i, option) in (report.decisionOptions.isEmpty
+                            ? const ['موافقة']
+                            : report.decisionOptions)
+                        .indexed)
+                      FilledButton(
+                        onPressed: () => runAction(
+                          context,
+                          () => ref.read(workspaceActionsProvider).submitClientDecision(i),
+                          done: 'القرار اتسجل',
+                        ),
+                        child: Text(option),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {},
-                        child: const Text('تعليق أو سؤال'),
-                      ),
-                    ),
                   ],
                 ),
               ],
@@ -122,7 +121,6 @@ class ClientPortalPage extends ConsumerWidget {
 }
 
 /// تقرير وفاتورة العميل
-@RoutePage()
 class InvoicePage extends ConsumerWidget {
   const InvoicePage({super.key});
 
@@ -211,7 +209,7 @@ class InvoicePage extends ConsumerWidget {
                       ),
                     ),
                     Text(
-                      report.hourlyRate ?? '',
+                      _amountDue(report.totalHours!, report.hourlyRate!),
                       style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontFamily: 'JetBrainsMono',
@@ -240,19 +238,25 @@ class InvoicePage extends ConsumerWidget {
             ),
           ),
         ],
-        const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.download_rounded),
-          label: const Text('إرفاق تفاصيل الفاتورة'),
-        ),
       ],
     );
+  }
+
+  /// "40" hours × "25 $" an hour → "1000 $". Falls back to the rate text
+  /// when either side is not a number.
+  static String _amountDue(String hours, String rate) {
+    final h = double.tryParse(hours.replaceAll(RegExp(r'[^0-9.]'), ''));
+    final match = RegExp(r'[0-9]+(\.[0-9]+)?').firstMatch(rate);
+    final r = match == null ? null : double.tryParse(match.group(0)!);
+    if (h == null || r == null) return '—';
+    final unit = rate.replaceAll(RegExp(r'[0-9.,/\s]|ساعة'), '').trim();
+    final total = h * r;
+    final text = total == total.roundToDouble() ? total.toStringAsFixed(0) : total.toStringAsFixed(2);
+    return unit.isEmpty ? text : '$text $unit';
   }
 }
 
 /// الوقت المحسوب تلقائيًا
-@RoutePage()
 class TimeTrackingPage extends ConsumerWidget {
   const TimeTrackingPage({super.key});
 
@@ -341,7 +345,14 @@ class TimeTrackingPage extends ConsumerWidget {
           'يراها أنت والمسؤول فقط · لا تُستخدم لمقارنة الأعضاء',
         ),
         const SizedBox(height: 12),
-        FilledButton(onPressed: () {}, child: const Text('اعتماد وقت اليوم')),
+        FilledButton(
+          onPressed: () => runAction(
+            context,
+            () => ref.read(workspaceActionsProvider).approveTimeEntries(),
+            done: 'الوقت اتعتمد',
+          ),
+          child: const Text('اعتماد وقت اليوم'),
+        ),
       ],
     );
   }

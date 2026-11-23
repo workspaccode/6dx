@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +13,6 @@ import '../../domain/entities/workspace_snapshot.dart';
 import '../providers/workspace_providers.dart';
 
 /// التنقل بين مساحات العمل
-@RoutePage()
 class WorkspaceSwitchPage extends ConsumerWidget {
   const WorkspaceSwitchPage({super.key});
 
@@ -74,7 +72,6 @@ class WorkspaceSwitchPage extends ConsumerWidget {
 }
 
 /// قبول الدعوة
-@RoutePage()
 class AcceptInvitePage extends ConsumerStatefulWidget {
   const AcceptInvitePage({super.key, this.invite});
 
@@ -202,7 +199,6 @@ class _AcceptInvitePageState extends ConsumerState<AcceptInvitePage> {
 }
 
 /// ربط GitHub بعد القبول
-@RoutePage()
 class LinkGitHubPage extends StatelessWidget {
   const LinkGitHubPage({super.key, this.repository});
 
@@ -305,7 +301,6 @@ class _StepRow extends StatelessWidget {
 }
 
 /// دعوة منتهية
-@RoutePage()
 class InviteExpiredPage extends StatelessWidget {
   const InviteExpiredPage({super.key, this.workspaceName, this.inviterName});
 
@@ -343,7 +338,6 @@ class InviteExpiredPage extends StatelessWidget {
 }
 
 /// طلبات الانضمام
-@RoutePage()
 class JoinRequestsPage extends ConsumerWidget {
   const JoinRequestsPage({super.key});
 
@@ -395,7 +389,6 @@ class JoinRequestsPage extends ConsumerWidget {
 }
 
 /// دعوة جماعية
-@RoutePage()
 class BulkInvitePage extends StatelessWidget {
   const BulkInvitePage({super.key});
 
@@ -437,7 +430,6 @@ class BulkInvitePage extends StatelessWidget {
 }
 
 /// التقويم والمنطقة
-@RoutePage()
 class RegionalCalendarPage extends ConsumerWidget {
   const RegionalCalendarPage({super.key});
 
@@ -513,7 +505,6 @@ class RegionalCalendarPage extends ConsumerWidget {
 }
 
 /// الخطة والفواتير
-@RoutePage()
 class BillingPage extends ConsumerWidget {
   const BillingPage({super.key});
 
@@ -604,7 +595,6 @@ class BillingPage extends ConsumerWidget {
 }
 
 /// تصدير البيانات
-@RoutePage()
 class ExportDataPage extends ConsumerWidget {
   const ExportDataPage({super.key});
 

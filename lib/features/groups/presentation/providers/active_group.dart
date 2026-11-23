@@ -4,6 +4,7 @@ import '../../../../app/app_providers.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/storage/local_storage_service.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import 'group_providers.dart';
 
 /// The group the classic screens (board, sprints, reviews, tasks…) show.
 ///
@@ -53,3 +54,15 @@ class ActiveGroupNotifier extends Notifier<String?> {
 
 final activeGroupProvider =
     NotifierProvider<ActiveGroupNotifier, String?>(ActiveGroupNotifier.new);
+
+/// The group the classic screens show: the active one, else the
+/// workspace's default group (null until the group list has loaded).
+final effectiveGroupIdProvider = Provider<String?>((ref) {
+  final active = ref.watch(activeGroupProvider);
+  if (active != null) return active;
+  final groups = ref.watch(groupsOverviewProvider).value?.groups ?? const [];
+  for (final g in groups) {
+    if (g.isDefault) return g.id;
+  }
+  return null;
+});

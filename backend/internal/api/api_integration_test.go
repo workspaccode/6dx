@@ -345,3 +345,80 @@ func TestMarkAllNotificationsRead(t *testing.T) {
 		t.Fatalf("expected one notification updated, got %v", body["updated"])
 	}
 }
+
+// A new task can carry its assignee, points and due date; the assignee
+// must belong to the task's group.
+func TestCreateTaskWithAssignee(t *testing.T) {
+	h := newHarness(t)
+	_, me := h.do(t, http.MethodGet, "/v1/me", "ct-lead", nil)
+	ws := workspaceOf(t, me)
+	_, created := createGroup(t, h, "ct-lead", ws, "App", "software")
+	gid := groupIDOf(t, created)
+	joinGroupAs(t, h, "ct-lead", ws, gid, "ct-dev", "member", "developer")
+	joinAs(t, h, "ct-lead", "ct-outsider", "developer")
+	_, project := h.doWithWorkspace(t, http.MethodPost, "/v1/projects", "ct-lead", ws, map[string]any{"name": "P", "group_id": gid})
+	pid := project["project"].(map[string]any)["id"]
+
+	status, body := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks", "ct-lead", ws, map[string]any{
+		"title": "Pay", "project_id": pid, "assignee_uid": "ct-dev", "points": 5, "due_at": "2026-12-31",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("create: %d %v", status, body)
+	}
+	task := body["task"].(map[string]any)
+	if task["assignee_uid"] != "ct-dev" || task["due_at"] != "2026-12-31" {
+		t.Errorf("task: %v", task)
+	}
+	for _, bad := range []map[string]any{
+		{"title": "x", "project_id": pid, "assignee_uid": "ct-outsider"},
+		{"title": "x", "project_id": pid, "points": 500},
+		{"title": "x", "project_id": pid, "due_at": "soon"},
+	} {
+		if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks", "ct-lead", ws, bad); status != http.StatusBadRequest {
+			t.Errorf("accepted %v: %d", bad, status)
+		}
+	}
+}
+
+// Comments and subtasks are written through their own endpoints and come
+// back in the snapshot; a group's rules guard them.
+func TestTaskCommentsAndSubtasks(t *testing.T) {
+	h := newHarness(t)
+	_, me := h.do(t, http.MethodGet, "/v1/me", "cs-lead", nil)
+	ws := workspaceOf(t, me)
+	_, created := createGroup(t, h, "cs-lead", ws, "App", "software")
+	gid := groupIDOf(t, created)
+	joinGroupAs(t, h, "cs-lead", ws, gid, "cs-client", "guest", "client")
+	joinAs(t, h, "cs-lead", "cs-outsider", "developer")
+	_, project := h.doWithWorkspace(t, http.MethodPost, "/v1/projects", "cs-lead", ws, map[string]any{"name": "P", "group_id": gid})
+	_, task := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks", "cs-lead", ws,
+		map[string]any{"title": "T", "project_id": project["project"].(map[string]any)["id"]})
+	tid := task["task"].(map[string]any)["id"].(string)
+
+	// The client follows progress read-only (matrix §4.5): no comments.
+	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-client", ws, map[string]any{"body": "متى؟"}); status != 403 {
+		t.Errorf("client comment: %d, want 403", status)
+	}
+	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-lead", ws, map[string]any{"body": "تمام"}); status != 201 {
+		t.Errorf("lead comment: %d", status)
+	}
+	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-outsider", ws, map[string]any{"body": "x"}); status != 404 {
+		t.Errorf("outsider comment: %d, want 404", status)
+	}
+	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/comments", "cs-lead", ws, map[string]any{"body": " "}); status != 400 {
+		t.Errorf("empty comment: %d", status)
+	}
+	if status, _ := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/subtasks", "cs-client", ws, map[string]any{"title": "x"}); status != 403 {
+		t.Errorf("client subtask: %d, want 403", status)
+	}
+	_, sub := h.doWithWorkspace(t, http.MethodPost, "/v1/tasks/"+tid+"/subtasks", "cs-lead", ws, map[string]any{"title": "Step 1"})
+	sid := sub["subtask"].(map[string]any)["id"].(string)
+	if status, _ := h.doWithWorkspace(t, http.MethodPatch, "/v1/subtasks/"+sid, "cs-lead", ws, map[string]any{"done": true}); status != 200 {
+		t.Errorf("toggle: %d", status)
+	}
+	_, snap := h.doInGroup(t, http.MethodGet, "/v1/workspace/snapshot", "cs-lead", ws, gid, nil)
+	if len(snap["comments"].([]any)) != 1 || len(snap["subtasks"].([]any)) != 1 ||
+		snap["subtasks"].([]any)[0].(map[string]any)["is_done"] != true {
+		t.Errorf("snapshot comments/subtasks: %v %v", snap["comments"], snap["subtasks"])
+	}
+}

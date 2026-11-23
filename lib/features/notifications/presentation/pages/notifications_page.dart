@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,9 +7,11 @@ import '../../../../core/extensions/context_extensions.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/status_badge.dart';
+import '../../../../core/utils/feedback.dart';
+import '../../../workspace/presentation/providers/workspace_actions.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
+import '../../../workspace/presentation/widgets/snapshot_status.dart';
 
-@RoutePage()
 class NotificationsPage extends ConsumerWidget {
   const NotificationsPage({super.key});
 
@@ -24,12 +25,17 @@ class NotificationsPage extends ConsumerWidget {
         actions: [
           if (notifications.any((n) => n.unread))
             TextButton(
-              onPressed: () {},
+              onPressed: () => runAction(
+                context,
+                () => ref.read(workspaceActionsProvider).markAllNotificationsRead(),
+              ),
               child: const Text('تعليم الكل كمقروء'),
             ),
         ],
       ),
-      body: notifications.isEmpty
+      body: Column(children: [
+        const SnapshotStatus(),
+        Expanded(child: notifications.isEmpty
           ? const AppEmptyState(
               icon: Icons.notifications_none_rounded,
               title: 'لا توجد إشعارات',
@@ -42,6 +48,12 @@ class NotificationsPage extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final item = notifications[index];
                 return ListTile(
+                  onTap: item.unread
+                      ? () => runAction(
+                            context,
+                            () => ref.read(workspaceActionsProvider).markNotificationRead(item.id),
+                          )
+                      : null,
                   leading: Container(
                     width: 40,
                     height: 40,
@@ -104,7 +116,8 @@ class NotificationsPage extends ConsumerWidget {
                         ),
                 );
               },
-            ),
+            )),
+      ]),
     );
   }
 

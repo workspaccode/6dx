@@ -11,7 +11,9 @@ abstract interface class TaskRepository {
     String? description,
     String? projectId,
     TaskPriority priority = TaskPriority.medium,
-    String? assigneeName,
+    String? assigneeUid,
+    int? points,
+    DateTime? dueDate,
   });
 
   Future<Result<Task>> updateStatus(String id, TaskStatus status);

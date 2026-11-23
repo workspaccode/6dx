@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,9 +8,14 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../workspace/domain/entities/workspace_snapshot.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
+import '../../../../core/errors/failures.dart';
+import '../../../../core/utils/feedback.dart';
+import '../../../groups/domain/group_models.dart';
+import '../../../groups/presentation/providers/active_group.dart';
+import '../../../groups/presentation/providers/group_providers.dart';
+import '../providers/project_providers.dart';
 
 /// إعدادات المشروع
-@RoutePage()
 class ProjectSettingsPage extends ConsumerWidget {
   const ProjectSettingsPage({super.key});
 
@@ -46,20 +50,14 @@ class ProjectSettingsPage extends ConsumerWidget {
           title: 'إشعارات المشروع',
           onTap: () => context.push(AppRoutes.integrations),
         ),
-        const SettingsTile(
-          icon: Icons.view_column_outlined,
-          title: 'أعمدة اللوحة',
-          subtitle: 'قيد الانتظار · قيد التنفيذ · مراجعة · مكتمل',
-          trailing: TextButton(onPressed: null, child: Text('+ عمود')),
-        ),
-        const SizedBox(height: 12),
-        const SectionLabel('حد أقصى للمهام قيد العمل لكل عضو'),
-        const _LimitStepper(),
-        ToggleRow(
-          title: 'تحذير عند تعيين مهمة لعضو تجاوز الحد',
-          value: true,
-          onChanged: (v) {},
-        ),
+        // The board columns are the active group's task states.
+        if (_groupId(ref) case final gid?)
+          SettingsTile(
+            icon: Icons.view_column_outlined,
+            title: 'حالات المهام (أعمدة اللوحة)',
+            subtitle: 'الأسماء والألوان والترتيب',
+            onTap: () => context.push('/g/$gid/settings/workflow'),
+          ),
         const SizedBox(height: 20),
         SettingsTile(
           icon: Icons.history_rounded,
@@ -69,7 +67,7 @@ class ProjectSettingsPage extends ConsumerWidget {
         ),
         SettingsTile(
           icon: Icons.archive_outlined,
-          title: 'أرشفة أو حذف المشروع',
+          title: 'أرشفة مشروع',
           color: AppColors.danger,
           onTap: () => context.push(AppRoutes.archiveProject),
         ),
@@ -78,41 +76,17 @@ class ProjectSettingsPage extends ConsumerWidget {
   }
 }
 
-class _LimitStepper extends StatelessWidget {
-  const _LimitStepper();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: Row(
-        children: [
-          const Spacer(),
-          Text(
-            '3',
-            style: TextStyle(
-              fontFamily: 'JetBrainsMono',
-              fontSize: 22,
-              color: AppColors.accent,
-            ),
-          ),
-          const Spacer(),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.remove_rounded)),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.add_rounded)),
-        ],
-      ),
-    );
+/// The active group, else the workspace's default group.
+String? _groupId(WidgetRef ref) {
+  final active = ref.watch(activeGroupProvider);
+  if (active != null) return active;
+  for (final g in ref.watch(groupsOverviewProvider).value?.groups ?? const <GroupSummary>[]) {
+    if (g.isDefault) return g.id;
   }
+  return null;
 }
 
 /// المستودعات والمزامنة
-@RoutePage()
 class SyncSettingsPage extends ConsumerWidget {
   const SyncSettingsPage({super.key});
 
@@ -134,7 +108,7 @@ class SyncSettingsPage extends ConsumerWidget {
         else
           for (final repo in repos) _RepoTile(repo: repo),
         OutlinedButton.icon(
-          onPressed: () {},
+          onPressed: () => context.push(AppRoutes.connectRepository),
           icon: const Icon(Icons.add_rounded),
           label: const Text('+ ربط مستودع آخر'),
         ),
@@ -142,12 +116,6 @@ class SyncSettingsPage extends ConsumerWidget {
         const SectionLabel('إذا عُدّلت المهمة في المكانين، أيّ تعديل يُعتمد؟'),
         const HintBanner('GitHub هو المصدر — تعديلاته تلغي تعديل التطبيق.'),
         const SizedBox(height: 16),
-        const SettingsTile(
-          icon: Icons.webhook_rounded,
-          title: 'Webhook',
-          subtitle: 'يعمل · آخر حدث منذ دقيقة',
-          color: AppColors.success,
-        ),
         if (snapshot?.apiRateLimit != null)
           SettingsTile(
             icon: Icons.speed_rounded,
@@ -156,12 +124,6 @@ class SyncSettingsPage extends ConsumerWidget {
                 '${snapshot!.apiRateLimit!.used} / ${snapshot.apiRateLimit!.limit}',
             color: AppColors.warning,
           ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.sync_rounded),
-          label: const Text('مزامنة الآن'),
-        ),
       ],
     );
   }
@@ -212,7 +174,6 @@ class _RepoTile extends StatelessWidget {
 }
 
 /// إدارة الـ Labels
-@RoutePage()
 class LabelsPage extends ConsumerWidget {
   const LabelsPage({super.key});
 
@@ -256,18 +217,14 @@ class LabelsPage extends ConsumerWidget {
                 ],
               ),
             ),
-        const SizedBox(height: 20),
-        const SectionLabel('Label جديد'),
-        const TextField(decoration: InputDecoration(labelText: 'اسم الـ Label')),
         const SizedBox(height: 12),
-        FilledButton(onPressed: () {}, child: const Text('إضافة')),
+        const HintBanner('الـ labels بتيجي من GitHub مع المزامنة.'),
       ],
     );
   }
 }
 
 /// Slack وDiscord
-@RoutePage()
 class IntegrationsPage extends ConsumerWidget {
   const IntegrationsPage({super.key});
 
@@ -300,16 +257,7 @@ class IntegrationsPage extends ConsumerWidget {
                         child: Text(integration.name,
                             style: Theme.of(context).textTheme.titleMedium),
                       ),
-                      TextButton(
-                        onPressed: () {},
-                        child: Text(
-                          integration.connected
-                              ? 'فصل'
-                              : integration.comingSoon
-                                  ? 'أبلغني'
-                                  : 'ربط',
-                        ),
-                      ),
+
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -369,7 +317,6 @@ class IntegrationsPage extends ConsumerWidget {
 }
 
 /// سجل النشاط
-@RoutePage()
 class ActivityLogPage extends ConsumerWidget {
   const ActivityLogPage({super.key});
 
@@ -443,61 +390,54 @@ class ActivityLogPage extends ConsumerWidget {
 }
 
 /// أرشفة أو حذف المشروع
-@RoutePage()
-class ArchivePage extends StatelessWidget {
+class ArchivePage extends ConsumerWidget {
   const ArchivePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final projects = (ref.watch(projectsNotifierProvider).value ?? const [])
+        .where((p) => !p.isArchived)
+        .toList();
     return AppScreen(
-      title: 'إنهاء المشروع',
+      title: 'أرشفة مشروع',
       children: [
-        const SectionLabel('أرشفة'),
         const HintBanner(
-          'يختفي المشروع من القائمة وتتوقف المزامنة. تبقى المهام والسجل محفوظة، ويمكنك استعادته في أي وقت.',
-        ),
-        FilledButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.archive_outlined),
-          label: const Text('أرشفة المشروع'),
-        ),
-        const SizedBox(height: 28),
-        const SectionLabel('حذف نهائي'),
-        AppPanel(
-          accent: AppColors.danger,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('حذف كل المهام والتعليقات والسجل',
-                  style: TextStyle(color: AppColors.danger)),
-              const SizedBox(height: 6),
-              const Text(
-                '• إلغاء الدعوات المعلّقة\n• المستودعات على GitHub لن تُحذف',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                decoration: InputDecoration(
-                  hintText: 'اكتب اسم المشروع للتأكيد',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.danger),
-                  ),
-                ),
-              ),
-            ],
-          ),
+          'المشروع بيختفي من قايمة المشاريع النشطة. المهام والسجل بيفضلوا محفوظين، وبيظهر تحت «المؤرشفة».',
         ),
         const SizedBox(height: 12),
-        OutlinedButton(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.danger,
-            side: const BorderSide(color: AppColors.danger),
+        if (projects.isEmpty) const AppEmptyState(icon: Icons.folder_off_outlined, title: 'مفيش مشاريع نشطة'),
+        for (final project in projects)
+          SettingsTile(
+            icon: Icons.folder_outlined,
+            title: project.name,
+            trailing: TextButton(
+              onPressed: () => _archive(context, ref, project.id, project.name),
+              child: const Text('أرشفة'),
+            ),
           ),
-          onPressed: () {},
-          child: const Text('حذف المشروع نهائيًا'),
-        ),
       ],
     );
+  }
+
+  Future<void> _archive(BuildContext context, WidgetRef ref, String id, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        content: Text('أرشفة «$name»؟'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.of(dialog).pop(true), child: const Text('أرشفة')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final result = await ref.read(archiveProjectProvider).call(id);
+    if (!context.mounted) return;
+    if (result.failureOrNull case final failure?) {
+      showSnack(context, failure.message);
+      return;
+    }
+    ref.invalidate(projectsNotifierProvider);
+    showSnack(context, 'المشروع اتأرشف');
   }
 }

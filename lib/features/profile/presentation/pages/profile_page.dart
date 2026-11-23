@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,14 +8,30 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_logo.dart';
 import '../../../../app/app_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
+import '../../../groups/presentation/providers/active_group.dart';
+import '../../../groups/presentation/providers/group_providers.dart';
+import '../../../tasks/domain/entities/task.dart';
+import '../../../tasks/presentation/providers/task_providers.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 
-@RoutePage()
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authNotifierProvider).value;
+    final gid = ref.watch(effectiveGroupIdProvider);
+    final access = gid == null ? null : ref.watch(groupAccessProvider(gid)).value;
+    final tasks = ref.watch(tasksNotifierProvider).value ?? const <Task>[];
+    final mine = access == null
+        ? const <Task>[]
+        : tasks.where((t) => t.assigneeUid == access.uid && t.status != TaskStatus.done).toList();
+    final inReview = tasks.where((t) => t.status == TaskStatus.review).length;
+    final now = DateTime.now();
+    final sprint = ref
+        .watch(workspaceSprintsProvider)
+        .where((s) => !s.start.isAfter(now) && !s.end.isBefore(now))
+        .firstOrNull;
 
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.profile)),
@@ -25,10 +40,11 @@ class ProfilePage extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 28,
                 backgroundColor: AppColors.surfaceElevated,
-                child: Icon(Icons.person_outline, color: AppColors.textMuted),
+                foregroundImage: user?.avatarUrl == null ? null : NetworkImage(user!.avatarUrl!),
+                child: const Icon(Icons.person_outline, color: AppColors.textMuted),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -40,35 +56,42 @@ class ProfilePage extends ConsumerWidget {
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      'Mobile Lead · Acme',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 6),
-                    const Row(
-                      children: [
-                        Icon(Icons.verified_rounded,
-                            size: 14, color: AppColors.accent),
-                        SizedBox(width: 4),
-                        Text(
-                          '@github-username ✓',
-                          style: TextStyle(fontSize: 11, color: AppColors.accent),
-                        ),
-                      ],
-                    ),
+                    if (access != null)
+                      Text(
+                        '${access.roleLabel} · ${access.name}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    if (user != null) ...[
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.verified_rounded, size: 14, color: AppColors.accent),
+                          const SizedBox(width: 4),
+                          Text(
+                            '@${user.login}',
+                            style: const TextStyle(fontSize: 11, color: AppColors.accent),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          const Row(
+          Row(
             children: [
-              Expanded(child: _StatCard(value: '4', label: 'مهام مفتوحة')),
-              SizedBox(width: 10),
-              Expanded(child: _StatCard(value: '2', label: 'بانتظار مراجعتي')),
-              SizedBox(width: 10),
-              Expanded(child: _StatCard(value: '9', label: 'نقاط هذا Sprint')),
+              Expanded(child: _StatCard(value: '${mine.length}', label: 'مهامي المفتوحة')),
+              const SizedBox(width: 10),
+              Expanded(child: _StatCard(value: '$inReview', label: 'في المراجعة')),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatCard(
+                  value: sprint == null ? '—' : '${sprint.committed}',
+                  label: 'نقاط الـ Sprint',
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 24),

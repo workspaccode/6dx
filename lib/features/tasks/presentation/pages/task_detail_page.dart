@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,11 +7,12 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../domain/entities/task.dart';
+import '../../../../core/utils/feedback.dart';
+import '../../../workspace/domain/entities/workspace_snapshot.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 import 'task_board_page.dart';
 
-@RoutePage()
 class TaskDetailPage extends ConsumerWidget {
   const TaskDetailPage({super.key, required this.taskId});
 
@@ -44,8 +44,8 @@ class TaskDetailPage extends ConsumerWidget {
         title: Text(task.key),
         actions: [
           IconButton(
-            onPressed: () =>
-                ref.read(tasksNotifierProvider.notifier).remove(task.id),
+            tooltip: 'حذف المهمة',
+            onPressed: () => _delete(context, ref, task),
             icon: const Icon(Icons.delete_outline_rounded),
           ),
         ],
@@ -82,46 +82,30 @@ class TaskDetailPage extends ConsumerWidget {
             value: task.assigneeName ?? '—',
           ),
           _InfoRow(
-            icon: Icons.person_search_outlined,
-            label: 'المراجِع',
-            value: task.assigneeName ?? '—',
-          ),
-          const _InfoRow(
             icon: Icons.event_outlined,
             label: 'التسليم',
-            value: 'غدًا · 5 نقاط',
+            value: task.dueDate == null
+                ? '—'
+                : '${task.dueDate!.year}-${task.dueDate!.month.toString().padLeft(2, '0')}-${task.dueDate!.day.toString().padLeft(2, '0')}',
           ),
-          const SizedBox(height: 24),
-          Text('على GitHub', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          InkWell(
-            onTap: () => context.push(
-              AppRoutes.prDetailPath(task.prNumber ?? '58'),
+          // GitHub: only what is really linked (a branch, a PR).
+          if (task.branchName != null || task.prNumber != null) ...[
+            const SizedBox(height: 24),
+            Text('على GitHub', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: task.prNumber == null
+                  ? null
+                  : () => context.push(AppRoutes.prDetailPath(task.prNumber!)),
+              child: _GithubCard(
+                branch: task.branchName,
+                pr: task.prNumber == null
+                    ? null
+                    : ref.watch(pullRequestProvider(int.tryParse(task.prNumber!) ?? -1)),
+                prNumber: task.prNumber,
+              ),
             ),
-            child: _GithubCard(
-              repository: task.projectName ?? '—',
-              issueNumber: task.key,
-              branch: task.branchName ?? '—',
-              prNumber: task.prNumber,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text('النشاط', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          for (final event in ref.watch(workspaceActivityProvider))
-            _ActivityItem(
-              icon: Icons.auto_awesome,
-              title: event.text,
-              subtitle: event.actor ?? 'آليًا',
-              color: AppColors.info,
-            ),
-          const SizedBox(height: 16),
-          const TextField(
-            decoration: InputDecoration(
-              hintText: 'اكتب تعليقًا',
-              suffixIcon: Icon(Icons.send_rounded),
-            ),
-          ),
+          ],
           const SizedBox(height: 24),
           Text('تغيير الحالة', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
@@ -133,9 +117,10 @@ class TaskDetailPage extends ConsumerWidget {
                 ChoiceChip(
                   label: Text(statusLabel(status)),
                   selected: status == task.status,
-                  onSelected: (_) => ref
-                      .read(tasksNotifierProvider.notifier)
-                      .updateStatus(task.id, status),
+                  onSelected: (_) => runAction(
+                    context,
+                    () => ref.read(tasksNotifierProvider.notifier).updateStatus(task.id, status),
+                  ),
                 ),
             ],
           ),
@@ -198,16 +183,12 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _GithubCard extends StatelessWidget {
-  const _GithubCard({
-    required this.repository,
-    required this.issueNumber,
-    required this.branch,
-    this.prNumber,
-  });
+  const _GithubCard({required this.branch, required this.pr, required this.prNumber});
 
-  final String repository;
-  final String issueNumber;
-  final String branch;
+  final String? branch;
+
+  /// The PR from the snapshot (null when it is not loaded / not found).
+  final PullRequest? pr;
   final String? prNumber;
 
   @override
@@ -222,61 +203,36 @@ class _GithubCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.code_rounded, size: 16, color: AppColors.textMuted),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  repository,
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Issue #$issueNumber · مفتوح',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 6),
-          MonoChip(label: branch, icon: Icons.commit),
-          const SizedBox(height: 12),
+          if (pr?.repository != null) ...[
+            Text(pr!.repository!, style: Theme.of(context).textTheme.labelSmall),
+            const SizedBox(height: 8),
+          ],
+          if (branch != null) MonoChip(label: branch!, icon: Icons.commit),
           if (prNumber != null) ...[
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    'PR #$prNumber · بانتظار المراجعة',
+                    'PR #$prNumber${pr == null ? '' : ' · ${pr!.state}'}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                const StatusBadge(
-                  label: '4/4 فحوصات',
-                  color: AppColors.success,
-                  dense: true,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Row(
-              children: [
-                MonoChip(label: 'build ✓'),
-                SizedBox(width: 6),
-                MonoChip(label: 'tests ✓'),
-                SizedBox(width: 6),
-                MonoChip(label: 'lint ✓'),
-                Spacer(),
-                Text(
-                  '+312 −48',
-                  style: TextStyle(
-                    fontFamily: 'JetBrainsMono',
-                    fontSize: 11,
-                    color: AppColors.textMuted,
+                if (pr != null && pr!.checks.isNotEmpty)
+                  StatusBadge(
+                    label: '${pr!.checks.where((c) => c.passed).length}/${pr!.checks.length} فحوصات',
+                    color: pr!.allChecksPassed ? AppColors.success : AppColors.danger,
+                    dense: true,
                   ),
-                ),
               ],
             ),
+            if (pr != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                '+${pr!.additions} −${pr!.deletions}',
+                style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11, color: AppColors.textMuted),
+              ),
+            ],
           ],
         ],
       ),
@@ -284,48 +240,25 @@ class _GithubCard extends StatelessWidget {
   }
 }
 
-class _ActivityItem extends StatelessWidget {
-  const _ActivityItem({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 15, color: color),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 2),
-                Text(subtitle, style: Theme.of(context).textTheme.labelSmall),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+Future<void> _delete(BuildContext context, WidgetRef ref, Task task) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: const Text('حذف المهمة؟'),
+      content: Text('«${task.title}» هتتحذف هي وتعليقاتها ومهامها الفرعية.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('إلغاء')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+          onPressed: () => Navigator.of(dialog).pop(true),
+          child: const Text('حذف'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
+  final navigator = Navigator.of(context);
+  final done = await runAction(context, () => ref.read(tasksNotifierProvider.notifier).remove(task.id),
+      done: 'المهمة اتحذفت');
+  if (done) navigator.maybePop();
 }

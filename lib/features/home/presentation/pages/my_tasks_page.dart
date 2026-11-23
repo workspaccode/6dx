@@ -1,5 +1,4 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,16 +7,24 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../../tasks/presentation/pages/task_board_page.dart';
+import '../../../groups/presentation/providers/active_group.dart';
+import '../../../groups/presentation/providers/group_providers.dart';
+import '../../../tasks/domain/entities/task.dart';
 import '../../../tasks/presentation/providers/task_providers.dart';
 
-@RoutePage()
 class MyTasksPage extends ConsumerWidget {
   const MyTasksPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasks = ref.watch(tasksNotifierProvider).value ?? const [];
-    final isLoading = ref.watch(tasksNotifierProvider).isLoading;
+    // Mine = assigned to my stored uid (the group access knows it; the
+    // session id can differ for older accounts).
+    final gid = ref.watch(effectiveGroupIdProvider);
+    final myUid = gid == null ? null : ref.watch(groupAccessProvider(gid)).value?.uid;
+    final all = ref.watch(tasksNotifierProvider).value ?? const [];
+    final tasks = myUid == null ? const <Task>[] : (all.where((t) => t.assigneeUid == myUid).toList()
+      ..sort((a, b) => (a.status == TaskStatus.done ? 1 : 0).compareTo(b.status == TaskStatus.done ? 1 : 0)));
+    final isLoading = ref.watch(tasksNotifierProvider).isLoading || myUid == null && gid != null;
 
     return Scaffold(
       appBar: AppBar(

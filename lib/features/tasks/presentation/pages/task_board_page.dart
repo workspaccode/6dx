@@ -1,7 +1,12 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../../../core/utils/feedback.dart';
+import '../../../groups/domain/workflow_models.dart';
+import '../../../groups/presentation/providers/active_group.dart';
+import '../../../groups/presentation/providers/group_providers.dart';
+import '../../data/datasources/task_remote_data_source.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
@@ -12,14 +17,16 @@ import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 import '../widgets/task_view_switcher.dart';
 
-@RoutePage()
 class TaskBoardPage extends ConsumerWidget {
   const TaskBoardPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final grouped = ref.watch(tasksByStatusProvider);
-    final isLoading = ref.watch(tasksNotifierProvider).isLoading;
+    final tasksState = ref.watch(tasksNotifierProvider);
+    final tasks = tasksState.value ?? const <Task>[];
+    final gid = ref.watch(effectiveGroupIdProvider);
+    final flow = gid == null ? null : ref.watch(groupWorkflowProvider(gid)).value;
+    final columns = _columns(tasks, flow);
 
     return Scaffold(
       appBar: AppBar(
@@ -36,9 +43,14 @@ class TaskBoardPage extends ConsumerWidget {
           ),
         ],
       ),
-      body: isLoading && grouped.isEmpty
+      body: tasksState.isLoading && !tasksState.hasValue
           ? const AppLoadingView()
-          : ListView(
+          : tasksState.hasError && !tasksState.hasValue
+              ? AppErrorView(
+                  message: describeError(tasksState.error!),
+                  onRetry: () => ref.read(tasksNotifierProvider.notifier).refresh(),
+                )
+              : ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
               children: [
                 Row(
@@ -62,11 +74,8 @@ class TaskBoardPage extends ConsumerWidget {
                 const SizedBox(height: 4),
                 const _BoardHeader(),
                 const SizedBox(height: 16),
-                for (final status in TaskStatus.values) ...[
-                  _ColumnSection(
-                    status: status,
-                    tasks: grouped[status] ?? const [],
-                  ),
+                for (final column in columns) ...[
+                  _ColumnSection(column: column),
                   const SizedBox(height: 16),
                 ],
               ],
@@ -83,15 +92,64 @@ class TaskBoardPage extends ConsumerWidget {
 
 }
 
+/// One board column: a workflow state of the group, or (before the states
+/// load, or for a task the API has not mapped) its legacy status.
+class _Column {
+  const _Column({required this.name, required this.color, required this.tasks});
+  final String name;
+  final Color color;
+  final List<Task> tasks;
+}
+
+List<_Column> _columns(List<Task> tasks, GroupWorkflow? flow) {
+  if (flow == null || flow.live.isEmpty) {
+    return [
+      for (final status in TaskStatus.values)
+        _Column(
+          name: statusLabel(status),
+          color: statusColor(status),
+          tasks: tasks.where((t) => t.status == status).toList(),
+        ),
+    ];
+  }
+  final byState = <String, List<Task>>{};
+  for (final task in tasks) {
+    var state = flow.byId(task.stateId);
+    if (state == null) {
+      final legacy = TaskRemoteDataSource.statusToDb(task.status);
+      for (final s in flow.live) {
+        if (s.legacyStatus == legacy) {
+          state = s;
+          break;
+        }
+      }
+    }
+    if (state != null) byState.putIfAbsent(state.id, () => []).add(task);
+  }
+  return [
+    for (final s in flow.live)
+      _Column(name: s.name, color: Color(s.argb), tasks: byState[s.id] ?? const []),
+    // Archived states still holding old tasks show after the live ones.
+    for (final s in flow.archived)
+      if (byState[s.id] case final list?) _Column(name: '${s.name} (مؤرشفة)', color: Color(s.argb), tasks: list),
+  ];
+}
+
 class _BoardHeader extends ConsumerWidget {
   const _BoardHeader();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repos = ref.watch(workspaceRepositoriesProvider);
-    final repoName = repos.isEmpty
-        ? 'لا يوجد مستودع مربوط'
-        : '${repos.first.fullName} · تمت المزامنة منذ دقيقة';
+    final repoName = repos.isEmpty ? 'لا يوجد مستودع مربوط' : repos.first.fullName;
+    final gid = ref.watch(effectiveGroupIdProvider);
+    final groupName = gid == null ? null : ref.watch(groupAccessProvider(gid)).value?.name;
+    final now = DateTime.now();
+    final sprint = ref
+        .watch(workspaceSprintsProvider)
+        .where((s) => !s.start.isAfter(now) && !s.end.isBefore(now))
+        .firstOrNull;
+    final daysLeft = sprint == null ? 0 : sprint.end.difference(now).inDays;
     return Row(
       children: [
         Expanded(
@@ -99,7 +157,7 @@ class _BoardHeader extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'تطبيق المتجر',
+                groupName ?? 'لوحة المهام',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               Text(
@@ -109,24 +167,25 @@ class _BoardHeader extends ConsumerWidget {
             ],
           ),
         ),
-        const StatusBadge(
-          label: 'Sprint 4 · 3 أيام متبقية',
-          color: AppColors.accent,
-          dense: true,
-        ),
+        if (sprint != null)
+          StatusBadge(
+            label: daysLeft > 0 ? '${sprint.name} · $daysLeft يوم متبقي' : '${sprint.name} · آخر يوم',
+            color: AppColors.accent,
+            dense: true,
+          ),
       ],
     );
   }
 }
 
 class _ColumnSection extends ConsumerWidget {
-  const _ColumnSection({required this.status, required this.tasks});
+  const _ColumnSection({required this.column});
 
-  final TaskStatus status;
-  final List<Task> tasks;
+  final _Column column;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tasks = column.tasks;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -136,13 +195,13 @@ class _ColumnSection extends ConsumerWidget {
               width: 8,
               height: 8,
               decoration: BoxDecoration(
-                color: statusColor(status),
+                color: column.color,
                 shape: BoxShape.circle,
               ),
             ),
             const SizedBox(width: 8),
             Text(
-              statusLabel(status),
+              column.name,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(width: 8),
@@ -160,7 +219,7 @@ class _ColumnSection extends ConsumerWidget {
               border: Border.all(color: Theme.of(context).colorScheme.outline),
             ),
             child: Text(
-              'لا توجد مهام هنا. اسحب مهمة إلى هذا العمود أو أنشئ واحدة جديدة.',
+              'مفيش مهام هنا.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           )

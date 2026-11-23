@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +8,6 @@ import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 
 /// تعديل وحذف المهمة
-@RoutePage()
 class EditTaskPage extends ConsumerWidget {
   const EditTaskPage({super.key, this.taskKey, this.title, this.description});
 
@@ -90,7 +88,6 @@ class EditTaskPage extends ConsumerWidget {
 }
 
 /// تغيير الحالة (ورقة سفلية)
-@RoutePage()
 class StatusSheetPage extends ConsumerWidget {
   const StatusSheetPage({super.key, this.taskKey});
 
@@ -120,7 +117,6 @@ class StatusSheetPage extends ConsumerWidget {
 }
 
 /// الاعتماديات
-@RoutePage()
 class DependenciesPage extends ConsumerWidget {
   const DependenciesPage({super.key, this.taskKey});
 
@@ -190,7 +186,6 @@ class DependenciesPage extends ConsumerWidget {
 }
 
 /// سياق المهمة
-@RoutePage()
 class TaskContextPage extends ConsumerWidget {
   const TaskContextPage({super.key, this.taskKey, this.taskTitle});
 
@@ -251,7 +246,6 @@ class TaskContextPage extends ConsumerWidget {
 }
 
 /// تقرير Bug من الموبايل
-@RoutePage()
 class BugReportPage extends StatefulWidget {
   const BugReportPage({super.key});
 
@@ -327,7 +321,6 @@ class _BugReportPageState extends State<BugReportPage> {
 }
 
 /// تحديد متعدد
-@RoutePage()
 class BulkActionsPage extends ConsumerWidget {
   const BulkActionsPage({super.key});
 

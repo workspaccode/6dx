@@ -1,5 +1,4 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -9,8 +8,8 @@ import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/status_badge.dart';
 import '../../../tasks/domain/entities/task.dart';
 import '../../../tasks/presentation/providers/task_providers.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 
-@RoutePage()
 class ReviewsPage extends ConsumerWidget {
   const ReviewsPage({super.key});
 
@@ -54,11 +53,14 @@ class ReviewsPage extends ConsumerWidget {
                               style: Theme.of(context).textTheme.labelSmall,
                             ),
                             const Spacer(),
-                            const StatusBadge(
-                              label: '4/4 فحوصات',
-                              color: AppColors.success,
-                              dense: true,
-                            ),
+                            if (task.prNumber != null)
+                              if (ref.watch(pullRequestProvider(int.tryParse(task.prNumber!) ?? -1)) case final pr?
+                                  when pr.checks.isNotEmpty)
+                                StatusBadge(
+                                  label: '${pr.checks.where((c) => c.passed).length}/${pr.checks.length} فحوصات',
+                                  color: pr.allChecksPassed ? AppColors.success : AppColors.danger,
+                                  dense: true,
+                                ),
                           ],
                         ),
                         const SizedBox(height: 8),

@@ -61,6 +61,54 @@ class WorkspaceRemoteDataSource {
             body: {'option_index': optionIndex});
       });
 
+  Future<void> markNotificationRead(String id) =>
+      _api.run('workspace.notification_read', () async {
+        await _workspace.resolve();
+        await _api.post('/v1/notifications/${Uri.encodeComponent(id)}/read');
+      });
+
+  Future<void> markAllNotificationsRead() =>
+      _api.run('workspace.notifications_read_all', () async {
+        await _workspace.resolve();
+        await _api.post('/v1/notifications/read-all');
+      });
+
+  /// Workspace role of a member (owner / admin only; the server enforces it).
+  Future<void> changeMemberRole(String uid, String role) =>
+      _api.run('workspace.member_role', () async {
+        await _workspace.resolve();
+        await _api.patch('/v1/members/${Uri.encodeComponent(uid)}', body: {'role': role});
+      });
+
+  Future<void> removeMember(String uid) =>
+      _api.run('workspace.member_remove', () async {
+        await _workspace.resolve();
+        await _api.delete('/v1/members/${Uri.encodeComponent(uid)}');
+      });
+
+  Future<void> addComment(String taskId, String body) =>
+      _api.run('workspace.comment_add', () async {
+        await _workspace.resolve();
+        await _api.post('/v1/tasks/${Uri.encodeComponent(taskId)}/comments', body: {'body': body});
+      });
+
+  Future<void> addSubtask(String taskId, String title) =>
+      _api.run('workspace.subtask_add', () async {
+        await _workspace.resolve();
+        await _api.post('/v1/tasks/${Uri.encodeComponent(taskId)}/subtasks', body: {'title': title});
+      });
+
+  Future<void> toggleSubtask(String subtaskId, {required bool done}) =>
+      _api.run('workspace.subtask_toggle', () async {
+        await _workspace.resolve();
+        await _api.patch('/v1/subtasks/${Uri.encodeComponent(subtaskId)}', body: {'done': done});
+      });
+
+  Future<void> declineInvite(String inviteId) =>
+      _api.run('workspace.decline_invite', () async {
+        await _api.post('/v1/invites/${Uri.encodeComponent(inviteId)}/decline');
+      });
+
   /// Turns the caller's pending invite into a membership.
   ///
   /// Returns the workspace that was joined. [inviteId] may be null: the server

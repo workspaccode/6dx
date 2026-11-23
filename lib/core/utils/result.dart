@@ -1,3 +1,4 @@
+import '../errors/exceptions.dart';
 import '../errors/failures.dart';
 
 /// Lightweight `Either`-like wrapper used by every repository so that the
@@ -33,4 +34,15 @@ final class FailureResult<T> extends Result<T> {
   const FailureResult(this.failure);
 
   final Failure failure;
+}
+
+/// The value, or the failure as an exception (`describeError` shows its
+/// message). For providers: a failed load is an error state, never an
+/// empty list.
+extension ResultOrThrow<T> on Result<T> {
+  T orThrow() => switch (this) {
+        Success<T>(:final data) => data,
+        FailureResult<T>(failure: UnauthorizedFailure()) => throw const UnauthorizedException(),
+        FailureResult<T>(:final failure) => throw ServerException(failure.message),
+      };
 }

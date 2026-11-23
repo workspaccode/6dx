@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,9 +6,10 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
+import 'package:flutter/services.dart';
+import '../../../../core/utils/feedback.dart';
 
 /// حجم شغل الفريق
-@RoutePage()
 class WorkloadPage extends ConsumerWidget {
   const WorkloadPage({super.key});
 
@@ -133,7 +133,6 @@ class WorkloadPage extends ConsumerWidget {
 }
 
 /// الملخص اليومي
-@RoutePage()
 class DigestPage extends ConsumerWidget {
   const DigestPage({super.key});
 
@@ -165,13 +164,20 @@ class DigestPage extends ConsumerWidget {
               const SizedBox(height: 12),
             ],
           ],
-          FilledButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.campaign_outlined),
-            label: const Text('نشر كتحديث Standup للفريق'),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.copy_rounded),
+            onPressed: () async {
+              final text = [
+                for (final section in const ['done', 'today', 'blocker'])
+                  if (digest.any((e) => e.section == section))
+                    '${switch (section) { 'done' => 'أمس أنجزت', 'today' => 'اليوم', _ => 'عوائق' }}:\n'
+                        '${digest.where((e) => e.section == section).map((e) => '- ${e.text}').join('\n')}',
+              ].join('\n\n');
+              await Clipboard.setData(ClipboardData(text: text));
+              if (context.mounted) showSnack(context, 'اتنسخ');
+            },
+            label: const Text('نسخ كنص (للـ standup)'),
           ),
-          const SizedBox(height: 8),
-          OutlinedButton(onPressed: () {}, child: const Text('نسخ كنص')),
         ],
       ],
     );
@@ -215,8 +221,7 @@ class _DigestTile extends StatelessWidget {
               ],
             ),
           ),
-          if (entry.actionLabel != null)
-            TextButton(onPressed: () {}, child: Text(entry.actionLabel!)),
+
         ],
       ),
     );

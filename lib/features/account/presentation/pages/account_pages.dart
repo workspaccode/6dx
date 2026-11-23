@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,15 +5,20 @@ import '../../../../app/app_providers.dart';
 import '../../../auth/presentation/providers/auth_providers.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/ui_kit.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/utils/trusted_url.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 
 /// إعدادات الحساب — V2Account.dc.html
-@RoutePage()
 class AccountSettingsPage extends ConsumerWidget {
   const AccountSettingsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
+    final user = ref.watch(authNotifierProvider).value;
+    final repos = ref.watch(workspaceRepositoriesProvider);
+    final arabic = Localizations.localeOf(context).languageCode == 'ar';
 
     return AppScreen(
       title: 'إعدادات الحساب',
@@ -23,23 +27,23 @@ class AccountSettingsPage extends ConsumerWidget {
         SettingsTile(
           icon: Icons.code_rounded,
           title: 'GitHub',
-          subtitle: '@[github-username] · 3 repos',
+          subtitle: [if (user != null) '@${user.login}', '${repos.length} مستودع'].join(' · '),
           color: AppColors.accent,
-          trailing: TextButton(onPressed: () {}, child: const Text('إدارة')),
-        ),
-        SettingsTile(
-          icon: Icons.code_rounded,
-          title: 'GitLab',
-          subtitle: 'قريبًا',
-          color: AppColors.textDim,
-          trailing: TextButton(onPressed: () {}, child: const Text('أبلغني')),
+          // GitHub's own page for the apps this account authorised.
+          trailing: TextButton(
+            onPressed: () async {
+              final url = trustedGithubUrl('https://github.com/settings/applications');
+              if (url != null) await launchUrl(url, mode: LaunchMode.externalApplication);
+            },
+            child: const Text('إدارة'),
+          ),
         ),
         const SizedBox(height: 12),
         const SectionLabel('التفضيلات'),
         SettingsTile(
           icon: Icons.translate_rounded,
           title: 'اللغة',
-          subtitle: 'العربية',
+          subtitle: arabic ? 'العربية' : 'English',
           color: AppColors.info,
           onTap: () => ref.read(localeProvider.notifier).toggleLocale(),
         ),
@@ -52,35 +56,13 @@ class AccountSettingsPage extends ConsumerWidget {
                 themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark,
               ),
         ),
-        const SettingsTile(
-          icon: Icons.calendar_month_outlined,
-          title: 'ساعات العمل',
-          subtitle: 'الأحد–الخميس · 9–5',
-          color: AppColors.warning,
-        ),
         const SizedBox(height: 12),
         const SectionLabel('الأمان'),
         SettingsTile(
           icon: Icons.email_outlined,
           title: 'الإيميل',
-          subtitle: ref.watch(authNotifierProvider).value?.email ?? '—',
+          subtitle: user?.email ?? '—',
           color: AppColors.info,
-        ),
-        const SettingsTile(
-          icon: Icons.devices_rounded,
-          title: 'الأجهزة المسجّل منها',
-          subtitle: '2 أجهزة',
-          color: AppColors.warning,
-        ),
-        const SizedBox(height: 20),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.danger,
-            side: const BorderSide(color: AppColors.danger),
-          ),
-          onPressed: () {},
-          icon: const Icon(Icons.delete_forever_outlined),
-          label: const Text('حذف الحساب'),
         ),
       ],
     );
@@ -88,7 +70,6 @@ class AccountSettingsPage extends ConsumerWidget {
 }
 
 /// إعدادات الإشعارات — V2NotifSettings.dc.html
-@RoutePage()
 class NotifSettingsPage extends StatefulWidget {
   const NotifSettingsPage({super.key});
 
@@ -190,7 +171,6 @@ class _ChannelRow extends StatelessWidget {
 }
 
 /// وضع التركيز — V3FocusMode.dc.html
-@RoutePage()
 class FocusModePage extends StatelessWidget {
   const FocusModePage({super.key});
 
@@ -248,7 +228,6 @@ class FocusModePage extends StatelessWidget {
 }
 
 /// المساعدة وما الجديد — V3Help.dc.html
-@RoutePage()
 class HelpPage extends StatelessWidget {
   const HelpPage({super.key});
 
@@ -312,7 +291,6 @@ class HelpPage extends StatelessWidget {
 }
 
 /// إنشاء مساحة عمل — V2Workspace.dc.html
-@RoutePage()
 class WorkspaceCreatePage extends StatefulWidget {
   const WorkspaceCreatePage({super.key});
 

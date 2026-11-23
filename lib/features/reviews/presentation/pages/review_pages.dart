@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,12 +5,16 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../workspace/domain/entities/workspace_snapshot.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../../../core/utils/feedback.dart';
+import '../../../../core/utils/trusted_url.dart';
+import '../../../workspace/presentation/providers/workspace_actions.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 
 /// تفاصيل الـ PR
-@RoutePage()
 class PrDetailPage extends ConsumerWidget {
-  const PrDetailPage({super.key, this.prNumber = 58});
+  const PrDetailPage({super.key, required this.prNumber});
 
   final int prNumber;
 
@@ -35,7 +38,15 @@ class PrDetailPage extends ConsumerWidget {
     return AppScreen(
       title: '${pr.projectName ?? 'PR'} #${pr.number}',
       subtitle: pr.title,
-      trailing: TextButton(onPressed: () {}, child: const Text('فتح في GitHub')),
+      trailing: pr.repository == null
+          ? null
+          : TextButton(
+              onPressed: () async {
+                final url = trustedGithubUrl('https://github.com/${pr.repository}/pull/${pr.number}');
+                if (url != null) await launchUrl(url, mode: LaunchMode.externalApplication);
+              },
+              child: const Text('فتح في GitHub'),
+            ),
       children: [
         AppPanel(
           child: Row(
@@ -153,19 +164,36 @@ class PrDetailPage extends ConsumerWidget {
               ),
             ),
         ],
-        const SizedBox(height: 12),
-        const TextField(
-          decoration: InputDecoration(
-            hintText: 'تعليق المراجعة',
-            suffixIcon: Icon(Icons.send_rounded),
-          ),
-        ),
-        const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.merge_rounded),
-          label: const Text('اعتماد ودمج'),
-        ),
+        // The verdict is recorded here; merging happens on GitHub (the
+        // merge-from-app screen is parked — docs/parked-screens.md).
+        if (pr.state != 'merged' && pr.state != 'closed') ...[
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => runAction(
+                  context,
+                  () => ref.read(workspaceActionsProvider).reviewPullRequest(pr.number, approve: false),
+                  done: 'اتطلبت تعديلات',
+                ),
+                icon: const Icon(Icons.edit_note_rounded),
+                label: const Text('طلب تعديلات'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () => runAction(
+                  context,
+                  () => ref.read(workspaceActionsProvider).reviewPullRequest(pr.number, approve: true),
+                  done: 'اتعتمد',
+                ),
+                icon: const Icon(Icons.check_rounded),
+                label: const Text('اعتماد'),
+              ),
+            ),
+          ]),
+        ],
       ],
     );
   }
@@ -201,7 +229,6 @@ class StatusBadgePR extends StatelessWidget {
 }
 
 /// فشل الـ CI
-@RoutePage()
 class CiFailurePage extends ConsumerWidget {
   const CiFailurePage({super.key});
 
@@ -327,7 +354,6 @@ class CiFailurePage extends ConsumerWidget {
 }
 
 /// مهلة المراجعة
-@RoutePage()
 class ReviewSlaPage extends ConsumerWidget {
   const ReviewSlaPage({super.key});
 

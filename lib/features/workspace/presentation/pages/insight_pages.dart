@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,7 +7,6 @@ import '../../../../shared/widgets/ui_kit.dart';
 import '../providers/workspace_providers.dart';
 
 /// البشر والـ Agents
-@RoutePage()
 class AgentsTeamPage extends ConsumerWidget {
   const AgentsTeamPage({super.key});
 
@@ -87,7 +85,6 @@ class AgentsTeamPage extends ConsumerWidget {
 }
 
 /// تعيين مهمة لـ Agent
-@RoutePage()
 class AssignAgentPage extends ConsumerWidget {
   const AssignAgentPage({super.key, this.taskKey, this.taskTitle});
 
@@ -146,7 +143,6 @@ class AssignAgentPage extends ConsumerWidget {
 }
 
 /// خريطة المعرفة
-@RoutePage()
 class KnowledgeMapPage extends ConsumerWidget {
   const KnowledgeMapPage({super.key});
 
@@ -224,7 +220,6 @@ class KnowledgeMapPage extends ConsumerWidget {
 }
 
 /// اسأل المشروع
-@RoutePage()
 class AskProjectPage extends StatefulWidget {
   const AskProjectPage({super.key, this.projectName});
 
@@ -290,7 +285,6 @@ class _Suggestion extends StatelessWidget {
 }
 
 /// تقرير المشروع
-@RoutePage()
 class ProjectReportPage extends ConsumerWidget {
   const ProjectReportPage({super.key});
 
@@ -373,7 +367,6 @@ class ProjectReportPage extends ConsumerWidget {
 }
 
 /// تقديرات تتحسن
-@RoutePage()
 class EstimateLearningPage extends ConsumerWidget {
   const EstimateLearningPage({super.key});
 
@@ -430,7 +423,6 @@ class EstimateLearningPage extends ConsumerWidget {
 }
 
 /// أرشيف الـ Sprints والـ Retro
-@RoutePage()
 class SprintHistoryPage extends ConsumerWidget {
   const SprintHistoryPage({super.key});
 
@@ -482,7 +474,6 @@ class SprintHistoryPage extends ConsumerWidget {
 }
 
 /// اختيار المراجِع الذكي
-@RoutePage()
 class ReviewerPickPage extends ConsumerWidget {
   const ReviewerPickPage({super.key, this.prNumber});
 
@@ -520,7 +511,6 @@ class ReviewerPickPage extends ConsumerWidget {
 }
 
 /// تحذير PR كبير
-@RoutePage()
 class BigPrWarningPage extends ConsumerWidget {
   const BigPrWarningPage({super.key, this.prNumber, this.additions, this.deletions});
 
@@ -564,7 +554,6 @@ class BigPrWarningPage extends ConsumerWidget {
 }
 
 /// الدمج من التطبيق
-@RoutePage()
 class MergeFromAppPage extends ConsumerWidget {
   const MergeFromAppPage({super.key, this.prNumber});
 
@@ -624,7 +613,6 @@ class MergeFromAppPage extends ConsumerWidget {
 }
 
 /// سجل الـ commits
-@RoutePage()
 class CommitsPage extends ConsumerWidget {
   const CommitsPage({super.key});
 
@@ -678,7 +666,6 @@ class CommitsPage extends ConsumerWidget {
 }
 
 /// متابعة الإصدار
-@RoutePage()
 class ReleaseTrackerPage extends ConsumerWidget {
   const ReleaseTrackerPage({super.key});
 
@@ -739,7 +726,6 @@ class ReleaseTrackerPage extends ConsumerWidget {
 }
 
 /// الملخص الأسبوعي للعميل
-@RoutePage()
 class WeeklyClientSummaryPage extends ConsumerWidget {
   const WeeklyClientSummaryPage({super.key});
 

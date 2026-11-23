@@ -1,3 +1,5 @@
+import 'package:sixdx/features/tasks/domain/entities/task.dart';
+import 'package:sixdx/features/tasks/presentation/providers/task_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,7 +52,10 @@ void main() {
     addTearDown(tester.view.reset);
 
     await tester.pumpWidget(
-      ProviderScope(child: MaterialApp.router(routerConfig: router)),
+      ProviderScope(
+        overrides: [tasksNotifierProvider.overrideWith(_NoTasks.new)],
+        child: MaterialApp.router(routerConfig: router),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -60,4 +65,9 @@ void main() {
     // The list page shows the app bar subtitle "عرض القائمة".
     expect(find.text('عرض القائمة'), findsOneWidget);
   });
+}
+
+class _NoTasks extends TasksNotifier {
+  @override
+  Future<List<Task>> build() async => const [];
 }

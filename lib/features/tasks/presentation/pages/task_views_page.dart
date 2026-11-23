@@ -1,8 +1,11 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../../../core/constants/app_colors.dart';
+import '../../../../routes/app_router.dart';
+import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/entities/task.dart';
 import '../pages/task_board_page.dart' show statusLabel, statusColor;
@@ -10,7 +13,6 @@ import '../providers/task_providers.dart';
 import '../widgets/task_view_switcher.dart';
 
 /// عرض القائمة — V2ListView.dc.html
-@RoutePage()
 class TaskListPage extends ConsumerWidget {
   const TaskListPage({super.key});
 
@@ -19,10 +21,12 @@ class TaskListPage extends ConsumerWidget {
     final tasks = ref.watch(tasksNotifierProvider).value ?? const [];
 
     return AppScreen(
-      title: 'تطبيق المتجر',
+      title: 'المهام',
       subtitle: 'عرض القائمة',
       trailing: const TaskViewSwitcher(current: 'قائمة'),
       children: [
+        if (tasks.isEmpty)
+          const HintBanner('مفيش مهام.'),
         for (final task in tasks) _TaskRow(task: task),
       ],
     );
@@ -36,7 +40,10 @@ class _TaskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return InkWell(
+      onTap: () => context.push(AppRoutes.taskDetailPath(task.id)),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -72,18 +79,32 @@ class _TaskRow extends StatelessWidget {
                 statusLabel(task.status),
                 style: TextStyle(fontSize: 12, color: statusColor(task.status)),
               ),
-              const SizedBox(height: 2),
-              Text('غدًا', style: Theme.of(context).textTheme.labelSmall),
+              if (task.dueDate != null) ...[
+                const SizedBox(height: 2),
+                Text(
+                  _date(task.dueDate!),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: task.isOverdue ? AppColors.danger : null,
+                      ),
+                ),
+              ],
             ],
           ),
         ],
       ),
-    );
+    ));
   }
 }
 
+String _date(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+const _monthNames = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
+
 /// عرض التقويم — V2Calendar.dc.html
-@RoutePage()
 class TaskCalendarPage extends ConsumerWidget {
   const TaskCalendarPage({super.key});
 
@@ -91,25 +112,35 @@ class TaskCalendarPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tasks = ref.watch(tasksNotifierProvider).value ?? const [];
     final today = DateTime.now();
+    final open = tasks.where((t) => t.status != TaskStatus.done).toList();
+    final sprint = ref
+        .watch(workspaceSprintsProvider)
+        .where((s) => !s.start.isAfter(today) && !s.end.isBefore(today))
+        .firstOrNull;
+    // Open tasks with a due date, nearest first.
+    final dueSoon = open.where((t) => t.dueDate != null).toList()
+      ..sort((a, b) => a.dueDate!.compareTo(b.dueDate!));
 
     return AppScreen(
-      title: 'تطبيق المتجر',
-      subtitle: 'عرض التقويم · نوفمبر 2026',
+      title: 'المهام',
+      subtitle: 'عرض التقويم · ${_monthNames[today.month - 1]} ${today.year}',
       trailing: const TaskViewSwitcher(current: 'تقويم'),
       children: [
-        const HintBanner('Sprint 4 ينتهي الخميس — 11 مهمة لم تُغلق بعد.'),
+        if (sprint != null)
+          HintBanner('${sprint.name} بينتهي ${_date(sprint.end)} — ${open.length} مهمة لسه مفتوحة.'),
         _MonthGrid(
           month: today,
           busyDays: tasks.map((t) => t.dueDate).whereType<DateTime>().toList(),
         ),
         const SizedBox(height: 16),
         const SectionLabel('المستحق قريبًا'),
-        for (final task in tasks.take(3))
+        if (dueSoon.isEmpty) const HintBanner('مفيش مهام مفتوحة ليها ميعاد.'),
+        for (final task in dueSoon.take(5))
           AppPanel(
             child: Row(
               children: [
                 Expanded(child: Text(task.title)),
-                Text('· ${task.assigneeName ?? '؟'}'),
+                Text('${_date(task.dueDate!)} · ${task.assigneeName ?? 'من غير مسؤول'}'),
               ],
             ),
           ),
@@ -213,7 +244,6 @@ class _MonthGrid extends StatelessWidget {
 }
 
 /// البحث والفلاتر — V2Search.dc.html
-@RoutePage()
 class TaskSearchPage extends ConsumerStatefulWidget {
   const TaskSearchPage({super.key});
 
@@ -224,19 +254,7 @@ class TaskSearchPage extends ConsumerStatefulWidget {
 class _TaskSearchPageState extends ConsumerState<TaskSearchPage> {
   final _controller = TextEditingController();
 
-  static const _savedFilters = [
-    ['مهامي المتأخرة', Icons.schedule_rounded, AppColors.danger],
-    ['بلا مسؤول', Icons.person_off_outlined, AppColors.warning],
-    ['CI فاشل', Icons.error_outline_rounded, AppColors.danger],
-  ];
 
-  static const _quickFilters = [
-    'مراجعة',
-    'قيد التنفيذ',
-    'مكتمل',
-    'عاجلة',
-    'بانتظار مراجعتي',
-  ];
 
   @override
   void dispose() {
@@ -276,37 +294,22 @@ class _TaskSearchPageState extends ConsumerState<TaskSearchPage> {
         ),
         const SizedBox(height: 8),
         TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
-        const SizedBox(height: 12),
-        const SectionLabel('فلاتر محفوظة', actionLabel: 'مسح الكل'),
-        for (final filter in _savedFilters)
-          SettingsTile(
-            icon: filter[1] as IconData,
-            title: filter[0] as String,
-            color: filter[2] as Color,
-            onTap: () {},
-          ),
-        const SizedBox(height: 12),
-        const SectionLabel('فلاتر سريعة'),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final f in _quickFilters)
-              Chip(label: Text(f), onDeleted: () {}),
-          ],
-        ),
+        if (query.isNotEmpty && results.isEmpty)
+          const HintBanner('مفيش نتايج.'),
         if (results.isNotEmpty) ...[
           const SizedBox(height: 12),
           SectionLabel('${results.length} نتيجة'),
           for (final task in results)
-            AppPanel(
+            InkWell(
+              onTap: () => context.push(AppRoutes.taskDetailPath(task.id)),
+              child: AppPanel(
               child: Row(
                 children: [
                   Expanded(child: Text(task.title)),
                   Text(task.key, style: Theme.of(context).textTheme.labelSmall),
                 ],
               ),
-            ),
+            )),
         ],
       ],
     );

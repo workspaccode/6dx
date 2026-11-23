@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,24 +6,29 @@ import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../workspace/domain/entities/workspace_snapshot.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
+import '../../../tasks/domain/entities/task.dart';
+import '../../../tasks/presentation/providers/task_providers.dart';
 
 /// الـ Backlog
-@RoutePage()
 class BacklogPage extends ConsumerWidget {
   const BacklogPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sprints = ref.watch(workspaceSprintsProvider);
-    final items = sprints.isEmpty ? const <SprintItem>[] : sprints.first.items;
-    final fromGithub = items.where((i) => i.fromGithub).length;
-    final withoutEstimate = items.where((i) => i.points == 0).length;
+    final inSprint = {for (final s in sprints) for (final i in s.items) i.taskId};
+    final tasks = (ref.watch(tasksNotifierProvider).value ?? const <Task>[])
+        .where((t) => t.status != TaskStatus.done && !inSprint.contains(t.id))
+        .toList()
+      ..sort((a, b) => b.priority.index.compareTo(a.priority.index));
+    final items = [
+      for (final t in tasks)
+        SprintItem(taskId: t.id, key: t.key, title: t.title, points: 0),
+    ];
 
     return AppScreen(
       title: 'الـ Backlog',
-      subtitle: items.isEmpty
-          ? null
-          : '${items.length} مهمة · ${items.fold<int>(0, (s, i) => s + i.points)} نقطة · مرتبة حسب الأولوية',
+      subtitle: items.isEmpty ? null : '${items.length} مهمة مش في أي sprint · مرتبة حسب الأولوية',
       children: [
         if (items.isEmpty)
           const AppEmptyState(
@@ -32,19 +36,8 @@ class BacklogPage extends ConsumerWidget {
             title: 'الـ Backlog فارغ',
             message: 'أضف مهام من GitHub أو من لوحة المهام.',
           )
-        else ...[
-          Row(
-            children: [
-              _TabChip(label: 'الكل', count: items.length),
-              const SizedBox(width: 8),
-              _TabChip(label: 'من GitHub', count: fromGithub),
-              const SizedBox(width: 8),
-              _TabChip(label: 'بلا تقدير', count: withoutEstimate),
-            ],
-          ),
-          const SizedBox(height: 14),
+        else
           for (final item in items) _BacklogRow(item: item),
-        ],
       ],
     );
   }
@@ -116,35 +109,7 @@ class _BacklogRow extends StatelessWidget {
   }
 }
 
-class _TabChip extends StatelessWidget {
-  const _TabChip({required this.label, required this.count});
-
-  final String label;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: Text(
-        '$label · $count',
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppColors.textMuted,
-        ),
-      ),
-    );
-  }
-}
-
 /// تخطيط الـ Sprint
-@RoutePage()
 class SprintPlanPage extends ConsumerWidget {
   const SprintPlanPage({super.key});
 
@@ -203,11 +168,6 @@ class SprintPlanPage extends ConsumerWidget {
           const SectionLabel('مهام الـ Sprint'),
           for (final item in sprint.items) _BacklogRow(item: item),
         ],
-        const SizedBox(height: 12),
-        FilledButton(
-          onPressed: overloaded ? null : () {},
-          child: Text('بدء $sprint.name'),
-        ),
       ],
     );
   }
@@ -217,7 +177,6 @@ class SprintPlanPage extends ConsumerWidget {
 }
 
 /// ملخص الـ Sprint
-@RoutePage()
 class SprintSummaryPage extends ConsumerWidget {
   const SprintSummaryPage({super.key});
 

@@ -1,5 +1,4 @@
 ﻿import 'package:flutter/material.dart';
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -17,9 +16,7 @@ import '../features/projects/presentation/pages/create_project_page.dart';
 import '../features/projects/presentation/pages/project_settings_pages.dart';
 import '../features/projects/presentation/pages/projects_page.dart';
 import '../features/sprints/presentation/pages/sprint_pages.dart';
-import '../features/tasks/domain/entities/task.dart';
 import '../features/tasks/presentation/pages/task_board_page.dart';
-import '../features/tasks/presentation/providers/task_providers.dart';
 import '../features/tasks/presentation/pages/task_detail_page.dart';
 import '../features/tasks/presentation/pages/task_extras_page.dart';
 import '../features/tasks/presentation/pages/task_views_page.dart';
@@ -43,6 +40,7 @@ import '../features/groups/presentation/pages/certs_lab_pages.dart';
 import '../features/groups/presentation/providers/group_providers.dart';
 import '../features/groups/domain/group_models.dart';
 import '../features/groups/presentation/widgets/group_widgets.dart';
+import '../app/app_providers.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -314,21 +312,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: 'subtasks',
-            builder: (context, state) {
-              final tasks =
-                  ref.read(tasksNotifierProvider).value ?? const <Task>[];
-              final id = state.pathParameters['id'] ?? '';
-              final task = tasks
-                      .where((t) => t.id == id)
-                      .firstOrNull ??
-                  Task(id: id, title: 'مهمة');
-              return SubtasksPage(task: task);
-            },
+            builder: (context, state) =>
+                SubtasksPage(taskId: state.pathParameters['id'] ?? ''),
           ),
           GoRoute(
             path: 'comments',
             builder: (context, state) => CommentsPage(
-              taskKey: state.pathParameters['id'] ?? 'MOB-24',
+              taskId: state.pathParameters['id'] ?? '',
             ),
           ),
         ],
@@ -344,7 +334,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.prDetail,
         builder: (context, state) => PrDetailPage(
-          prNumber: int.tryParse(state.pathParameters['number'] ?? '') ?? 58,
+          // A malformed number opens "not found", never another PR.
+          prNumber: int.tryParse(state.pathParameters['number'] ?? '') ?? -1,
         ),
       ),
       GoRoute(
@@ -584,7 +575,6 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 /// Splash screen: decides where to send the user based on the session.
-@RoutePage()
 class SplashPage extends ConsumerStatefulWidget {
   const SplashPage({super.key});
 
@@ -604,7 +594,9 @@ class _SplashPageState extends ConsumerState<SplashPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (auth.value == null) {
-        context.go(AppRoutes.onboarding);
+        // The intro slides once; afterwards straight to sign-in.
+        final seen = ref.read(localStorageServiceProvider).onboardingDone;
+        context.go(seen ? AppRoutes.login : AppRoutes.onboarding);
         return;
       }
       // Reopen the group used last; otherwise the classic home.

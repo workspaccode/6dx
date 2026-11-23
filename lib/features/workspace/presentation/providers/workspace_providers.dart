@@ -53,9 +53,9 @@ final getPendingInvitesProvider = Provider<GetPendingInvites>(
 
 /// The whole workspace projection.
 ///
-/// It never throws: when the API is unreachable the provider resolves to an
-/// empty snapshot and [workspaceErrorProvider] carries the reason, so every
-/// screen can render an honest empty/error state instead of crashing.
+/// A failure is an error state, never an empty workspace: the selectors below
+/// still give empty lists (so nothing crashes), and `SnapshotStatus` shows
+/// the error with a retry on the screens that read the snapshot.
 final workspaceSnapshotProvider = FutureProvider<WorkspaceSnapshot>((ref) async {
   // Reload whenever the signed-in account changes.
   ref.watch(authNotifierProvider.select((state) => state.value?.id));
@@ -81,10 +81,10 @@ final workspaceSnapshotProvider = FutureProvider<WorkspaceSnapshot>((ref) async 
     return snapshot;
   } catch (error) {
     AppLogger.action('Workspace', 'snapshot FAILED', error);
-    ref.read(workspaceErrorProvider.notifier).setError(error.toString());
-    return const WorkspaceSnapshot();
+    rethrow;
   }
-});
+  // No silent automatic retries: the screen shows the error and its retry.
+}, retry: (retryCount, error) => null);
 
 /// Last error raised while loading the workspace snapshot.
 class WorkspaceErrorNotifier extends Notifier<String?> {

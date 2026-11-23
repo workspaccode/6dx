@@ -16,6 +16,11 @@ type createTaskRequest struct {
 	// StateID puts the task in one of its group's states (default: the
 	// group's first backlog state).
 	StateID *string `json:"state_id"`
+	// AssigneeUID must be a member of the task's group (the workspace, for
+	// the default group).
+	AssigneeUID *string `json:"assignee_uid"`
+	Points      *int    `json:"points"`
+	DueAt       *string `json:"due_at"` // YYYY-MM-DD
 }
 
 // GET /v1/tasks?project_id=
@@ -34,7 +39,8 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	query := `
 		select t.id, t.title, t.description, t.status, t.priority,
 		       t.project_id, p.name, t.label, t.branch, t.pr_number,
-		       t.due_at, t.created_at, t.state_id
+		       t.due_at, t.created_at, t.state_id, t.assignee_uid,
+		       (select coalesce(nullif(u.display_name, ''), u.email) from users u where u.uid = t.assignee_uid)
 		from tasks t
 		left join projects p on p.id = t.project_id
 		where t.workspace_id = ?`
@@ -74,27 +80,30 @@ func scanTask(rows interface {
 		id, title, status, priority, createdAt string
 		description, projectID, projectName    *string
 		label, branch, dueAt, stateID          *string
+		assigneeUID, assigneeName              *string
 		prNumber                               *int
 	)
 	if err := rows.Scan(&id, &title, &description, &status, &priority,
 		&projectID, &projectName, &label, &branch, &prNumber, &dueAt,
-		&createdAt, &stateID); err != nil {
+		&createdAt, &stateID, &assigneeUID, &assigneeName); err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"id":           id,
-		"title":        title,
-		"description":  description,
-		"status":       status,
-		"state_id":     stateID,
-		"priority":     priority,
-		"project_id":   projectID,
-		"project_name": projectName,
-		"label":        label,
-		"branch":       branch,
-		"pr_number":    prNumber,
-		"due_at":       dueAt,
-		"created_at":   createdAt,
+		"id":            id,
+		"title":         title,
+		"description":   description,
+		"status":        status,
+		"state_id":      stateID,
+		"assignee_uid":  assigneeUID,
+		"assignee_name": assigneeName,
+		"priority":      priority,
+		"project_id":    projectID,
+		"project_name":  projectName,
+		"label":         label,
+		"branch":        branch,
+		"pr_number":     prNumber,
+		"due_at":        dueAt,
+		"created_at":    createdAt,
 	}, nil
 }
 
@@ -178,14 +187,45 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	points := 0
+	if body.Points != nil {
+		if *body.Points < 0 || *body.Points > 100 {
+			writeError(w, badRequest("invalid_points", "النقاط من 0 لـ 100."))
+			return
+		}
+		points = *body.Points
+	}
+	due, _, err := cleanDate(body.DueAt, "invalid_due_date")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	var assignee any
+	if body.AssigneeUID != nil && *body.AssigneeUID != "" {
+		var member int
+		if err := s.store.db.QueryRowContext(r.Context(), `
+			select (exists (select 1 from workspace_members where workspace_id = ? and user_uid = ?))
+			   and (exists (select 1 from groups where id = ? and is_default = 1)
+			        or exists (select 1 from group_members where group_id = ? and user_uid = ?))`,
+			ws.ID, *body.AssigneeUID, taskGroupID, taskGroupID, *body.AssigneeUID).Scan(&member); err != nil {
+			writeError(w, err)
+			return
+		}
+		if member != 1 {
+			writeError(w, badRequest("invalid_assignee", "المسؤول لازم يكون عضو في المجموعة."))
+			return
+		}
+		assignee = *body.AssigneeUID
+	}
+
 	taskID := newID()
 	now := nowString()
 	if _, err := s.store.db.ExecContext(r.Context(), `
 		insert into tasks (id, workspace_id, project_id, title, description,
-		                   status, state_id, priority, points, created_at, updated_at)
-		values (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		                   status, state_id, priority, points, assignee_uid, due_at, created_at, updated_at)
+		values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		taskID, ws.ID, body.ProjectID, body.Title, body.Description, status, body.StateID,
-		priority, now, now,
+		priority, points, assignee, due, now, now,
 	); err != nil {
 		writeError(w, err)
 		return
@@ -203,7 +243,8 @@ func (s *Server) taskByID(r *http.Request, taskID string) (map[string]any, error
 	row := s.store.db.QueryRowContext(r.Context(), `
 		select t.id, t.title, t.description, t.status, t.priority,
 		       t.project_id, p.name, t.label, t.branch, t.pr_number,
-		       t.due_at, t.created_at, t.state_id
+		       t.due_at, t.created_at, t.state_id, t.assignee_uid,
+		       (select coalesce(nullif(u.display_name, ''), u.email) from users u where u.uid = t.assignee_uid)
 		from tasks t
 		left join projects p on p.id = t.project_id
 		where t.id = ?`, taskID)

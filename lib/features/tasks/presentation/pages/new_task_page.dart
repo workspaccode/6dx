@@ -1,8 +1,8 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/utils/feedback.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
 import '../../../../shared/widgets/ui_kit.dart';
@@ -10,7 +10,6 @@ import '../../domain/entities/task.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 import '../providers/task_providers.dart';
 
-@RoutePage()
 class NewTaskPage extends ConsumerStatefulWidget {
   const NewTaskPage({super.key});
 
@@ -21,10 +20,10 @@ class NewTaskPage extends ConsumerStatefulWidget {
 class _NewTaskPageState extends ConsumerState<NewTaskPage> {
   final _titleController = TextEditingController();
   TaskPriority _priority = TaskPriority.medium;
-  final int _points = 3;
+  int _points = 0;
   String? _assignee;
-  bool _createIssue = true;
-  bool _createBranch = true;
+  DateTime? _due;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -32,20 +31,37 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
     super.dispose();
   }
 
-  String get _branch {
-    final slug = _titleController.text.trim().toLowerCase().replaceAll(' ', '-');
-    return 'feat/${slug.isEmpty ? 'new-task' : slug}';
-  }
 
+  /// The screen closes only when the task exists; a failure stays here
+  /// with its message so nothing typed is lost.
   Future<void> _submit() async {
     final title = _titleController.text.trim();
-    if (title.isEmpty) return;
-    await ref.read(tasksNotifierProvider.notifier).create(
-          title: title,
-          priority: _priority,
-        );
+    if (title.isEmpty || _saving) return;
+    setState(() => _saving = true);
+    final ok = await runAction(
+      context,
+      () => ref.read(tasksNotifierProvider.notifier).create(
+            title: title,
+            priority: _priority,
+            assigneeUid: _assignee,
+            points: _points == 0 ? null : _points,
+            dueDate: _due,
+          ),
+    );
     if (!mounted) return;
-    Navigator.of(context).pop();
+    setState(() => _saving = false);
+    if (ok) Navigator.of(context).pop();
+  }
+
+  Future<void> _pickDue() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _due ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 3),
+    );
+    if (picked != null && mounted) setState(() => _due = picked);
   }
 
   @override
@@ -102,33 +118,29 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
         const SizedBox(height: 20),
         Row(
           children: [
-            Expanded(child: _PointPicker(label: 'التقدير (نقاط)', value: _points)),
-            const SizedBox(width: 12),
             Expanded(
               child: _PointPicker(
-                label: 'التسليم',
-                value: null,
-                placeholder: 'غدًا',
+                label: 'التقدير (نقاط)',
+                value: _points,
+                onChanged: (v) => setState(() => _points = v.clamp(0, 100)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _pickDue,
+                icon: const Icon(Icons.event_outlined),
+                label: Text(_due == null
+                    ? 'ميعاد التسليم'
+                    : '${_due!.year}-${_due!.month.toString().padLeft(2, '0')}-${_due!.day.toString().padLeft(2, '0')}'),
               ),
             ),
           ],
         ),
         const SizedBox(height: 20),
-        ToggleRow(
-          title: 'إنشاء Issue في GitHub',
-          value: _createIssue,
-          onChanged: (v) => setState(() => _createIssue = v),
-        ),
-        ToggleRow(
-          title: 'إنشاء فرع تلقائيًا',
-          subtitle: _branch,
-          value: _createBranch,
-          onChanged: (v) => setState(() => _createBranch = v),
-        ),
-        const SizedBox(height: 12),
         FilledButton(
-          onPressed: _titleController.text.trim().isEmpty ? null : _submit,
-          child: const Text('إنشاء المهمة'),
+          onPressed: _titleController.text.trim().isEmpty || _saving ? null : _submit,
+          child: Text(_saving ? 'جاري الإنشاء…' : 'إنشاء المهمة'),
         ),
         const SizedBox(height: 8),
         OutlinedButton(
@@ -141,11 +153,11 @@ class _NewTaskPageState extends ConsumerState<NewTaskPage> {
 }
 
 class _PointPicker extends StatelessWidget {
-  const _PointPicker({required this.label, required this.value, this.placeholder});
+  const _PointPicker({required this.label, required this.value, required this.onChanged});
 
   final String label;
-  final int? value;
-  final String? placeholder;
+  final int value;
+  final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -164,22 +176,22 @@ class _PointPicker extends StatelessWidget {
           Row(
             children: [
               IconButton(
-                onPressed: value == null ? null : () => _adjust(-1),
+                onPressed: value <= 0 ? null : () => onChanged(value - 1),
                 icon: const Icon(Icons.remove_rounded, size: 18),
               ),
               Expanded(
                 child: Text(
-                  value?.toString() ?? placeholder ?? '—',
+                  '$value',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontFamily: 'JetBrainsMono',
                     fontSize: 16,
-                    color: value == null ? AppColors.textMuted : AppColors.accent,
+                    color: value == 0 ? AppColors.textMuted : AppColors.accent,
                   ),
                 ),
               ),
               IconButton(
-                onPressed: value == null ? null : () => _adjust(1),
+                onPressed: () => onChanged(value + 1),
                 icon: const Icon(Icons.add_rounded, size: 18),
               ),
             ],
@@ -189,6 +201,4 @@ class _PointPicker extends StatelessWidget {
     );
   }
 
-  // ignore: avoid_unused_constructor_parameters
-  void _adjust(int delta) {}
 }

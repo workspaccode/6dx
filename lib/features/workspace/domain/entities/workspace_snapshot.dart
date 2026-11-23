@@ -195,12 +195,16 @@ class PullRequest {
     this.receivedStatus,
     this.waitingHours = 0,
     this.draft = false,
+    this.repository,
   });
 
   final String id;
   final int number;
   final String title;
   final String author;
+
+  /// `owner/name` of the project's repository (opens the PR on GitHub).
+  final String? repository;
   final String branch;
   final String baseBranch;
   final String state;

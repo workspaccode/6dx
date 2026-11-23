@@ -31,7 +31,9 @@ class TaskRemoteDataSource {
     String? description,
     String? projectId,
     String? priority,
-    String? assigneeName,
+    String? assigneeUid,
+    int? points,
+    DateTime? dueDate,
   }) =>
       _api.run('tasks.create', () async {
         await _workspace.resolve();
@@ -40,6 +42,11 @@ class TaskRemoteDataSource {
           if (description != null) 'description': description,
           if (projectId != null) 'project_id': projectId,
           if (priority != null) 'priority': priority,
+          if (assigneeUid != null) 'assignee_uid': assigneeUid,
+          if (points != null) 'points': points,
+          if (dueDate != null)
+            'due_at': '${dueDate.year.toString().padLeft(4, '0')}-'
+                '${dueDate.month.toString().padLeft(2, '0')}-${dueDate.day.toString().padLeft(2, '0')}',
         });
         final task = payload['task'];
         if (task is! Map) throw ArgumentError('unexpected response shape');
@@ -72,6 +79,9 @@ class TaskRemoteDataSource {
         ),
         projectId: row['project_id'] as String?,
         projectName: row['project_name'] as String?,
+        assigneeName: row['assignee_name'] as String?,
+        assigneeUid: row['assignee_uid'] as String?,
+        stateId: row['state_id'] as String?,
         label: row['label'] as String?,
         branchName: row['branch'] as String?,
         prNumber: row['pr_number']?.toString(),

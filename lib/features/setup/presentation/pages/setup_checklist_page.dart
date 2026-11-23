@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../routes/app_router.dart';
 
-@RoutePage()
 class SetupChecklistPage extends ConsumerStatefulWidget {
   const SetupChecklistPage({super.key});
 

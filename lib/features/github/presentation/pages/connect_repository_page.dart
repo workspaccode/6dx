@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -17,7 +16,6 @@ import '../../../../core/utils/trusted_url.dart';
 /// Access goes through a GitHub App: the user installs it on the repositories
 /// they choose, so the app never receives a credential for the whole account.
 /// `Navigator.pop(repo.fullName)` hands the choice back to the caller.
-@RoutePage()
 class ConnectRepositoryPage extends ConsumerStatefulWidget {
   const ConnectRepositoryPage({super.key});
 

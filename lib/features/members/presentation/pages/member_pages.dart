@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,10 +7,15 @@ import '../../../../core/utils/logger.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../../workspace/domain/entities/workspace_snapshot.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../../core/utils/feedback.dart';
+import '../../../../routes/app_router.dart';
+import '../../../workspace/presentation/providers/workspace_actions.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
+import '../../../workspace/presentation/widgets/snapshot_status.dart';
 
 /// الأعضاء والصلاحيات
-@RoutePage()
 class MembersPage extends ConsumerWidget {
   const MembersPage({super.key});
 
@@ -29,11 +33,13 @@ class MembersPage extends ConsumerWidget {
           : FloatingActionButton.extended(
               backgroundColor: AppColors.accent,
               foregroundColor: AppColors.background,
-              onPressed: () {},
+              onPressed: () => context.push(AppRoutes.invite),
               icon: const Icon(Icons.person_add_alt_1_outlined),
               label: const Text('+ دعوة'),
             ),
-      body: members.isEmpty && invites.isEmpty
+      body: Column(children: [
+        const SnapshotStatus(),
+        Expanded(child: members.isEmpty && invites.isEmpty
           ? const AppEmptyState(
               icon: Icons.group_outlined,
               title: 'لا يوجد أعضاء',
@@ -45,7 +51,8 @@ class MembersPage extends ConsumerWidget {
                 for (final member in members)
                   _MemberTile(
                     member: member,
-                    onRemove: () => _showRemoveSheet(context, ref, member),
+                    onRemove: () => _remove(context, ref, member),
+                    onChangeRole: () => _changeRole(context, ref, member),
                   ),
                 if (invites.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -75,81 +82,64 @@ class MembersPage extends ConsumerWidget {
                     ),
                 ],
               ],
-            ),
+            )),
+      ]),
     );
   }
 
-  void _showRemoveSheet(
-    BuildContext context,
-    WidgetRef ref,
-    WorkspaceMember member,
-  ) {
-    final members = ref.read(workspaceMembersProvider);
-    showModalBottomSheet<void>(
+  /// The server decides who may change roles or remove (owner / admins,
+  /// never the owner row); a refusal comes back as its message.
+  Future<void> _remove(BuildContext context, WidgetRef ref, WorkspaceMember member) async {
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'إزالة ${member.name} من المشروع؟',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text('مهامه المفتوحة (${member.openTasks}) تنتقل إلى:',
-                style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 12),
-            for (final option in members.where((m) => m.id != member.id))
-              ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.person_outline, size: 18),
-                title: Text(option.name),
-                onTap: () => Navigator.of(sheetContext).pop(),
-              ),
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.person_off_outlined, size: 18),
-              title: const Text('بدون مسؤول'),
-              onTap: () => Navigator.of(sheetContext).pop(),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(sheetContext).pop(),
-                    child: const Text('إلغاء'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.danger,
-                      foregroundColor: AppColors.background,
-                    ),
-                    onPressed: () => Navigator.of(sheetContext).pop(),
-                    child: const Text('إزالة'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      builder: (dialog) => AlertDialog(
+        title: Text('إزالة ${member.name}؟'),
+        content: Text(member.openTasks > 0
+            ? 'عنده ${member.openTasks} مهمة مفتوحة هتفضل من غير مسؤول.'
+            : 'هيخرج من مساحة العمل وكل مجموعاتها.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialog).pop(false), child: const Text('إلغاء')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.of(dialog).pop(true),
+            child: const Text('إزالة'),
+          ),
+        ],
       ),
     );
+    if (ok != true || !context.mounted) return;
+    await runAction(context, () => ref.read(workspaceActionsProvider).removeMember(member.id),
+        done: 'اتشال');
+  }
+
+  Future<void> _changeRole(BuildContext context, WidgetRef ref, WorkspaceMember member) async {
+    const roles = {'admin': 'مدير', 'developer': 'مطوّر', 'reviewer': 'مراجِع', 'viewer': 'مشاهد (عميل)'};
+    final role = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          for (final e in roles.entries)
+            ListTile(
+              title: Text(e.value),
+              selected: e.key == member.role,
+              onTap: () => Navigator.of(sheet).pop(e.key),
+            ),
+        ]),
+      ),
+    );
+    if (role == null || role == member.role || !context.mounted) return;
+    await runAction(context, () => ref.read(workspaceActionsProvider).changeMemberRole(member.id, role),
+        done: 'الصلاحية اتغيرت');
   }
 }
 
 class _MemberTile extends StatelessWidget {
-  const _MemberTile({required this.member, required this.onRemove});
+  const _MemberTile({required this.member, required this.onRemove, required this.onChangeRole});
 
   final WorkspaceMember member;
   final VoidCallback onRemove;
+  final VoidCallback onChangeRole;
 
   @override
   Widget build(BuildContext context) {
@@ -180,10 +170,11 @@ class _MemberTile extends StatelessWidget {
           PopupMenuButton<String>(
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'change', child: Text('تغيير الصلاحية')),
-              PopupMenuItem(value: 'remove', child: Text('إزالة من المشروع')),
+              PopupMenuItem(value: 'remove', child: Text('إزالة من مساحة العمل')),
             ],
             onSelected: (value) {
               if (value == 'remove') onRemove();
+              if (value == 'change') onChangeRole();
             },
           ),
         ],
@@ -193,7 +184,6 @@ class _MemberTile extends StatelessWidget {
 }
 
 /// دعوة الفريق
-@RoutePage()
 class InvitePage extends ConsumerStatefulWidget {
   const InvitePage({super.key});
 
@@ -275,7 +265,6 @@ class _InvitePageState extends ConsumerState<InvitePage> {
 
     return AppScreen(
       title: 'دعوة الفريق',
-      subtitle: '1 · التفاصيل   2 · المستودع   3 · الفريق',
       children: [
         TextField(
           controller: _controller,
@@ -301,12 +290,6 @@ class _InvitePageState extends ConsumerState<InvitePage> {
               ),
           ],
         ),
-        const SizedBox(height: 16),
-        ToggleRow(
-          title: 'إضافتهم أيضًا للمستودع على GitHub',
-          value: false,
-          onChanged: (_) {},
-        ),
         if (invites.isNotEmpty) ...[
           const SizedBox(height: 16),
           const SectionLabel('بانتظار القبول · تنتهي بعد 7 أيام'),
@@ -324,23 +307,16 @@ class _InvitePageState extends ConsumerState<InvitePage> {
                         Text(invite.email,
                             style: Theme.of(context).textTheme.titleMedium),
                         Text(
-                          '${invite.role} · أُرسلت أمس · لم تُفتح بعد',
+                          '${invite.role} · بانتظار القبول',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
                   ),
-                  TextButton(onPressed: () {}, child: const Text('إعادة إرسال')),
                 ],
               ),
             ),
         ],
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.link_rounded),
-          label: const Text('نسخ رابط دعوة'),
-        ),
         const SizedBox(height: 12),
         FilledButton(
           onPressed: _sending || _emails.isEmpty ? null : _send,

@@ -57,22 +57,24 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
     ref.watch(activeGroupProvider);
     final result = await ref.watch(getTasksProvider).call(projectId: _projectId);
     _logResult('load', result);
-    return result.dataOrNull ?? const [];
+    return result.orThrow();
   }
 
-  Future<void> refresh() async {
-    state = const AsyncLoading();
-    final result = await ref.read(getTasksProvider).call(projectId: _projectId);
-    _logResult('refresh', result);
-    state = AsyncData(result.dataOrNull ?? const []);
-  }
+  Future<void> refresh() => _reload('refresh');
 
-  Future<void> filterByProject(String? projectId) async {
+  Future<void> filterByProject(String? projectId) {
     _projectId = projectId;
-    state = const AsyncLoading();
-    final result = await ref.read(getTasksProvider).call(projectId: projectId);
-    _logResult('filter by project $projectId', result);
-    state = AsyncData(result.dataOrNull ?? const []);
+    return _reload('filter by project $projectId');
+  }
+
+  /// A failed reload is an error state (the board shows it with a retry),
+  /// never an empty board.
+  Future<void> _reload(String operation) async {
+    state = const AsyncLoading<List<Task>>();
+    final result = await ref.read(getTasksProvider).call(projectId: _projectId);
+    if (!ref.mounted) return;
+    _logResult(operation, result);
+    state = await AsyncValue.guard(() async => result.orThrow());
   }
 
   Future<bool> create({
@@ -80,16 +82,22 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
     String? description,
     String? projectId,
     TaskPriority priority = TaskPriority.medium,
+    String? assigneeUid,
+    int? points,
+    DateTime? dueDate,
   }) async {
     final result = await ref.read(createTaskProvider).call(
           title: title,
           description: description,
           projectId: projectId,
           priority: priority,
+          assigneeUid: assigneeUid,
+          points: points,
+          dueDate: dueDate,
         );
     _logResult('create "$title"', result);
-    final created = result.dataOrNull;
-    if (created == null) return false;
+    final created = result.orThrow();
+    if (!ref.mounted) return true;
     state = AsyncData([created, ...?state.value]);
     return true;
   }
@@ -97,8 +105,8 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
   Future<bool> updateStatus(String id, TaskStatus status) async {
     final result = await ref.read(updateTaskStatusProvider).call(id, status);
     _logResult('move $id to ${status.name}', result);
-    final updated = result.dataOrNull;
-    if (updated == null) return false;
+    final updated = result.orThrow();
+    if (!ref.mounted) return true;
     final current = [...?state.value];
     final index = current.indexWhere((t) => t.id == id);
     if (index != -1) {
@@ -111,7 +119,8 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
   Future<bool> remove(String id) async {
     final result = await ref.read(deleteTaskProvider).call(id);
     _logResult('delete $id', result);
-    if (result.isFailure) return false;
+    result.orThrow();
+    if (!ref.mounted) return true;
     state = AsyncData(
       [...?state.value]..removeWhere((t) => t.id == id),
     );
@@ -129,8 +138,11 @@ class TasksNotifier extends AsyncNotifier<List<Task>> {
   }
 }
 
-final tasksNotifierProvider =
-    AsyncNotifierProvider<TasksNotifier, List<Task>>(TasksNotifier.new);
+final tasksNotifierProvider = AsyncNotifierProvider<TasksNotifier, List<Task>>(
+  TasksNotifier.new,
+  // A failure shows with its retry button, not an endless spinner.
+  retry: (retryCount, error) => null,
+);
 
 /// Tasks grouped by status — powers the Kanban board.
 final tasksByStatusProvider = Provider<Map<TaskStatus, List<Task>>>((ref) {

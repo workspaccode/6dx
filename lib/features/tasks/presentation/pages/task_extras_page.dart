@@ -1,4 +1,3 @@
-import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,28 +5,32 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/app_states.dart';
 import '../../../../shared/widgets/ui_kit.dart';
 import '../../domain/entities/task.dart';
+import '../../../../core/utils/feedback.dart';
+import '../../../workspace/presentation/providers/workspace_actions.dart';
+import '../../../workspace/presentation/widgets/snapshot_status.dart';
+import '../providers/task_providers.dart';
 import '../../../workspace/presentation/providers/workspace_providers.dart';
 
 /// المهام الفرعية
-@RoutePage()
 class SubtasksPage extends ConsumerWidget {
-  const SubtasksPage({super.key, required this.task});
+  const SubtasksPage({super.key, required this.taskId});
 
-  final Task task;
+  final String taskId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final subtasks = ref.watch(subtasksForTaskProvider(task.id));
+    final subtasks = ref.watch(subtasksForTaskProvider(taskId));
     final done = subtasks.where((s) => s.isDone).length;
+    final task = (ref.watch(tasksNotifierProvider).value ?? const <Task>[])
+        .where((t) => t.id == taskId)
+        .firstOrNull;
 
     return AppScreen(
       title: 'المهام الفرعية',
-      subtitle: '${task.key} · ${task.title}',
+      subtitle: task == null ? null : '${task.key} · ${task.title}',
       children: [
+        const SnapshotStatus(),
         SectionLabel('المهام الفرعية · $done / ${subtasks.length}'),
-        const HintBanner(
-          'تتزامن مع قائمة المهام (- [ ]) في وصف الـ PR، فتُعلَّم هنا عندما تُعلَّم هناك.',
-        ),
         if (subtasks.isEmpty)
           const AppEmptyState(
             icon: Icons.checklist_rounded,
@@ -36,7 +39,13 @@ class SubtasksPage extends ConsumerWidget {
           )
         else
           for (final sub in subtasks)
-            Container(
+            InkWell(
+              onTap: () => runAction(
+                context,
+                () => ref.read(workspaceActionsProvider).toggleSubtask(sub.id, done: !sub.isDone),
+              ),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -65,12 +74,15 @@ class SubtasksPage extends ConsumerWidget {
                   ),
                 ],
               ),
-            ),
+            )),
         const SizedBox(height: 8),
-        const TextField(
-          decoration: InputDecoration(
-            hintText: 'مهمة فرعية جديدة',
-            suffixIcon: Icon(Icons.add_rounded),
+        ComposeField(
+          hint: 'مهمة فرعية جديدة',
+          icon: Icons.add_rounded,
+          maxLength: 200,
+          onSubmit: (text) => runAction(
+            context,
+            () => ref.read(workspaceActionsProvider).addSubtask(taskId, text),
           ),
         ),
       ],
@@ -79,20 +91,23 @@ class SubtasksPage extends ConsumerWidget {
 }
 
 /// التعليقات والإشارات
-@RoutePage()
 class CommentsPage extends ConsumerWidget {
-  const CommentsPage({super.key, this.taskKey = ''});
+  const CommentsPage({super.key, required this.taskId});
 
-  final String taskKey;
+  final String taskId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final comments = ref.watch(commentsForTaskProvider(taskKey));
+    final comments = ref.watch(commentsForTaskProvider(taskId));
+    final task = (ref.watch(tasksNotifierProvider).value ?? const <Task>[])
+        .where((t) => t.id == taskId)
+        .firstOrNull;
 
     return AppScreen(
       title: 'التعليقات · ${comments.length}',
-      subtitle: taskKey,
+      subtitle: task?.title,
       children: [
+        const SnapshotStatus(),
         if (comments.isEmpty)
           const AppEmptyState(
             icon: Icons.chat_bubble_outline_rounded,
@@ -177,10 +192,13 @@ class CommentsPage extends ConsumerWidget {
               ),
             ),
         const SizedBox(height: 8),
-        const TextField(
-          decoration: InputDecoration(
-            hintText: 'اكتب تعليقًا',
-            suffixIcon: Icon(Icons.send_rounded),
+        ComposeField(
+          hint: 'اكتب تعليقًا',
+          icon: Icons.send_rounded,
+          maxLength: 5000,
+          onSubmit: (text) => runAction(
+            context,
+            () => ref.read(workspaceActionsProvider).addComment(taskId, text),
           ),
         ),
       ],
@@ -191,5 +209,66 @@ class CommentsPage extends ConsumerWidget {
     final diff = DateTime.now().difference(time);
     if (diff.inMinutes < 60) return 'منذ ${diff.inMinutes} د';
     return 'منذ ${diff.inHours} س';
+  }
+}
+
+/// A text field with a send button: clears itself when [onSubmit] says it
+/// worked, keeps the text when it did not.
+class ComposeField extends StatefulWidget {
+  const ComposeField({
+    super.key,
+    required this.hint,
+    required this.icon,
+    required this.onSubmit,
+    this.maxLength,
+  });
+
+  final String hint;
+  final IconData icon;
+  final int? maxLength;
+  final Future<bool> Function(String text) onSubmit;
+
+  @override
+  State<ComposeField> createState() => _ComposeFieldState();
+}
+
+class _ComposeFieldState extends State<ComposeField> {
+  final _controller = TextEditingController();
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() => _sending = true);
+    final ok = await widget.onSubmit(text);
+    if (!mounted) return;
+    setState(() => _sending = false);
+    if (ok) _controller.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      maxLength: widget.maxLength,
+      enabled: !_sending,
+      onSubmitted: (_) => _send(),
+      decoration: InputDecoration(
+        hintText: widget.hint,
+        counterText: '',
+        suffixIcon: IconButton(
+          icon: _sending
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : Icon(widget.icon),
+          onPressed: _sending ? null : _send,
+        ),
+      ),
+    );
   }
 }
